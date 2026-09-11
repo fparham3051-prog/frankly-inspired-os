@@ -21,7 +21,9 @@ if (!ADMIN_PASSWORD || !ADMIN_API_TOKEN || !SESSION_SECRET) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes("render.com") ? { rejectUnauthorized: false } : undefined
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("localhost")
+    ? { rejectUnauthorized: false }
+    : undefined
 });
 
 async function initSchema() {
@@ -142,7 +144,7 @@ function rowToRock(r) {
   return { id: r.id, title: r.title, quarter: r.quarter, dueDate: r.due_date, notes: r.notes, status: r.status, createdAt: r.created_at };
 }
 function rowToProspect(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref };
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
@@ -304,6 +306,32 @@ app.put("/api/vision", requireAuth, async (req, res) => {
     [b.values || "", b.focus || "", b.tenYear || "", b.marketing || "", b.threeYear || "", b.oneYear || "", now]
   );
   res.json({ ok: true });
+});
+
+// ---------- automated lead capture (admin-only; used by the lead-import scheduled task) ----------
+// Upserts prospects by source_ref (e.g. a Gmail message id) so re-scanning the same
+// emails never creates duplicates. Rows with no source_ref (added by hand in the UI)
+// are unaffected, since Postgres treats every NULL as distinct for uniqueness.
+app.post("/api/admin/prospects", requireAdminToken, async (req, res) => {
+  const items = (req.body && req.body.items) || [];
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "items array required" });
+  }
+  let created = 0;
+  let skipped = 0;
+  for (const item of items) {
+    if (!item.sourceRef || !item.name) continue;
+    const id = newId();
+    const now = new Date().toISOString();
+    const result = await pool.query(
+      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (source_ref) DO NOTHING`,
+      [id, item.name || "", item.org || "", item.source || "inbound", item.status || "new", item.link || "", item.notes || "", now, item.sourceRef]
+    );
+    if (result.rowCount > 0) created++; else skipped++;
+  }
+  res.json({ ok: true, created, skipped });
 });
 
 // ---------- digest (read via /api/state; admin-only write for the weekly refresh) ----------

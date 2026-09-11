@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS prospects (
   created_at TEXT
 );
 
+-- source_ref: a stable id (e.g. a Gmail message id) automated lead capture uses to
+-- avoid creating duplicate prospects when it re-scans the same emails.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS source_ref TEXT UNIQUE;
+
 CREATE TABLE IF NOT EXISTS digest (
   id TEXT PRIMARY KEY,
   category TEXT,

@@ -1,37 +1,35 @@
 "use strict";
- 
+
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const { Pool } = require("pg");
- 
+
 const PORT = process.env.PORT || 10000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || "";
 const COOKIE_NAME = "fios_session";
 const COOKIE_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
- 
+
 if (!ADMIN_PASSWORD || !ADMIN_API_TOKEN || !SESSION_SECRET) {
   console.error("Missing required env vars: ADMIN_PASSWORD, ADMIN_API_TOKEN, SESSION_SECRET must all be set.");
   process.exit(1);
 }
- 
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("localhost")
-    ? { rejectUnauthorized: false }
-    : undefined
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes("render.com") ? { rejectUnauthorized: false } : undefined
 });
- 
+
 async function initSchema() {
   const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
   await pool.query(schema);
   console.log("Schema ready.");
 }
- 
+
 // ---------- signed cookie session (shared password, no per-user accounts) ----------
 function sign(value) {
   const h = crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("hex");
@@ -60,23 +58,23 @@ function timingSafeStringEqual(a, b) {
   }
   return crypto.timingSafeEqual(bufA, bufB);
 }
- 
+
 function requireAuth(req, res, next) {
   const token = req.cookies[COOKIE_NAME];
   if (verify(token)) return next();
   return res.status(401).json({ error: "not authenticated" });
 }
- 
+
 function requireAdminToken(req, res, next) {
   const provided = req.get("X-Admin-Token") || "";
   if (timingSafeStringEqual(provided, ADMIN_API_TOKEN)) return next();
   return res.status(401).json({ error: "invalid admin token" });
 }
- 
+
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
- 
+
 // ---------- auth routes ----------
 app.post("/api/login", (req, res) => {
   const { password } = req.body || {};
@@ -93,17 +91,17 @@ app.post("/api/login", (req, res) => {
   });
   res.json({ ok: true });
 });
- 
+
 app.post("/api/logout", (req, res) => {
   res.clearCookie(COOKIE_NAME);
   res.json({ ok: true });
 });
- 
+
 app.get("/api/session", (req, res) => {
   const token = req.cookies[COOKIE_NAME];
   res.json({ authenticated: verify(token) });
 });
- 
+
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
@@ -130,7 +128,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
     res.status(500).json({ error: "failed to load state" });
   }
 });
- 
+
 function rowToPipeline(r) {
   return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at };
 }
@@ -144,7 +142,7 @@ function rowToRock(r) {
   return { id: r.id, title: r.title, quarter: r.quarter, dueDate: r.due_date, notes: r.notes, status: r.status, createdAt: r.created_at };
 }
 function rowToProspect(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at };
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
@@ -152,11 +150,11 @@ function rowToDigest(r) {
 function rowToVision(r) {
   return { values: r.values_text, focus: r.focus, tenYear: r.ten_year, marketing: r.marketing, threeYear: r.three_year, oneYear: r.one_year, updatedAt: r.updated_at };
 }
- 
+
 function newId() {
   return crypto.randomUUID();
 }
- 
+
 // ---------- pipeline ----------
 app.post("/api/pipeline", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -192,7 +190,7 @@ app.delete("/api/pipeline/:id", requireAuth, async (req, res) => {
   await pool.query("DELETE FROM pipeline WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
- 
+
 // ---------- scorecard ----------
 app.post("/api/scorecard", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -209,7 +207,7 @@ app.delete("/api/scorecard/:id", requireAuth, async (req, res) => {
   await pool.query("DELETE FROM scorecard WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
- 
+
 // ---------- issues ----------
 app.post("/api/issues", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -234,7 +232,7 @@ app.delete("/api/issues/:id", requireAuth, async (req, res) => {
   await pool.query("DELETE FROM issues WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
- 
+
 // ---------- rocks ----------
 app.post("/api/rocks", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -257,7 +255,7 @@ app.delete("/api/rocks/:id", requireAuth, async (req, res) => {
   await pool.query("DELETE FROM rocks WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
- 
+
 // ---------- prospects ----------
 app.post("/api/prospects", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -294,7 +292,7 @@ app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
   await pool.query("DELETE FROM prospects WHERE id = $1", [req.params.id]);
   res.json({ ok: true, pipelineId: id });
 });
- 
+
 // ---------- vision ----------
 app.put("/api/vision", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -307,33 +305,7 @@ app.put("/api/vision", requireAuth, async (req, res) => {
   );
   res.json({ ok: true });
 });
- 
-// ---------- automated lead capture (admin-only; used by the lead-import scheduled task) ----------
-// Upserts prospects by source_ref (e.g. a Gmail message id) so re-scanning the same
-// emails never creates duplicates. Rows with no source_ref (added by hand in the UI)
-// are unaffected, since Postgres treats every NULL as distinct for uniqueness.
-app.post("/api/admin/prospects", requireAdminToken, async (req, res) => {
-  const items = (req.body && req.body.items) || [];
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: "items array required" });
-  }
-  let created = 0;
-  let skipped = 0;
-  for (const item of items) {
-    if (!item.sourceRef || !item.name) continue;
-    const id = newId();
-    const now = new Date().toISOString();
-    const result = await pool.query(
-      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (source_ref) DO NOTHING`,
-      [id, item.name || "", item.org || "", item.source || "inbound", item.status || "new", item.link || "", item.notes || "", now, item.sourceRef]
-    );
-    if (result.rowCount > 0) created++; else skipped++;
-  }
-  res.json({ ok: true, created, skipped });
-});
- 
+
 // ---------- digest (read via /api/state; admin-only write for the weekly refresh) ----------
 app.post("/api/admin/digest", requireAdminToken, async (req, res) => {
   const items = (req.body && req.body.items) || [];
@@ -362,7 +334,7 @@ app.post("/api/admin/digest", requireAdminToken, async (req, res) => {
     client.release();
   }
 });
- 
+
 // ---------- static assets (icons, css, js) always served ----------
 app.use("/icons", express.static(path.join(__dirname, "public", "icons"), { maxAge: "30d" }));
 app.get("/favicon.ico", (req, res) => res.sendFile(path.join(__dirname, "public", "icons", "favicon.ico")));
@@ -374,7 +346,7 @@ app.get("/app.js", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "app.js"));
 });
 app.get("/login.js", (req, res) => res.sendFile(path.join(__dirname, "public", "login.js")));
- 
+
 // ---------- page routes ----------
 app.get("/", (req, res) => {
   const token = req.cookies[COOKIE_NAME];
@@ -383,9 +355,9 @@ app.get("/", (req, res) => {
   }
   return res.sendFile(path.join(__dirname, "public", "login.html"));
 });
- 
+
 app.use((req, res) => res.status(404).send("Not found"));
- 
+
 initSchema()
   .then(() => {
     app.listen(PORT, () => console.log(`Listening on ${PORT}`));

@@ -108,11 +108,11 @@ app.get("/api/session", (req, res) => {
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
     const [pipeline, scorecard, issues, rocks, prospects, digest, visionRes] = await Promise.all([
-      pool.query("SELECT * FROM pipeline ORDER BY created_at DESC"),
-      pool.query("SELECT * FROM scorecard ORDER BY week_of DESC"),
-      pool.query("SELECT * FROM issues ORDER BY created_at DESC"),
-      pool.query("SELECT * FROM rocks ORDER BY due_date ASC NULLS LAST"),
-      pool.query("SELECT * FROM prospects ORDER BY created_at DESC"),
+      pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
+      pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
+      pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
+      pool.query("SELECT * FROM rocks WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
+      pool.query("SELECT * FROM prospects WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM digest ORDER BY id ASC"),
       pool.query("SELECT * FROM vision WHERE id = 'main'")
     ]);
@@ -157,6 +157,14 @@ function newId() {
   return crypto.randomUUID();
 }
 
+// Soft delete: every "Remove" action in the UI lands here instead of a real
+// DELETE, so a misclick (or a bad automated import) never actually destroys
+// data - it just stops showing up in /api/state. `table` is always one of a
+// fixed set of literals from the call sites below, never request input.
+function archiveRow(table, id) {
+  return pool.query(`UPDATE ${table} SET archived_at = $1 WHERE id = $2`, [new Date().toISOString(), id]);
+}
+
 // ---------- pipeline ----------
 app.post("/api/pipeline", requireAuth, async (req, res) => {
   const b = req.body || {};
@@ -189,7 +197,7 @@ app.patch("/api/pipeline/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 app.delete("/api/pipeline/:id", requireAuth, async (req, res) => {
-  await pool.query("DELETE FROM pipeline WHERE id = $1", [req.params.id]);
+  await archiveRow("pipeline", req.params.id);
   res.json({ ok: true });
 });
 
@@ -206,7 +214,7 @@ app.post("/api/scorecard", requireAuth, async (req, res) => {
   res.json({ id });
 });
 app.delete("/api/scorecard/:id", requireAuth, async (req, res) => {
-  await pool.query("DELETE FROM scorecard WHERE id = $1", [req.params.id]);
+  await archiveRow("scorecard", req.params.id);
   res.json({ ok: true });
 });
 
@@ -231,7 +239,7 @@ app.patch("/api/issues/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 app.delete("/api/issues/:id", requireAuth, async (req, res) => {
-  await pool.query("DELETE FROM issues WHERE id = $1", [req.params.id]);
+  await archiveRow("issues", req.params.id);
   res.json({ ok: true });
 });
 
@@ -254,7 +262,7 @@ app.patch("/api/rocks/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 app.delete("/api/rocks/:id", requireAuth, async (req, res) => {
-  await pool.query("DELETE FROM rocks WHERE id = $1", [req.params.id]);
+  await archiveRow("rocks", req.params.id);
   res.json({ ok: true });
 });
 
@@ -277,11 +285,11 @@ app.patch("/api/prospects/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 app.delete("/api/prospects/:id", requireAuth, async (req, res) => {
-  await pool.query("DELETE FROM prospects WHERE id = $1", [req.params.id]);
+  await archiveRow("prospects", req.params.id);
   res.json({ ok: true });
 });
 app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
-  const { rows } = await pool.query("SELECT * FROM prospects WHERE id = $1", [req.params.id]);
+  const { rows } = await pool.query("SELECT * FROM prospects WHERE id = $1 AND archived_at IS NULL", [req.params.id]);
   const p = rows[0];
   if (!p) return res.status(404).json({ error: "not found" });
   const id = newId();
@@ -291,7 +299,7 @@ app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
      VALUES ($1,$2,$3,$4,'undecided','lead','First outreach','',$5,$6,$6)`,
     [id, p.name || "", p.org || "", "Prospecting: " + (p.source || ""), p.notes || "", now]
   );
-  await pool.query("DELETE FROM prospects WHERE id = $1", [req.params.id]);
+  await archiveRow("prospects", req.params.id);
   res.json({ ok: true, pipelineId: id });
 });
 
@@ -358,6 +366,82 @@ app.post("/api/admin/digest", requireAdminToken, async (req, res) => {
     await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "failed to update digest" });
+  } finally {
+    client.release();
+  }
+});
+
+// ---------- full backup / restore (admin-only) ----------
+// GET returns every row from every table, including archived ones, as plain
+// JSON - a full point-in-time snapshot. POST restores from that same shape,
+// upserting by primary key (id, or 'main' for vision) so it's safe to run
+// more than once. This exists for two reasons: it's the migration path
+// whenever the database itself has to move (free-tier Postgres hosts expire
+// or get retired from time to time), and it doubles as an on-demand backup -
+// something this app didn't have any way to produce before.
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest"];
+app.get("/api/admin/backup", requireAdminToken, async (req, res) => {
+  try {
+    const out = {};
+    for (const table of BACKUP_TABLES) {
+      const { rows } = await pool.query(`SELECT * FROM ${table}`);
+      out[table] = rows;
+    }
+    const visionRes = await pool.query("SELECT * FROM vision WHERE id = 'main'");
+    out.vision = visionRes.rows[0] || null;
+    out.exportedAt = new Date().toISOString();
+    res.json(out);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "backup failed" });
+  }
+});
+
+app.post("/api/admin/restore", requireAdminToken, async (req, res) => {
+  const body = req.body || {};
+  const client = await pool.connect();
+  const counts = {};
+  try {
+    await client.query("BEGIN");
+    for (const table of BACKUP_TABLES) {
+      const rows = Array.isArray(body[table]) ? body[table] : [];
+      counts[table] = 0;
+      for (const r of rows) {
+        if (!r || !r.id) continue;
+        // Every column keeps the same $N placeholder in both the VALUES list
+        // and the SET clause (indexed by position in `cols`, not re-numbered
+        // after filtering) - getting that wrong silently writes values into
+        // the wrong columns, so this has to stay index-for-index correct
+        // regardless of what order the source JSON's keys happen to be in.
+        const cols = Object.keys(r).filter((k) => r[k] !== undefined);
+        const insertCols = cols.join(", ");
+        const insertPlaceholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+        const setClause = cols.map((c, i) => (c === "id" ? null : `${c} = $${i + 1}`)).filter(Boolean).join(", ");
+        const values = cols.map((c) => r[c]);
+        await client.query(
+          `INSERT INTO ${table} (${insertCols}) VALUES (${insertPlaceholders})
+           ON CONFLICT (id) DO UPDATE SET ${setClause}`,
+          values
+        );
+        counts[table]++;
+      }
+    }
+    if (body.vision && body.vision.id) {
+      const v = body.vision;
+      await client.query(
+        `INSERT INTO vision (id, values_text, focus, ten_year, marketing, three_year, one_year, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (id) DO UPDATE SET values_text=$2, focus=$3, ten_year=$4, marketing=$5, three_year=$6, one_year=$7, updated_at=$8`,
+        [v.id, v.values_text || "", v.focus || "", v.ten_year || "", v.marketing || "", v.three_year || "", v.one_year || "", v.updated_at || new Date().toISOString()]
+      );
+      counts.vision = 1;
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true, counts });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "restore failed" });
   } finally {
     client.release();
   }

@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS prospects (
 -- avoid creating duplicate prospects when it re-scans the same emails.
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS source_ref TEXT UNIQUE;
 
+-- archived_at: soft-delete marker. "Remove" in the UI sets this instead of
+-- actually deleting the row, so a misclick or a bad bulk import is always
+-- recoverable, it just stops showing up in /api/state. Applied to every
+-- table the UI (or the lead-import automation) can delete from.
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS archived_at TEXT;
+ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS archived_at TEXT;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS archived_at TEXT;
+ALTER TABLE rocks ADD COLUMN IF NOT EXISTS archived_at TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS archived_at TEXT;
+
 CREATE TABLE IF NOT EXISTS digest (
   id TEXT PRIMARY KEY,
   category TEXT,

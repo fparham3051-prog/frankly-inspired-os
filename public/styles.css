@@ -160,6 +160,11 @@ img{max-width:100%;}
   td.dim{color:var(--ink-soft);font-size:0.82rem;}
   select.inline-select{font-family:'IBM Plex Mono', monospace;font-size:0.74rem;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);}
 
+  /* Overdue next-step highlighting, shared by the Pipeline table and the Dashboard's next-actions list. */
+  tr.row-overdue td{background:color-mix(in srgb, var(--warn) 10%, transparent);box-shadow:inset 3px 0 0 var(--warn);}
+  .action-list li.row-overdue{background:color-mix(in srgb, var(--warn) 10%, transparent);box-shadow:inset 3px 0 0 var(--warn);padding-left:9px;}
+  .overdue-tag{font-family:'IBM Plex Mono', monospace;font-size:0.66rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--warn);font-weight:600;}
+
   .vision-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
   @media (max-width:760px){.vision-grid{grid-template-columns:1fr;}}
   .vision-field{margin-bottom:6px;}

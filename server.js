@@ -456,4 +456,32 @@ app.post("/api/admin/restore", requireAdminToken, async (req, res) => {
 
 // ---------- static assets (icons, css, js) always served ----------
 app.use("/icons", express.static(path.join(__dirname, "public", "icons"), { maxAge: "30d" }));
-app.get("/favicon.ico", (req, res) =>
+app.get("/favicon.ico", (req, res) => res.sendFile(path.join(__dirname, "public", "icons", "favicon.ico")));
+app.get("/manifest.webmanifest", (req, res) => res.sendFile(path.join(__dirname, "public", "manifest.webmanifest")));
+app.get("/styles.css", (req, res) => res.sendFile(path.join(__dirname, "public", "styles.css")));
+app.get("/app.js", (req, res) => {
+  const token = req.cookies[COOKIE_NAME];
+  if (!verify(token)) return res.status(401).end();
+  res.sendFile(path.join(__dirname, "public", "app.js"));
+});
+app.get("/login.js", (req, res) => res.sendFile(path.join(__dirname, "public", "login.js")));
+
+// ---------- page routes ----------
+app.get("/", (req, res) => {
+  const token = req.cookies[COOKIE_NAME];
+  if (verify(token)) {
+    return res.sendFile(path.join(__dirname, "public", "index.html"));
+  }
+  return res.sendFile(path.join(__dirname, "public", "login.html"));
+});
+
+app.use((req, res) => res.status(404).send("Not found"));
+
+initSchema()
+  .then(() => {
+    app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+  })
+  .catch((err) => {
+    console.error("Failed to initialize schema", err);
+    process.exit(1);
+  });

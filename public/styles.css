@@ -148,6 +148,10 @@ img{max-width:100%;}
   .btn:disabled{opacity:0.5;cursor:not-allowed;}
   .save-status{font-size:0.8rem;color:var(--accent-strong);}
 
+  .digest-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  #digest-readaloud-btn{white-space:nowrap;}
+  #digest-readaloud-btn.is-speaking{background:var(--warn);border-color:var(--warn);color:#fff;}
+
   table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:0.86rem;}
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;}
   th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;}

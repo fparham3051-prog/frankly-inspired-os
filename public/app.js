@@ -1,6 +1,7 @@
+
 (function(){
   "use strict";
-
+ 
   function esc(s){
     return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
@@ -17,19 +18,19 @@
     var q = Math.floor(d.getMonth()/3) + 1;
     return "Q" + q + " " + d.getFullYear();
   }
-
+ 
   var STAGE_LABELS = {lead:"Lead", discovery:"Discovery Call", assessment:"InstitutionalOS Assessment", engaged:"Engaged", graduated:"Graduated", referred:"Referred Out", lost:"Lost, No Fit"};
   var TRACK_LABELS = {undecided:"Undecided", coaching:"Coaching", consulting:"Project Consulting", institutionalos:"InstitutionalOS Assessment"};
   var CLOSED_STAGES = {graduated:1, referred:1, lost:1};
-
+ 
   var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], vision:null, ready:false };
   var pipelineFilter = "all";
   var issueFilter = "all";
   var apiReady = false;
-
+ 
   var PROSPECT_STATUS_LABELS = {"new":"New", researching:"Researching", contacted:"Contacted", responded:"Responded", meeting:"Meeting booked", "not-fit":"Not a fit"};
   var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", other:"Other"};
-
+ 
   // ---------- nav ----------
   var navButtons = document.querySelectorAll("#app-nav .rail-btn");
   var views = document.querySelectorAll(".view");
@@ -39,9 +40,10 @@
       btn.classList.add("is-active");
       var target = btn.getAttribute("data-view");
       views.forEach(function(v){ v.hidden = (v.getAttribute("data-view") !== target); });
+      if(target !== "fieldintel") stopReadAloud();
     });
   });
-
+ 
   // ---------- logout ----------
   var logoutBtn = document.getElementById("logout-btn");
   if(logoutBtn){
@@ -53,13 +55,13 @@
       });
     });
   }
-
+ 
   // ---------- daily briefing ----------
   function generateBriefing(){
     var lines = [];
     var today = new Date();
     var greeting = today.getHours() < 12 ? "Good morning." : (today.getHours() < 17 ? "Good afternoon." : "Good evening.");
-
+ 
     var openPipeline = state.pipeline.filter(function(p){ return !CLOSED_STAGES[p.stage]; });
     var dueSoon = openPipeline
       .filter(function(p){ return p.nextStepDate; })
@@ -70,14 +72,14 @@
           ? ". The nearest next step is " + esc(dueSoon[0].nextStep || "a next step") + " with " + esc(dueSoon[0].name || "an unnamed contact") + " on " + fmtDate(dueSoon[0].nextStepDate) + "."
           : ", none with a next step date set."));
     lines.push(greeting + " " + pipelineSentence);
-
+ 
     var openIssues = state.issues.filter(function(i){ return i.status !== "solved"; })
       .sort(function(a,b){ return (a.createdAt || "").localeCompare(b.createdAt || ""); });
     var issuesSentence = openIssues.length === 0
       ? "No open issues on the list."
       : (openIssues.length + " open issue" + (openIssues.length === 1 ? "" : "s") + ", the oldest is “" + esc(openIssues[0].title || "untitled") + "”.");
     lines.push(issuesSentence);
-
+ 
     var offTrackRocks = state.rocks.filter(function(r){ return r.status === "off-track"; });
     var onTrackRocks = state.rocks.filter(function(r){ return r.status === "on-track"; });
     var rocksSentence;
@@ -89,7 +91,7 @@
       rocksSentence = onTrackRocks.length + " of this quarter's priorities on track, none flagged off track.";
     }
     lines.push(rocksSentence);
-
+ 
     var weeks = state.scorecard.slice().sort(function(a,b){ return (a.weekOf || "").localeCompare(b.weekOf || ""); });
     var scorecardSentence;
     if(weeks.length === 0){
@@ -105,13 +107,13 @@
       }
     }
     lines.push(scorecardSentence);
-
+ 
     var activeProspects = state.prospects.filter(function(p){ return p.status !== "not-fit"; });
     var prospectsSentence = activeProspects.length === 0
       ? "Nothing waiting in Prospecting."
       : (activeProspects.length + " prospect" + (activeProspects.length === 1 ? "" : "s") + " in the Prospecting list waiting on research or outreach.");
     lines.push(prospectsSentence);
-
+ 
     var focus = null;
     if(offTrackRocks.length > 0){
       focus = "Get “" + esc(offTrackRocks[0].title || "the off track priority") + "” back on track.";
@@ -122,11 +124,11 @@
     } else if(activeProspects.length > 0){
       focus = "Move a prospect forward, " + activeProspects.length + " waiting.";
     }
-
+ 
     var plainLines = lines.map(function(html){ return html.replace(/<[^>]+>/g, "").replace(/&middot;/g, ",").replace(/&amp;/g,"&").replace(/&quot;/g,"\"").replace(/&#39;/g,"'"); });
     return { html: lines, plain: plainLines.join(" "), focus: focus };
   }
-
+ 
   var briefingSpeakText = "";
   function renderBriefing(){
     var b = generateBriefing();
@@ -140,7 +142,7 @@
     }
     briefingSpeakText = b.plain + (b.focus ? " Today's one focus: " + b.focus.replace(/<[^>]+>/g,"") : "");
   }
-
+ 
   (function(){
     var speakBtn = document.getElementById("briefing-speak");
     var stopBtn = document.getElementById("briefing-stop");
@@ -167,14 +169,14 @@
       speakBtn.hidden = false;
     });
   })();
-
+ 
   // ---------- dashboard ----------
   function renderDashboard(){
     document.getElementById("stat-active").textContent = state.pipeline.filter(function(p){ return !CLOSED_STAGES[p.stage]; }).length;
     document.getElementById("stat-issues").textContent = state.issues.filter(function(i){ return i.status !== "solved"; }).length;
     document.getElementById("stat-rocks").textContent = state.rocks.filter(function(r){ return r.status === "on-track"; }).length;
     document.getElementById("stat-weeks").textContent = state.scorecard.length;
-
+ 
     var nextList = state.pipeline
       .filter(function(p){ return p.nextStepDate && !CLOSED_STAGES[p.stage]; })
       .sort(function(a,b){ return (a.nextStepDate || "").localeCompare(b.nextStepDate || ""); })
@@ -187,7 +189,7 @@
         return '<li><span><span class="who">' + esc(p.name || "Untitled") + '</span> &middot; ' + esc(p.nextStep || "next step not set") + '</span><span class="when">' + fmtDate(p.nextStepDate) + '</span></li>';
       }).join("");
     }
-
+ 
     var issueList = state.issues
       .filter(function(i){ return i.status !== "solved"; })
       .sort(function(a,b){ return (a.createdAt || "").localeCompare(b.createdAt || ""); })
@@ -201,7 +203,7 @@
       }).join("");
     }
   }
-
+ 
   // ---------- api helpers ----------
   function apiFetch(url, opts){
     opts = opts || {};
@@ -223,7 +225,7 @@
       return res.json().catch(function(){ return {}; });
     });
   }
-
+ 
   function loadState(){
     return apiFetch("/api/state").then(function(data){
       state.pipeline = data.pipeline || [];
@@ -236,11 +238,11 @@
       state.ready = true;
     });
   }
-
+ 
   function refreshAndRender(){
     return loadState().then(renderAll);
   }
-
+ 
   // ---------- pipeline ----------
   document.getElementById("pipeline-filters").addEventListener("click", function(e){
     var btn = e.target.closest(".filter-btn");
@@ -249,7 +251,7 @@
     this.querySelectorAll(".filter-btn").forEach(function(b){ b.classList.toggle("is-active", b === btn); });
     renderPipeline();
   });
-
+ 
   function renderPipeline(){
     var rows = state.pipeline.filter(function(p){ return pipelineFilter === "all" || p.stage === pipelineFilter; });
     rows = rows.slice().sort(function(a,b){ return (b.createdAt || "").localeCompare(a.createdAt || ""); });
@@ -273,7 +275,7 @@
         '</tr>';
     }).join("");
   }
-
+ 
   document.getElementById("pipeline-rows").addEventListener("change", function(e){
     if(!e.target.classList.contains("pl-stage-select")) return;
     var id = e.target.closest("tr").getAttribute("data-id");
@@ -290,7 +292,7 @@
       .then(refreshAndRender)
       .catch(function(err){ console.error(err); });
   });
-
+ 
   document.getElementById("pipeline-form").addEventListener("submit", function(e){
     e.preventDefault();
     var statusEl = document.getElementById("pl-status");
@@ -315,7 +317,7 @@
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
-
+ 
   // ---------- prospecting ----------
   function renderProspecting(){
     var rows = state.prospects.slice().sort(function(a,b){ return (b.createdAt || "").localeCompare(a.createdAt || ""); });
@@ -392,7 +394,7 @@
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
-
+ 
   // ---------- scorecard ----------
   function renderScorecard(){
     var rows = state.scorecard;
@@ -449,7 +451,7 @@
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
-
+ 
   // ---------- forecasting ----------
   function linreg(points){
     var n = points.length;
@@ -492,45 +494,45 @@
     var lastX = pts[pts.length-1].x;
     var projX = lastX + 1;
     var projY = reg.predict(projX);
-
+ 
     var allY = pts.map(function(p){ return p.y; }).concat([projY+sd, projY-sd]);
     var minY = Math.min.apply(null, allY), maxY = Math.max.apply(null, allY);
     if(minY === maxY){ minY -= 1; maxY += 1; }
     var padY = (maxY - minY) * 0.15;
     minY -= padY; maxY += padY;
     if(pts.every(function(p){ return p.y >= 0; })) minY = Math.max(minY, 0);
-
+ 
     var w = 260, h = 110, padL = 8, padR = 8, padT = 8, padB = 8;
     var xScale = function(x){ return padL + (x/projX) * (w - padL - padR); };
     var yScale = function(y){ return padT + (1 - (y-minY)/(maxY-minY)) * (h - padT - padB); };
-
+ 
     var linePath = pts.map(function(p,i){ return (i===0?"M":"L") + xScale(p.x).toFixed(1) + "," + yScale(p.y).toFixed(1); }).join(" ");
     var lastPt = pts[pts.length-1];
     var dashedPath = "M" + xScale(lastX).toFixed(1) + "," + yScale(lastPt.y).toFixed(1) + " L" + xScale(projX).toFixed(1) + "," + yScale(projY).toFixed(1);
-
+ 
     var markers = pts.map(function(p){
       return '<circle class="fc-pt" cx="' + xScale(p.x).toFixed(1) + '" cy="' + yScale(p.y).toFixed(1) + '" r="3.5" fill="var(--accent-strong)" data-date="' + esc(fmtDate(p.date)) + '" data-value="' + esc(fmt(p.y)) + '"></circle>';
     }).join("");
-
+ 
     var projTop = yScale(projY+sd), projBottom = yScale(projY-sd);
     var px = xScale(projX).toFixed(1);
     var errBar = '<line x1="' + px + '" y1="' + projTop.toFixed(1) + '" x2="' + px + '" y2="' + projBottom.toFixed(1) + '" stroke="var(--ink-soft)" stroke-width="1.5"></line>' +
       '<line x1="' + (xScale(projX)-4).toFixed(1) + '" y1="' + projTop.toFixed(1) + '" x2="' + (xScale(projX)+4).toFixed(1) + '" y2="' + projTop.toFixed(1) + '" stroke="var(--ink-soft)" stroke-width="1.5"></line>' +
       '<line x1="' + (xScale(projX)-4).toFixed(1) + '" y1="' + projBottom.toFixed(1) + '" x2="' + (xScale(projX)+4).toFixed(1) + '" y2="' + projBottom.toFixed(1) + '" stroke="var(--ink-soft)" stroke-width="1.5"></line>';
     var projMarker = '<circle class="fc-pt" cx="' + px + '" cy="' + yScale(projY).toFixed(1) + '" r="3.5" fill="none" stroke="var(--accent-2)" stroke-width="2" data-date="Projected" data-value="' + esc(fmt(projY)) + '"></circle>';
-
+ 
     var prevPt = pts.length > 1 ? pts[pts.length-2] : null;
     var delta = prevPt ? (lastPt.y - prevPt.y) : 0;
     var deltaClass = delta > 0 ? "up" : (delta < 0 ? "down" : "");
     var deltaLabel = prevPt ? ((delta === 0 ? "flat" : (delta > 0 ? "+" + fmt(delta) : "" + fmt(delta))) + " vs prior week") : "";
-
+ 
     var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(title) + ' trend">' +
       '<line x1="' + padL + '" y1="' + (h-padB) + '" x2="' + (w-padR) + '" y2="' + (h-padB) + '" stroke="var(--line)" stroke-width="1"></line>' +
       '<path d="' + linePath + '" fill="none" stroke="var(--accent-strong)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>' +
       '<path d="' + dashedPath + '" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"></path>' +
       errBar + markers + projMarker +
       '</svg>';
-
+ 
     return '<div class="chart-card">' +
       '<h4>' + esc(title) + '</h4>' +
       '<span class="chart-now">' + esc(fmt(lastPt.y)) + '</span>' + (prevPt ? '<span class="chart-delta ' + deltaClass + '">' + esc(deltaLabel) + '</span>' : '') +
@@ -559,7 +561,7 @@
       pt.addEventListener("mouseleave", hideChartTooltip);
     });
   }
-
+ 
   // ---------- vision ----------
   function renderVision(){
     var v = state.vision || {};
@@ -586,7 +588,7 @@
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
-
+ 
   // ---------- issues ----------
   document.getElementById("issue-filters").addEventListener("click", function(e){
     var btn = e.target.closest(".filter-btn");
@@ -648,7 +650,7 @@
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
-
+ 
   // ---------- rocks ----------
   function renderRocks(){
     var rows = state.rocks.slice().sort(function(a,b){ return (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); });
@@ -708,39 +710,90 @@
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
   document.getElementById("rk-quarter").placeholder = currentQuarterLabel();
-
+ 
   // ---------- field intelligence ----------
   var DIGEST_CATEGORY_ORDER = ["philanthropy", "daf", "fundraising", "sector"];
   var DIGEST_CATEGORY_LABELS = {philanthropy:"Philanthropy", daf:"Donor-advised funds", fundraising:"Fundraising", sector:"Nonprofit sector"};
-  function renderFieldIntel(){
-    var body = document.getElementById("digest-body");
-    var refreshedEl = document.getElementById("digest-refreshed");
-    if(state.digest.length === 0){
-      body.innerHTML = '<p class="empty-note">Nothing logged yet, the first weekly research pass will populate this list.</p>';
-      refreshedEl.textContent = "";
-      return;
-    }
-    var latest = state.digest.reduce(function(max, d){ return (d.loggedAt || "") > max ? (d.loggedAt || "") : max; }, "");
-    refreshedEl.textContent = latest ? ("Last refreshed " + fmtDate(latest.slice(0,10))) : "";
-
+  var speechSupported = (typeof window.speechSynthesis !== "undefined") && (typeof window.SpeechSynthesisUtterance !== "undefined");
+ 
+  // Groups the current digest by category in the same order/sort the cards
+  // render in, so what's read aloud matches what's on screen.
+  function digestByCategory(){
     var byCategory = {};
     state.digest.forEach(function(d){
       var cat = d.category || "philanthropy";
       (byCategory[cat] = byCategory[cat] || []).push(d);
     });
-    body.innerHTML = DIGEST_CATEGORY_ORDER.filter(function(cat){ return byCategory[cat] && byCategory[cat].length; }).map(function(cat){
-      var items = byCategory[cat].slice().sort(function(a,b){ return (a.id || "").localeCompare(b.id || ""); });
-      var cards = items.map(function(d){
+    return DIGEST_CATEGORY_ORDER.filter(function(cat){ return byCategory[cat] && byCategory[cat].length; }).map(function(cat){
+      return { cat: cat, items: byCategory[cat].slice().sort(function(a,b){ return (a.id || "").localeCompare(b.id || ""); }) };
+    });
+  }
+ 
+  function setReadAloudButton(speaking){
+    var btn = document.getElementById("digest-readaloud-btn");
+    if(!btn) return;
+    btn.classList.toggle("is-speaking", speaking);
+    btn.innerHTML = speaking ? "⏹ Stop reading" : "🔈 Read Aloud";
+  }
+ 
+  function stopReadAloud(){
+    if(speechSupported && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    setReadAloudButton(false);
+  }
+ 
+  function toggleReadAloud(){
+    if(!speechSupported) return;
+    if(window.speechSynthesis.speaking){
+      stopReadAloud();
+      return;
+    }
+    var groups = digestByCategory();
+    if(groups.length === 0) return;
+    var parts = [];
+    groups.forEach(function(g){
+      parts.push(DIGEST_CATEGORY_LABELS[g.cat] || g.cat);
+      g.items.forEach(function(d){
+        parts.push((d.headline || "Untitled") + ". " + (d.summary || ""));
+      });
+    });
+    var utter = new SpeechSynthesisUtterance(parts.join(". "));
+    utter.rate = 0.95;
+    utter.onend = function(){ setReadAloudButton(false); };
+    utter.onerror = function(){ setReadAloudButton(false); };
+    setReadAloudButton(true);
+    window.speechSynthesis.speak(utter);
+  }
+ 
+  var readAloudBtnEl = document.getElementById("digest-readaloud-btn");
+  if(readAloudBtnEl) readAloudBtnEl.addEventListener("click", toggleReadAloud);
+ 
+  function renderFieldIntel(){
+    var body = document.getElementById("digest-body");
+    var refreshedEl = document.getElementById("digest-refreshed");
+    var readBtn = document.getElementById("digest-readaloud-btn");
+    if(state.digest.length === 0){
+      body.innerHTML = '<p class="empty-note">Nothing logged yet, the first weekly research pass will populate this list.</p>';
+      refreshedEl.textContent = "";
+      if(readBtn) readBtn.hidden = true;
+      return;
+    }
+    var latest = state.digest.reduce(function(max, d){ return (d.loggedAt || "") > max ? (d.loggedAt || "") : max; }, "");
+    refreshedEl.textContent = latest ? ("Last refreshed " + fmtDate(latest.slice(0,10))) : "";
+    if(readBtn) readBtn.hidden = !speechSupported;
+ 
+    var groups = digestByCategory();
+    body.innerHTML = groups.map(function(g){
+      var cards = g.items.map(function(d){
         return '<div class="digest-card">' +
           '<h4>' + esc(d.headline || "Untitled") + '</h4>' +
           '<p>' + esc(d.summary || "") + '</p>' +
           '<div class="digest-meta"><span>' + esc(d.source || "") + '</span>' + (d.url ? ' &middot; <a href="' + esc(d.url) + '" target="_blank" rel="noopener">Read more</a>' : '') + '</div>' +
           '</div>';
       }).join("");
-      return '<div class="digest-group"><h3>' + esc(DIGEST_CATEGORY_LABELS[cat] || cat) + '</h3>' + cards + '</div>';
+      return '<div class="digest-group"><h3>' + esc(DIGEST_CATEGORY_LABELS[g.cat] || g.cat) + '</h3>' + cards + '</div>';
     }).join("");
   }
-
+ 
   // ---------- process library (static reference) ----------
   var PROCESS_DOCS = [
     {title:"Fundraising Fluency", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/3685944c-47a2-43b8-9e43-5b5061caa685"},
@@ -763,7 +816,7 @@
   document.getElementById("process-rows").innerHTML = PROCESS_DOCS.map(function(d){
     return '<tr><td><strong>' + esc(d.title) + '</strong></td><td class="dim">' + esc(d.type) + '</td><td><span class="pill">' + esc(d.feeds) + '</span></td><td><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Open</a></td></tr>';
   }).join("") + '<tr><td><strong>The Frankly Inspired Operating System</strong></td><td class="dim">Operating system</td><td><span class="pill gold">All five components, live</span></td><td class="dim">You are here</td></tr>';
-
+ 
   // ---------- bootstrap ----------
   function renderAll(){
     renderBriefing();
@@ -777,7 +830,7 @@
     renderRocks();
     renderFieldIntel();
   }
-
+ 
   function onApiUnavailable(){
     document.getElementById("db-banner").hidden = false;
     document.getElementById("load-note").hidden = true;
@@ -787,7 +840,7 @@
     });
     renderAll();
   }
-
+ 
   loadState().then(function(){
     apiReady = true;
     document.getElementById("load-note").hidden = true;
@@ -795,6 +848,7 @@
   }).catch(function(){
     onApiUnavailable();
   });
-
+ 
   renderAll();
 })();
+ 

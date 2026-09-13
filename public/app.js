@@ -32,6 +32,32 @@
   var TRACK_LABELS = {undecided:"Undecided", coaching:"Coaching", consulting:"Project Consulting", institutionalos:"InstitutionalOS Assessment"};
   var CLOSED_STAGES = {graduated:1, referred:1, lost:1};
 
+  // A small status-health dot, generalizing the overdue highlighting into a
+  // glance indicator used on Pipeline rows, Prospecting rows, and the
+  // Dashboard next-actions list. Returns "" for records that don't need one
+  // (closed pipeline stages).
+  function dotHtml(kind){
+    return kind ? '<span class="status-dot dot-' + kind + '"></span>' : "";
+  }
+  function pipelineHealth(p){
+    if(CLOSED_STAGES[p.stage]) return null;
+    if(!p.nextStepDate) return "neutral";
+    var today = todayStr();
+    if(p.nextStepDate < today) return "warn";
+    var days = Math.round((new Date(p.nextStepDate) - new Date(today)) / 86400000);
+    return days <= 3 ? "attn" : "good";
+  }
+  function prospectHealth(p){
+    if(p.status === "not-fit") return "neutral";
+    if(p.status === "responded" || p.status === "meeting") return "good";
+    if(p.status === "new"){
+      var created = (p.createdAt || "").slice(0,10);
+      var days = created ? (new Date(todayStr()) - new Date(created)) / 86400000 : 0;
+      return days > 7 ? "warn" : "neutral";
+    }
+    return "attn"; // researching, contacted
+  }
+
   var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], vision:null, ready:false };
   var pipelineFilter = "all";
   var issueFilter = "all";
@@ -196,7 +222,7 @@
     } else {
       nextEl.innerHTML = nextList.map(function(p){
         var overdue = isOverduePipeline(p);
-        return '<li' + (overdue ? ' class="row-overdue"' : '') + '><span><span class="who">' + esc(p.name || "Untitled") + '</span> &middot; ' + esc(p.nextStep || "next step not set") + '</span><span class="when">' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span></li>';
+        return '<li' + (overdue ? ' class="row-overdue"' : '') + '><span>' + dotHtml(pipelineHealth(p)) + '<span class="who">' + esc(p.name || "Untitled") + '</span> &middot; ' + esc(p.nextStep || "next step not set") + '</span><span class="when">' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span></li>';
       }).join("");
     }
 
@@ -213,6 +239,23 @@
       }).join("");
     }
   }
+
+  // ---------- dashboard stat tiles (clickable, jump to the relevant view) ----------
+  function goToView(view){
+    var btn = document.querySelector('#app-nav .rail-btn[data-view="' + view + '"]');
+    if(btn) btn.click();
+  }
+  document.getElementById("stat-tile-active").addEventListener("click", function(){ goToView("pipeline"); });
+  document.getElementById("stat-tile-rocks").addEventListener("click", function(){ goToView("rocks"); });
+  document.getElementById("stat-tile-weeks").addEventListener("click", function(){ goToView("scorecard"); });
+  document.getElementById("stat-tile-issues").addEventListener("click", function(){
+    issueFilter = "open";
+    document.querySelectorAll("#issue-filters .filter-btn").forEach(function(b){
+      b.classList.toggle("is-active", b.getAttribute("data-status") === "open");
+    });
+    renderIssues();
+    goToView("issues");
+  });
 
   // ---------- api helpers ----------
   function apiFetch(url, opts){
@@ -276,7 +319,7 @@
       }).join("");
       var overdue = isOverduePipeline(p);
       return '<tr data-id="' + esc(p.id) + '"' + (overdue ? ' class="row-overdue"' : '') + '>' +
-        '<td><strong>' + esc(p.name || "Untitled") + '</strong>' + (p.org ? '<div class="dim">' + esc(p.org) + '</div>' : '') + '</td>' +
+        '<td>' + dotHtml(pipelineHealth(p)) + '<strong>' + esc(p.name || "Untitled") + '</strong>' + (p.org ? '<div class="dim">' + esc(p.org) + '</div>' : '') + '</td>' +
         '<td>' + esc(TRACK_LABELS[p.track] || "Undecided") + '</td>' +
         '<td><select class="inline-select pl-stage-select">' + stageOptions + '</select></td>' +
         '<td>' + esc(p.nextStep || "") + '</td>' +
@@ -345,7 +388,7 @@
         ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener">' + esc(p.name || "Untitled") + '</a>'
         : esc(p.name || "Untitled");
       return '<tr data-id="' + esc(p.id) + '">' +
-        '<td><strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</div></td>' +
+        '<td>' + dotHtml(prospectHealth(p)) + '<strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</div></td>' +
         '<td class="dim">' + esc(p.org || "") + '</td>' +
         '<td class="dim">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</td>' +
         '<td><select class="inline-select ps-stage-select">' + opts + '</select></td>' +
@@ -662,6 +705,42 @@
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
 
+  // ---------- rocks: calendar export ----------
+  // A lightweight "add to calendar" for a Rock's due date - a standalone .ics
+  // file built and downloaded client-side, no backend involved.
+  function icsDateStamp(iso){ return iso.replace(/-/g,""); }
+  function buildICS(rock){
+    var dtStart = icsDateStamp(rock.dueDate);
+    var endDate = new Date(rock.dueDate + "T00:00:00");
+    endDate.setDate(endDate.getDate() + 1);
+    var dtEnd = icsDateStamp(endDate.toISOString().slice(0,10));
+    var stamp = new Date().toISOString().replace(/[-:]/g,"").split(".")[0] + "Z";
+    var esc2 = function(s){ return String(s || "").replace(/([,;])/g, "\\$1").replace(/\n/g, "\\n"); };
+    var lines = [
+      "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Frankly Inspired OS//Priorities//EN",
+      "BEGIN:VEVENT",
+      "UID:" + rock.id + "@frankly-inspired-os",
+      "DTSTAMP:" + stamp,
+      "DTSTART;VALUE=DATE:" + dtStart,
+      "DTEND;VALUE=DATE:" + dtEnd,
+      "SUMMARY:" + esc2("Priority due: " + (rock.title || "Untitled")),
+      rock.notes ? "DESCRIPTION:" + esc2(rock.notes) : "",
+      "END:VEVENT","END:VCALENDAR"
+    ].filter(Boolean);
+    return lines.join("\r\n");
+  }
+  function downloadICS(rock){
+    var blob = new Blob([buildICS(rock)], { type: "text/calendar;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = (rock.title || "priority").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"") + ".ics";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
   // ---------- rocks ----------
   function renderRocks(){
     var rows = state.rocks.slice().sort(function(a,b){ return (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); });
@@ -679,7 +758,7 @@
         '<td><strong>' + esc(r.title || "Untitled") + '</strong></td>' +
         '<td class="dim">' + esc(r.quarter || "") + '</td>' +
         '<td><select class="inline-select rk-status-select">' + opts + '</select></td>' +
-        '<td class="dim">' + fmtDate(r.dueDate) + '</td>' +
+        '<td class="dim">' + fmtDate(r.dueDate) + (r.dueDate ? ' <a href="#" class="ics-link rk-ics" data-id="' + esc(r.id) + '">+ Calendar</a>' : '') + '</td>' +
         '<td class="dim">' + esc(r.notes || "") + '</td>' +
         '<td><button type="button" class="btn danger rk-delete">Remove</button></td>' +
         '</tr>';
@@ -693,6 +772,13 @@
       .catch(function(err){ console.error(err); });
   });
   document.getElementById("rock-rows").addEventListener("click", function(e){
+    var icsBtn = e.target.closest(".rk-ics");
+    if(icsBtn){
+      e.preventDefault();
+      var rock = state.rocks.filter(function(r){ return r.id === icsBtn.getAttribute("data-id"); })[0];
+      if(rock) downloadICS(rock);
+      return;
+    }
     var btn = e.target.closest(".rk-delete");
     if(!btn) return;
     var id = btn.closest("tr").getAttribute("data-id");
@@ -721,6 +807,197 @@
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
   document.getElementById("rk-quarter").placeholder = currentQuarterLabel();
+
+  // ---------- weekly session (guided L10-style flow) ----------
+  var sessionStep = 0;
+  var SESSION_STEP_COUNT = 5;
+
+  function mondayOf(dstr){
+    var d = dstr ? new Date(dstr + "T00:00:00") : new Date();
+    var day = d.getDay();
+    var diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().slice(0,10);
+  }
+
+  function goToSessionStep(n){
+    sessionStep = Math.max(0, Math.min(SESSION_STEP_COUNT - 1, n));
+    document.querySelectorAll(".session-step").forEach(function(btn){
+      btn.classList.toggle("is-active", Number(btn.getAttribute("data-step")) === sessionStep);
+    });
+    document.querySelectorAll(".session-panel").forEach(function(p){
+      p.hidden = Number(p.getAttribute("data-panel")) !== sessionStep;
+    });
+    document.getElementById("session-back").disabled = sessionStep === 0;
+    document.getElementById("session-next").textContent = sessionStep === SESSION_STEP_COUNT - 1 ? "Start over" : "Next";
+    renderSessionPanel();
+  }
+
+  function renderSessionPanel(){
+    if(sessionStep === 0) renderSessionScorecard();
+    else if(sessionStep === 1) renderSessionRocks();
+    else if(sessionStep === 2) renderSessionIssues();
+    else if(sessionStep === 3) renderSessionVision();
+    else renderSessionRecap();
+  }
+
+  function renderSessionScorecard(){
+    var wk = mondayOf();
+    var existing = state.scorecard.filter(function(s){ return s.weekOf === wk; })[0];
+    var loggedEl = document.getElementById("session-scorecard-logged");
+    var formEl = document.getElementById("session-scorecard-form");
+    var weekInput = document.getElementById("sess-week");
+    if(weekInput && !weekInput.value) weekInput.value = wk;
+    if(existing){
+      loggedEl.hidden = false;
+      formEl.hidden = true;
+      document.getElementById("session-week-label").textContent = fmtDate(existing.weekOf);
+      document.getElementById("session-week-summary").textContent =
+        (existing.calls||0) + " calls, " + (existing.leads||0) + " new leads, " + (existing.won||0) + " won, " + (existing.lost||0) + " lost";
+    } else {
+      loggedEl.hidden = true;
+      formEl.hidden = false;
+    }
+  }
+  document.getElementById("session-scorecard-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("sess-sc-status");
+    var week = document.getElementById("sess-week").value;
+    if(!week) return;
+    var data = {
+      weekOf: week,
+      calls: Number(document.getElementById("sess-calls").value || 0),
+      leads: Number(document.getElementById("sess-leads").value || 0),
+      active: 0,
+      won: Number(document.getElementById("sess-won").value || 0),
+      lost: Number(document.getElementById("sess-lost").value || 0),
+      referrals: 0,
+      notes: ""
+    };
+    apiFetch("/api/scorecard", { method: "POST", body: data }).then(function(){
+      statusEl.textContent = "Logged.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).then(function(){
+      if(sessionStep === 0) renderSessionScorecard();
+    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+
+  function renderSessionRocks(){
+    var list = document.getElementById("session-rocks-list");
+    var rows = state.rocks.slice().sort(function(a,b){ return (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); });
+    if(rows.length === 0){
+      list.innerHTML = '<li class="session-empty">No priorities logged for this quarter yet. Add some from the Priorities tab.</li>';
+      return;
+    }
+    list.innerHTML = rows.map(function(r){
+      var dot = r.status === "on-track" ? "good" : (r.status === "off-track" ? "warn" : "neutral");
+      var opts = ["on-track","off-track","done"].map(function(k){
+        var label = k === "on-track" ? "On Track" : (k === "off-track" ? "Off Track" : "Done");
+        return '<option value="' + k + '"' + (r.status === k ? " selected" : "") + '>' + label + '</option>';
+      }).join("");
+      return '<li data-id="' + esc(r.id) + '">' +
+        '<span>' + dotHtml(dot) + '<span class="who">' + esc(r.title || "Untitled") + '</span></span>' +
+        '<span><select class="inline-select session-rock-status">' + opts + '</select></span>' +
+        '</li>';
+    }).join("");
+  }
+  document.getElementById("session-rocks-list").addEventListener("change", function(e){
+    if(!e.target.classList.contains("session-rock-status")) return;
+    var id = e.target.closest("li").getAttribute("data-id");
+    apiFetch("/api/rocks/" + id, { method: "PATCH", body: { status: e.target.value } })
+      .then(refreshAndRender)
+      .then(function(){ if(sessionStep === 1) renderSessionRocks(); })
+      .catch(function(err){ console.error(err); });
+  });
+
+  function renderSessionIssues(){
+    var list = document.getElementById("session-issues-list");
+    var rows = state.issues.filter(function(i){ return i.status !== "solved"; })
+      .sort(function(a,b){ return (a.createdAt || "").localeCompare(b.createdAt || ""); });
+    if(rows.length === 0){
+      list.innerHTML = '<li class="session-empty">No open issues. Clean list.</li>';
+      return;
+    }
+    list.innerHTML = rows.map(function(i){
+      return '<li data-id="' + esc(i.id) + '">' +
+        '<span>' + dotHtml("warn") + '<span class="who">' + esc(i.title || "Untitled") + '</span></span>' +
+        '<span><button type="button" class="btn secondary session-issue-solve" data-id="' + esc(i.id) + '">Mark solved</button></span>' +
+        '</li>';
+    }).join("");
+  }
+  document.getElementById("session-issues-list").addEventListener("click", function(e){
+    var btn = e.target.closest(".session-issue-solve");
+    if(!btn) return;
+    apiFetch("/api/issues/" + btn.getAttribute("data-id"), { method: "PATCH", body: { status: "solved" } })
+      .then(refreshAndRender)
+      .then(function(){ if(sessionStep === 2) renderSessionIssues(); })
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("session-issue-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("sess-is-status");
+    var titleEl = document.getElementById("sess-is-title");
+    var title = titleEl.value.trim();
+    if(!title) return;
+    apiFetch("/api/issues", { method: "POST", body: { title: title, detail: "" } }).then(function(){
+      titleEl.value = "";
+      statusEl.textContent = "Added.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).then(function(){ if(sessionStep === 2) renderSessionIssues(); })
+      .catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+
+  function visionGlanceField(label, value){
+    var v = (value || "").trim();
+    return '<div class="vg-field"><span class="vg-label">' + esc(label) + '</span><span class="vg-value' + (v ? '' : ' is-empty') + '">' +
+      (v ? esc(v) : "Not set yet, edit from the Vision tab.") + '</span></div>';
+  }
+  function renderSessionVision(){
+    var v = state.vision || {};
+    document.getElementById("session-vision-view").innerHTML =
+      visionGlanceField("Core values", v.values) +
+      visionGlanceField("Core focus", v.focus) +
+      visionGlanceField("One year plan", v.oneYear);
+  }
+
+  function renderSessionRecap(){
+    var openIssues = state.issues.filter(function(i){ return i.status !== "solved"; });
+    var offTrack = state.rocks.filter(function(r){ return r.status === "off-track"; });
+    var onTrack = state.rocks.filter(function(r){ return r.status === "on-track"; });
+    var wk = mondayOf();
+    var thisWeek = state.scorecard.filter(function(s){ return s.weekOf === wk; })[0];
+    var waiting = state.prospects.filter(function(p){ return p.status !== "not-fit"; }).length;
+
+    var lines = [
+      { dot: thisWeek ? "good" : "neutral", text: thisWeek
+        ? (thisWeek.calls||0) + " calls and " + (thisWeek.leads||0) + " new leads logged this week."
+        : "This week's numbers are not logged yet." },
+      { dot: offTrack.length ? "warn" : "good", text: offTrack.length
+        ? offTrack.length + " priorit" + (offTrack.length === 1 ? "y" : "ies") + " off track this quarter."
+        : onTrack.length + " priorit" + (onTrack.length === 1 ? "y" : "ies") + " on track, none off track." },
+      { dot: openIssues.length ? "attn" : "good", text: openIssues.length
+        ? openIssues.length + " open issue" + (openIssues.length === 1 ? "" : "s") + " still on the list."
+        : "Issues list is clean." },
+      { dot: waiting ? "attn" : "neutral", text: waiting
+        ? waiting + " prospect" + (waiting === 1 ? "" : "s") + " waiting on research or outreach."
+        : "Nothing waiting in Prospecting." }
+    ];
+    document.getElementById("session-recap").innerHTML = lines.map(function(l){
+      return '<div class="session-recap-line">' + dotHtml(l.dot) + '<span>' + esc(l.text) + '</span></div>';
+    }).join("");
+  }
+
+  document.getElementById("session-steps").addEventListener("click", function(e){
+    var btn = e.target.closest(".session-step");
+    if(!btn) return;
+    goToSessionStep(Number(btn.getAttribute("data-step")));
+  });
+  document.getElementById("session-back").addEventListener("click", function(){ goToSessionStep(sessionStep - 1); });
+  document.getElementById("session-next").addEventListener("click", function(){
+    goToSessionStep(sessionStep === SESSION_STEP_COUNT - 1 ? 0 : sessionStep + 1);
+  });
 
   // ---------- field intelligence ----------
   var DIGEST_CATEGORY_ORDER = ["philanthropy", "daf", "fundraising", "sector"];
@@ -831,6 +1108,7 @@
   // ---------- bootstrap ----------
   function renderAll(){
     renderBriefing();
+    renderSessionPanel();
     renderDashboard();
     renderPipeline();
     renderProspecting();
@@ -845,7 +1123,7 @@
   function onApiUnavailable(){
     document.getElementById("db-banner").hidden = false;
     document.getElementById("load-note").hidden = true;
-    ["pl-submit","sc-submit","is-submit","rk-submit","vision-save","ps-submit"].forEach(function(id){
+    ["pl-submit","sc-submit","is-submit","rk-submit","vision-save","ps-submit","sess-sc-submit","sess-is-submit"].forEach(function(id){
       var el = document.getElementById(id);
       if(el) el.disabled = true;
     });

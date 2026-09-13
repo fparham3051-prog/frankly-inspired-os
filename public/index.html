@@ -29,10 +29,10 @@
     <h1 class="title">The Frankly Inspired Operating System</h1>
     <p class="dek">One live tool for running the practice itself, not a client deliverable. Open it each morning for a spoken briefing, then work the pipeline from first call to graduation, a prospecting list, a weekly scorecard with trend forecasts, the standing vision, the open issues list, and the priorities for the quarter, all in one place, all saved as you go.</p>
     <div class="stat-row">
-      <div class="stat"><span class="num mono" id="stat-active">...</span><span class="cap">active pipeline records</span></div>
-      <div class="stat"><span class="num mono" id="stat-issues">...</span><span class="cap">open issues</span></div>
-      <div class="stat"><span class="num mono" id="stat-rocks">...</span><span class="cap">priorities on track this quarter</span></div>
-      <div class="stat"><span class="num mono" id="stat-weeks">...</span><span class="cap">scorecard weeks logged</span></div>
+      <button type="button" class="stat is-clickable" id="stat-tile-active" title="Open Pipeline"><span class="num mono" id="stat-active">...</span><span class="cap">active pipeline records</span></button>
+      <button type="button" class="stat is-clickable" id="stat-tile-issues" title="Open Issues List, filtered to open"><span class="num mono" id="stat-issues">...</span><span class="cap">open issues</span></button>
+      <button type="button" class="stat is-clickable" id="stat-tile-rocks" title="Open Priorities"><span class="num mono" id="stat-rocks">...</span><span class="cap">priorities on track this quarter</span></button>
+      <button type="button" class="stat is-clickable" id="stat-tile-weeks" title="Open Scorecard"><span class="num mono" id="stat-weeks">...</span><span class="cap">scorecard weeks logged</span></button>
     </div>
   </div>
 </div>
@@ -41,6 +41,7 @@
   <nav class="rail" aria-label="Section navigation" id="app-nav">
     <div class="rail-label">Morning</div>
     <button type="button" class="rail-btn is-active" data-view="briefing">Daily Briefing</button>
+    <button type="button" class="rail-btn" data-view="session">Weekly Session</button>
     <div class="rail-label">Run the practice</div>
     <button type="button" class="rail-btn" data-view="dashboard">Dashboard</button>
     <button type="button" class="rail-btn" data-view="pipeline">Pipeline</button>
@@ -86,6 +87,71 @@
       <div class="example-box good">
         <span class="eb-label">How this is built</span>
         <p class="extra">The briefing is assembled from simple rules run against your own data, right in this page: nearest next steps, oldest open issues, priorities at risk, and the week over week trend from the Scorecard. It is not a language model summarizing the business, it is the same discipline Call Before You Build and the weekly EOS style scorecard already ask for, just read back instead of scanned. Read aloud uses this browser's own text to speech, nothing is sent anywhere to generate it.</p>
+      </div>
+    </section>
+
+    <!-- ================= WEEKLY SESSION ================= -->
+    <section class="view" data-view="session" hidden>
+      <div class="view-head"><h2>Weekly Session</h2><span class="tag">the L10, sized for one</span></div>
+      <p class="view-intro">A short guided pass through the same four things a good EOS Level 10 meeting covers: this week's numbers, the quarter's priorities, the open issues list, and a gut check against Vision. Run it end to end once a week, or jump straight to whichever step the practice needs today.</p>
+
+      <div class="fw-card session-card">
+        <div class="session-steps" id="session-steps">
+          <button type="button" class="session-step is-active" data-step="0"><span class="session-step-num">1</span><span>Numbers</span></button>
+          <button type="button" class="session-step" data-step="1"><span class="session-step-num">2</span><span>Priorities</span></button>
+          <button type="button" class="session-step" data-step="2"><span class="session-step-num">3</span><span>Issues</span></button>
+          <button type="button" class="session-step" data-step="3"><span class="session-step-num">4</span><span>Vision check</span></button>
+          <button type="button" class="session-step" data-step="4"><span class="session-step-num">5</span><span>Recap</span></button>
+        </div>
+
+        <div class="session-panel" data-panel="0">
+          <h3>This week's numbers</h3>
+          <div id="session-scorecard-logged" hidden>
+            <p class="session-empty" style="padding-top:0;">Already logged for the week of <strong id="session-week-label"></strong>: <span id="session-week-summary"></span>. Edit it from the Scorecard tab if a number needs correcting.</p>
+          </div>
+          <form id="session-scorecard-form">
+            <div class="form-grid">
+              <div class="field"><label for="sess-week">Week of</label><input id="sess-week" type="date" required></div>
+              <div class="field"><label for="sess-calls">Discovery calls made</label><input id="sess-calls" type="number" min="0" step="1" value="0"></div>
+              <div class="field"><label for="sess-leads">New leads added</label><input id="sess-leads" type="number" min="0" step="1" value="0"></div>
+              <div class="field"><label for="sess-won">Engagements won</label><input id="sess-won" type="number" min="0" step="1" value="0"></div>
+              <div class="field"><label for="sess-lost">Opportunities lost</label><input id="sess-lost" type="number" min="0" step="1" value="0"></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn" id="sess-sc-submit">Log this week</button><span class="save-status" id="sess-sc-status"></span></div>
+          </form>
+        </div>
+
+        <div class="session-panel" data-panel="1" hidden>
+          <h3>This quarter's priorities</h3>
+          <ul class="action-list" id="session-rocks-list"><li class="session-empty">Loading...</li></ul>
+        </div>
+
+        <div class="session-panel" data-panel="2" hidden>
+          <h3>Open issues</h3>
+          <ul class="action-list" id="session-issues-list"><li class="session-empty">Loading...</li></ul>
+          <form id="session-issue-form" style="margin-top:14px;">
+            <div class="form-grid">
+              <div class="field wide"><label for="sess-is-title">New issue, if one came up this week</label><input id="sess-is-title" placeholder="short, one line"></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn secondary" id="sess-is-submit">Add issue</button><span class="save-status" id="sess-is-status"></span></div>
+          </form>
+        </div>
+
+        <div class="session-panel" data-panel="3" hidden>
+          <h3>Vision, at a glance</h3>
+          <div class="vision-glance" id="session-vision-view"></div>
+        </div>
+
+        <div class="session-panel" data-panel="4" hidden>
+          <h3>This week's recap</h3>
+          <div id="session-recap"></div>
+        </div>
+
+        <div class="form-actions session-nav">
+          <button type="button" class="btn secondary" id="session-back" disabled>Back</button>
+          <button type="button" class="btn" id="session-next">Next</button>
+          <span class="save-status" id="session-status"></span>
+        </div>
       </div>
     </section>
 

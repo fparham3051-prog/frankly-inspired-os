@@ -102,10 +102,11 @@ img{max-width:100%;}
   @media (max-width:820px){nav.rail{position:static;flex-direction:row;flex-wrap:wrap;gap:8px 14px;padding-bottom:8px;border-bottom:1px solid var(--line);}}
   nav.rail .rail-label{color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.1em;font-size:0.68rem;margin:14px 0 2px 12px;}
   @media (max-width:820px){nav.rail .rail-label{display:none;}}
-  nav.rail button.rail-btn{all:unset;display:block;cursor:pointer;color:var(--ink-soft);padding:6px 0 6px 12px;border-left:2px solid transparent;font-family:'IBM Plex Mono', monospace;font-size:0.8rem;}
-  @media (max-width:820px){nav.rail button.rail-btn{border-left:none;padding-left:0;}}
-  nav.rail button.rail-btn:hover{color:var(--ink);border-left-color:var(--line);}
+  nav.rail button.rail-btn, nav.rail a.rail-link{all:unset;display:block;cursor:pointer;color:var(--ink-soft);padding:6px 0 6px 12px;border-left:2px solid transparent;font-family:'IBM Plex Mono', monospace;font-size:0.8rem;}
+  @media (max-width:820px){nav.rail button.rail-btn, nav.rail a.rail-link{border-left:none;padding-left:0;}}
+  nav.rail button.rail-btn:hover, nav.rail a.rail-link:hover{color:var(--ink);border-left-color:var(--line);}
   nav.rail button.rail-btn.is-active{color:var(--accent-strong);border-left-color:var(--accent);font-weight:600;}
+  nav.rail a.rail-link{color:var(--accent-2);}
 
   main{min-width:0;}
   .view{margin-bottom:8px;}

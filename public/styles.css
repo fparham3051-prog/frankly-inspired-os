@@ -251,6 +251,38 @@ img{max-width:100%;}
   .ics-link{font-family:'IBM Plex Mono', monospace;font-size:0.7rem;color:var(--accent-strong);text-decoration:none;border:1px solid var(--line);border-radius:100px;padding:2px 9px;white-space:nowrap;margin-left:8px;}
   .ics-link:hover{background:var(--surface-2);}
 
+  /* ---------- Giving Landscape (national bars, gift ticker, state grid) ---------- */
+  .giving-bars{display:flex;flex-direction:column;gap:11px;margin:14px 0 4px;}
+  .gb-row{display:grid;grid-template-columns:172px 1fr auto;gap:14px;align-items:center;}
+  @media (max-width:600px){.gb-row{grid-template-columns:1fr;gap:4px;}}
+  .gb-label{font-size:0.86rem;color:var(--ink);}
+  .gb-track{background:var(--surface-2);border-radius:100px;height:13px;overflow:hidden;}
+  .gb-fill{height:100%;border-radius:100px;background:var(--accent-2);}
+  .gb-value{font-family:'IBM Plex Mono', monospace;font-size:0.78rem;color:var(--ink-soft);white-space:nowrap;text-align:right;}
+  .gb-growth{display:inline-block;margin-left:8px;font-size:0.68rem;}
+  .gb-growth.up{color:var(--good);}
+  .gb-growth.down{color:var(--warn);}
+
+  .gift-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:14px 18px;margin-bottom:12px;}
+  .gift-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;}
+  .gift-card-head h4{font-family:'Public Sans', sans-serif;font-size:0.98rem;font-weight:600;margin:0;color:var(--ink);}
+  .gift-amount{font-family:'IBM Plex Mono', monospace;font-size:1.05rem;font-weight:600;color:var(--accent-strong);white-space:nowrap;}
+  .gift-card p{margin:6px 0 8px;color:var(--ink-soft);font-size:0.9rem;max-width:74ch;}
+  .gift-meta{font-family:'IBM Plex Mono', monospace;font-size:0.7rem;color:var(--ink-soft);display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .gift-meta a{color:var(--accent-strong);}
+
+  .state-grid{display:flex;flex-direction:column;gap:16px;margin-top:12px;}
+  .state-region h4{font-family:'IBM Plex Mono', monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-soft);margin:0 0 8px;}
+  .state-tiles{display:flex;flex-wrap:wrap;gap:6px;}
+  /* Magnitude is encoded as a bottom bar's opacity, never as the tile's own
+     background - text always sits on the stable --surface-2 ground so it stays
+     legible regardless of how much a given state has logged. */
+  button.state-tile{all:unset;position:relative;overflow:hidden;box-sizing:border-box;width:56px;height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:6px;border:1px solid var(--line);cursor:pointer;font-family:'IBM Plex Mono', monospace;background:var(--surface-2);color:var(--ink-soft);}
+  button.state-tile .st-abbr{font-size:0.76rem;font-weight:600;color:var(--ink);}
+  button.state-tile .st-count{font-size:0.6rem;}
+  button.state-tile .st-bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--accent-2);}
+  button.state-tile.is-selected{outline:2px solid var(--accent-strong);outline-offset:1px;}
+
   .digest-refreshed{font-size:0.84rem;color:var(--ink-soft);margin:0 0 20px;}
   .digest-group{margin-bottom:26px;}
   .digest-group h3{font-size:1.02rem;margin-bottom:10px;}

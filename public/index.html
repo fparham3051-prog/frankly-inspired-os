@@ -40,8 +40,10 @@
 
 <div class="wrap layout">
   <nav class="rail" aria-label="Section navigation" id="app-nav">
+    <div class="rail-label">Landing</div>
+    <button type="button" class="rail-btn is-active" data-view="landscape">Giving Landscape</button>
     <div class="rail-label">Morning</div>
-    <button type="button" class="rail-btn is-active" data-view="briefing">Daily Briefing</button>
+    <button type="button" class="rail-btn" data-view="briefing">Daily Briefing</button>
     <button type="button" class="rail-btn" data-view="session">Weekly Session</button>
     <div class="rail-label">Run the practice</div>
     <button type="button" class="rail-btn" data-view="dashboard">Dashboard</button>
@@ -66,8 +68,75 @@
     <p class="load-note" id="load-note">Connecting to your data...</p>
     <div class="chart-tooltip" id="chart-tooltip" hidden></div>
 
+    <!-- ================= GIVING LANDSCAPE (landing page) ================= -->
+    <section class="view" data-view="landscape">
+      <div class="view-head"><h2>Giving Landscape</h2><span class="tag">the market, live</span></div>
+      <p class="view-intro">Where the philanthropic dollar is going nationally, and where Frankly Inspired's own tracked gifts are showing up, state by state. The national chart is reference data from Giving USA. The ticker and the state breakdown are this practice's own log of publicly announced major gifts, refreshed weekly alongside Field Intelligence, and built by hand here whenever one comes up in conversation.</p>
+
+      <div class="stat-grid">
+        <div class="stat-card"><span class="num mono" id="gl-stat-total-national">$617.2B</span><span class="cap">total U.S. charitable giving, 2025 (Giving USA 2026)</span></div>
+        <div class="stat-card"><span class="num mono" id="gl-stat-gift-count">0</span><span class="cap">major gifts logged this year</span></div>
+        <div class="stat-card"><span class="num mono" id="gl-stat-gift-total">$0</span><span class="cap">tracked across those gifts</span></div>
+        <div class="stat-card"><span class="num mono" id="gl-stat-state-count">0</span><span class="cap">states with a gift logged</span></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>Where the Philanthropic Dollar Goes, Nationally</h3>
+        <p>Giving USA's nine recipient categories for 2025, the most recent year reported. Religion remains the largest single category; education, public-society benefit, and environment/animals organizations grew the fastest year over year.</p>
+        <div class="giving-bars" id="gl-national-bars"></div>
+        <div class="example-box">
+          <span class="eb-label">On these figures</span>
+          <p class="extra">Giving USA reports each category as a share of total giving, rounded to the nearest percentage point (they add to 101% for that reason, a normal rounding artifact, not an error). The dollar figures above are that share applied to the confirmed 2025 total of $617.20 billion, since several secondary summaries of the report quote category dollar figures that do not reconcile with each other or with the total. Source: Giving USA 2026, the Giving USA Foundation and the Indiana University Lilly Family School of Philanthropy.</p>
+        </div>
+      </div>
+
+      <div class="fw-card">
+        <div class="digest-toolbar">
+          <h3 style="margin:0;">The Weekly Gift Ticker</h3>
+          <span class="pill gold" id="gl-ticker-refreshed">No gifts logged yet</span>
+        </div>
+        <p>Major named gifts as they're publicly announced, six figures and up. Logged automatically once a week alongside Field Intelligence, or add one directly below the moment it comes up.</p>
+
+        <div class="toolbar" id="gl-category-filters">
+          <button type="button" class="filter-btn is-active" data-cat="all">All categories</button>
+        </div>
+
+        <div id="gl-ticker-list"><p class="empty-note">Nothing logged yet. Add the first major gift below, or wait for this week's Field Intelligence pass.</p></div>
+
+        <form class="entry-form" id="gift-form" style="margin-top:18px;">
+          <div class="form-title">Log a major gift</div>
+          <div class="form-grid">
+            <div class="field"><label for="gf-donor">Donor (if public)</label><input id="gf-donor" placeholder="MacKenzie Scott, an anonymous alum, etc."></div>
+            <div class="field"><label for="gf-org">Recipient organization</label><input id="gf-org" required></div>
+            <div class="field"><label for="gf-state">Recipient's state</label><select id="gf-state"></select></div>
+            <div class="field"><label for="gf-category">Category</label><select id="gf-category"></select></div>
+            <div class="field"><label for="gf-amount">Amount ($)</label><input id="gf-amount" type="number" min="0" step="1000"></div>
+            <div class="field"><label for="gf-date">Announced</label><input id="gf-date" type="date"></div>
+            <div class="field wide"><label for="gf-headline">Headline</label><input id="gf-headline" placeholder="short, one line"></div>
+            <div class="field"><label for="gf-source">Source</label><input id="gf-source" placeholder="Chronicle of Philanthropy, a press release, etc."></div>
+            <div class="field"><label for="gf-url">Link</label><input id="gf-url" type="url" placeholder="https://..."></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="gf-submit">Log gift</button>
+            <span class="save-status" id="gf-status"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="fw-card">
+        <h3>By State</h3>
+        <p>Grouped by U.S. Census region rather than plotted on a literal map, so a state's position is never a guess, only its data is shown. Click a state for the aggregate a director in that state would ask about: how many gifts, how much, and the most recent one.</p>
+        <div class="state-grid" id="gl-state-grid"></div>
+        <div class="fw-card" id="gl-state-detail" hidden style="background:var(--surface-2);box-shadow:none;margin-top:16px;margin-bottom:0;"></div>
+        <div class="table-wrap" style="margin-top:16px;"><table>
+          <thead><tr><th>State</th><th>Gifts logged</th><th>Total tracked</th><th>Most recent</th></tr></thead>
+          <tbody id="gl-state-table"><tr><td colspan="4" class="empty-note">No gifts logged yet.</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
     <!-- ================= DAILY BRIEFING ================= -->
-    <section class="view" data-view="briefing">
+    <section class="view" data-view="briefing" hidden>
       <div class="view-head"><h2>Daily Briefing</h2><span class="tag">start here</span></div>
       <p class="view-intro">A short, spoken style readout of where the practice stands this morning, written fresh from whatever is in Pipeline, Scorecard, Issues, and Priorities right now. Nothing is stored here, it regenerates every time you open the tool.</p>
 

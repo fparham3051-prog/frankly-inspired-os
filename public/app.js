@@ -58,10 +58,46 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], vision:null, ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, ready:false };
   var pipelineFilter = "all";
   var issueFilter = "all";
+  var giftCategoryFilter = "all";
+  var selectedGiftState = null;
   var apiReady = false;
+
+  // Giving USA 2026 report's nine recipient-subsector categories for 2025 giving
+  // (the most recent year reported). Percentages are Giving USA's own rounded
+  // category shares; dollar amounts here are that share applied to the
+  // confirmed $617.20B total rather than any single secondary source's dollar
+  // column, several of which quote figures that don't reconcile with each
+  // other or with the total. Growth figures are only shown where a source
+  // explicitly stated one; the rest show no figure rather than a guess.
+  var GIVING_USA_CATEGORIES = [
+    { key: "religion", label: "Religion", pct: 23, amountB: 141.96, growth: -0.2 },
+    { key: "human-services", label: "Human Services", pct: 15, amountB: 92.58, growth: null },
+    { key: "education", label: "Education", pct: 14, amountB: 86.41, growth: 11.7 },
+    { key: "foundations", label: "Gifts to Foundations", pct: 12, amountB: 74.06, growth: -16.2 },
+    { key: "public-society-benefit", label: "Public-Society Benefit", pct: 11, amountB: 67.89, growth: 11.6 },
+    { key: "health", label: "Health", pct: 9, amountB: 55.55, growth: null },
+    { key: "international-affairs", label: "International Affairs", pct: 5, amountB: 30.86, growth: null },
+    { key: "arts-culture", label: "Arts, Culture & Humanities", pct: 4, amountB: 24.69, growth: null },
+    { key: "environment-animals", label: "Environment & Animals", pct: 4, amountB: 24.69, growth: 11.0 },
+    { key: "individuals", label: "Gifts to Individuals", pct: 4, amountB: 24.69, growth: null }
+  ];
+  var GIFT_CATEGORY_LABELS = { "other": "Other / unspecified" };
+  GIVING_USA_CATEGORIES.forEach(function(c){ GIFT_CATEGORY_LABELS[c.key] = c.label; });
+
+  // U.S. Census Bureau's four regions / nine divisions, used to group the state
+  // grid instead of plotting states on a literal map, so a state's position on
+  // the page is never a guess, only the data behind it is shown.
+  var US_REGIONS = [
+    { name: "Northeast", states: [["CT","Connecticut"],["ME","Maine"],["MA","Massachusetts"],["NH","New Hampshire"],["RI","Rhode Island"],["VT","Vermont"],["NJ","New Jersey"],["NY","New York"],["PA","Pennsylvania"]] },
+    { name: "Midwest", states: [["IL","Illinois"],["IN","Indiana"],["MI","Michigan"],["OH","Ohio"],["WI","Wisconsin"],["IA","Iowa"],["KS","Kansas"],["MN","Minnesota"],["MO","Missouri"],["NE","Nebraska"],["ND","North Dakota"],["SD","South Dakota"]] },
+    { name: "South", states: [["DE","Delaware"],["FL","Florida"],["GA","Georgia"],["MD","Maryland"],["NC","North Carolina"],["SC","South Carolina"],["VA","Virginia"],["DC","District of Columbia"],["WV","West Virginia"],["AL","Alabama"],["KY","Kentucky"],["MS","Mississippi"],["TN","Tennessee"],["AR","Arkansas"],["LA","Louisiana"],["OK","Oklahoma"],["TX","Texas"]] },
+    { name: "West", states: [["AZ","Arizona"],["CO","Colorado"],["ID","Idaho"],["MT","Montana"],["NV","Nevada"],["NM","New Mexico"],["UT","Utah"],["WY","Wyoming"],["AK","Alaska"],["CA","California"],["HI","Hawaii"],["OR","Oregon"],["WA","Washington"]] }
+  ];
+  var STATE_NAME_BY_ABBR = {};
+  US_REGIONS.forEach(function(r){ r.states.forEach(function(s){ STATE_NAME_BY_ABBR[s[0]] = s[1]; }); });
 
   var PROSPECT_STATUS_LABELS = {"new":"New", researching:"Researching", contacted:"Contacted", responded:"Responded", meeting:"Meeting booked", "not-fit":"Not a fit"};
   var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", other:"Other"};
@@ -287,6 +323,7 @@
       state.rocks = data.rocks || [];
       state.prospects = data.prospects || [];
       state.digest = data.digest || [];
+      state.gifts = data.gifts || [];
       state.vision = data.vision || null;
       state.ready = true;
     });
@@ -1082,6 +1119,221 @@
     }).join("");
   }
 
+  // ---------- Giving Landscape (landing page): national chart + gift ticker + state grid ----------
+  function fmtMoneyShort(n){
+    n = Number(n) || 0;
+    if(n <= 0) return "$0";
+    if(n < 1000) return "$" + Math.round(n);
+    if(n < 1e6) return "$" + Math.round(n/1e3) + "K";
+    if(n < 1e9) return "$" + (n/1e6).toFixed(n/1e6 < 10 ? 1 : 0) + "M";
+    return "$" + (n/1e9).toFixed(2) + "B";
+  }
+  function fmtMoneyExact(n){
+    n = Math.round(Number(n) || 0);
+    return "$" + n.toLocaleString("en-US");
+  }
+
+  function initGivingLandscapeStatic(){
+    var catBar = document.getElementById("gl-category-filters");
+    var extra = GIVING_USA_CATEGORIES.map(function(c){
+      return '<button type="button" class="filter-btn" data-cat="' + c.key + '">' + esc(c.label) + '</button>';
+    }).join("") + '<button type="button" class="filter-btn" data-cat="other">Other</button>';
+    catBar.insertAdjacentHTML("beforeend", extra);
+    catBar.addEventListener("click", function(e){
+      var btn = e.target.closest(".filter-btn");
+      if(!btn) return;
+      giftCategoryFilter = btn.getAttribute("data-cat");
+      catBar.querySelectorAll(".filter-btn").forEach(function(b){ b.classList.toggle("is-active", b === btn); });
+      renderGiftTicker();
+    });
+
+    var stateSel = document.getElementById("gf-state");
+    stateSel.innerHTML = '<option value="">Not specified</option>' + US_REGIONS.map(function(r){
+      return '<optgroup label="' + esc(r.name) + '">' + r.states.map(function(s){
+        return '<option value="' + s[0] + '">' + esc(s[1]) + '</option>';
+      }).join("") + '</optgroup>';
+    }).join("");
+
+    var catSel = document.getElementById("gf-category");
+    catSel.innerHTML = GIVING_USA_CATEGORIES.map(function(c){
+      return '<option value="' + c.key + '">' + esc(c.label) + '</option>';
+    }).join("") + '<option value="other" selected>Other / unspecified</option>';
+
+    document.getElementById("gl-state-grid").addEventListener("click", function(e){
+      var btn = e.target.closest(".state-tile");
+      if(!btn) return;
+      var abbr = btn.getAttribute("data-abbr");
+      selectedGiftState = (selectedGiftState === abbr) ? null : abbr;
+      renderStateGrid();
+      renderGiftTicker();
+    });
+
+    document.getElementById("gl-ticker-list").addEventListener("click", function(e){
+      var btn = e.target.closest(".gift-delete");
+      if(!btn) return;
+      var id = btn.closest(".gift-card").getAttribute("data-id");
+      if(!confirm("Remove this gift from the ticker?")) return;
+      apiFetch("/api/gifts/" + id, { method: "DELETE" }).then(refreshAndRender).catch(function(err){ console.error(err); });
+    });
+
+    document.getElementById("gift-form").addEventListener("submit", function(e){
+      e.preventDefault();
+      var statusEl = document.getElementById("gf-status");
+      var org = document.getElementById("gf-org").value.trim();
+      if(!org) return;
+      var data = {
+        donor: document.getElementById("gf-donor").value.trim(),
+        org: org,
+        state: document.getElementById("gf-state").value,
+        category: document.getElementById("gf-category").value,
+        amount: Number(document.getElementById("gf-amount").value || 0),
+        announcedAt: document.getElementById("gf-date").value,
+        headline: document.getElementById("gf-headline").value.trim(),
+        source: document.getElementById("gf-source").value.trim(),
+        url: document.getElementById("gf-url").value.trim()
+      };
+      apiFetch("/api/gifts", { method: "POST", body: data }).then(function(){
+        document.getElementById("gift-form").reset();
+        document.getElementById("gf-category").value = "other";
+        statusEl.textContent = "Logged.";
+        setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+        return refreshAndRender();
+      }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+    });
+  }
+
+  function renderNationalBars(){
+    var container = document.getElementById("gl-national-bars");
+    var max = Math.max.apply(null, GIVING_USA_CATEGORIES.map(function(c){ return c.amountB; }));
+    var sorted = GIVING_USA_CATEGORIES.slice().sort(function(a,b){ return b.amountB - a.amountB; });
+    container.innerHTML = sorted.map(function(c){
+      var pctWidth = Math.max(3, (c.amountB/max)*100);
+      var growthHtml = c.growth === null ? "" : ('<span class="gb-growth ' + (c.growth >= 0 ? "up" : "down") + '">' + (c.growth >= 0 ? "+" : "") + c.growth.toFixed(1) + '% real</span>');
+      return '<div class="gb-row">' +
+        '<span class="gb-label">' + esc(c.label) + '</span>' +
+        '<div class="gb-track"><div class="gb-fill" style="width:' + pctWidth.toFixed(1) + '%"></div></div>' +
+        '<span class="gb-value">$' + c.amountB.toFixed(1) + 'B &middot; ' + c.pct + '%' + growthHtml + '</span>' +
+        '</div>';
+    }).join("");
+  }
+
+  function renderGiftStats(){
+    var gifts = state.gifts;
+    document.getElementById("gl-stat-gift-count").textContent = gifts.length;
+    var total = gifts.reduce(function(sum,g){ return sum + (Number(g.amount) || 0); }, 0);
+    document.getElementById("gl-stat-gift-total").textContent = fmtMoneyShort(total);
+    var seen = {};
+    gifts.forEach(function(g){ if(g.state) seen[g.state] = 1; });
+    document.getElementById("gl-stat-state-count").textContent = Object.keys(seen).length;
+  }
+
+  function renderGiftTicker(){
+    var list = document.getElementById("gl-ticker-list");
+    var refreshedEl = document.getElementById("gl-ticker-refreshed");
+    if(state.gifts.length === 0){
+      refreshedEl.textContent = "No gifts logged yet";
+    } else {
+      var latest = state.gifts.reduce(function(max,g){ return (g.loggedAt || "") > max ? (g.loggedAt || "") : max; }, "");
+      refreshedEl.textContent = latest ? ("Last refreshed " + fmtDate(latest.slice(0,10))) : "";
+    }
+
+    var gifts = state.gifts.filter(function(g){
+      if(giftCategoryFilter !== "all" && g.category !== giftCategoryFilter) return false;
+      if(selectedGiftState && g.state !== selectedGiftState) return false;
+      return true;
+    }).slice().sort(function(a,b){ return (b.announcedAt || b.loggedAt || "").localeCompare(a.announcedAt || a.loggedAt || ""); });
+
+    if(gifts.length === 0){
+      list.innerHTML = '<p class="empty-note">' + (state.gifts.length === 0
+        ? "Nothing logged yet. Add the first major gift below, or wait for this week&rsquo;s Field Intelligence pass."
+        : "No gifts match this filter.") + '</p>';
+      return;
+    }
+    list.innerHTML = gifts.map(function(g){
+      var who = g.donor ? (esc(g.donor) + " &rarr; " + esc(g.org || "Untitled")) : esc(g.org || "Untitled");
+      var stateTag = g.state ? (' &middot; ' + esc(STATE_NAME_BY_ABBR[g.state] || g.state)) : "";
+      return '<div class="gift-card" data-id="' + esc(g.id) + '">' +
+        '<div class="gift-card-head"><h4>' + who + '</h4><span class="gift-amount">' + fmtMoneyExact(g.amount) + '</span></div>' +
+        (g.headline || g.summary ? '<p>' + esc(g.headline || g.summary) + '</p>' : '') +
+        '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
+        (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
+        (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
+        ' <button type="button" class="btn danger gift-delete" style="margin-left:8px;">Remove</button></div>' +
+        '</div>';
+    }).join("");
+  }
+
+  function stateAggregates(){
+    var byState = {};
+    state.gifts.forEach(function(g){
+      if(!g.state) return;
+      if(!byState[g.state]) byState[g.state] = { count: 0, total: 0, latest: null, latestDate: "" };
+      var agg = byState[g.state];
+      agg.count++;
+      agg.total += Number(g.amount) || 0;
+      var d = g.announcedAt || g.loggedAt || "";
+      if(!agg.latest || d > agg.latestDate){ agg.latest = g; agg.latestDate = d; }
+    });
+    return byState;
+  }
+
+  function renderStateDetail(byState){
+    var box = document.getElementById("gl-state-detail");
+    if(!selectedGiftState){ box.hidden = true; return; }
+    var agg = byState[selectedGiftState];
+    var name = STATE_NAME_BY_ABBR[selectedGiftState] || selectedGiftState;
+    box.hidden = false;
+    if(!agg){
+      box.innerHTML = '<strong>' + esc(name) + '</strong><p style="margin:8px 0 0;color:var(--ink-soft);">No gifts logged yet for this state.</p>';
+      return;
+    }
+    box.innerHTML = '<strong>' + esc(name) + '</strong>' +
+      '<p style="margin:8px 0 0;color:var(--ink-soft);">' + agg.count + ' gift' + (agg.count === 1 ? "" : "s") + ' logged, ' + fmtMoneyExact(agg.total) + ' tracked. Most recent: ' +
+      esc(agg.latest.org || "Untitled") + (agg.latest.donor ? (" from " + esc(agg.latest.donor)) : "") + ', ' + fmtDate(agg.latest.announcedAt || agg.latest.loggedAt) + '.</p>';
+  }
+
+  function renderStateGrid(){
+    var byState = stateAggregates();
+    var maxTotal = 0;
+    Object.keys(byState).forEach(function(k){ if(byState[k].total > maxTotal) maxTotal = byState[k].total; });
+
+    var grid = document.getElementById("gl-state-grid");
+    grid.innerHTML = US_REGIONS.map(function(region){
+      var tiles = region.states.map(function(s){
+        var abbr = s[0], name = s[1];
+        var agg = byState[abbr];
+        var hasData = !!agg;
+        var intensity = hasData && maxTotal > 0 ? Math.max(0.18, agg.total/maxTotal) : 0;
+        var barHtml = hasData ? ('<span class="st-bar" style="opacity:' + intensity.toFixed(2) + '"></span>') : "";
+        var selected = selectedGiftState === abbr;
+        return '<button type="button" class="state-tile' + (selected ? ' is-selected' : '') + '" data-abbr="' + abbr + '" title="' + esc(name) + (hasData ? (': ' + agg.count + ' gift' + (agg.count === 1 ? '' : 's') + ', ' + fmtMoneyExact(agg.total)) : ': no gifts logged yet') + '">' +
+          barHtml + '<span class="st-abbr">' + abbr + '</span><span class="st-count">' + (hasData ? agg.count : '&middot;') + '</span></button>';
+      }).join("");
+      return '<div class="state-region"><h4>' + esc(region.name) + '</h4><div class="state-tiles">' + tiles + '</div></div>';
+    }).join("");
+
+    var rows = Object.keys(byState).map(function(k){ var a = byState[k]; return { abbr: k, count: a.count, total: a.total, latest: a.latest }; })
+      .sort(function(a,b){ return b.total - a.total; });
+    var tableBody = document.getElementById("gl-state-table");
+    if(rows.length === 0){
+      tableBody.innerHTML = '<tr><td colspan="4" class="empty-note">No gifts logged yet.</td></tr>';
+    } else {
+      tableBody.innerHTML = rows.map(function(r){
+        return '<tr><td><strong>' + esc(STATE_NAME_BY_ABBR[r.abbr] || r.abbr) + '</strong></td><td>' + r.count + '</td><td>' + fmtMoneyExact(r.total) + '</td><td class="dim">' + esc((r.latest && r.latest.org) || "") + '</td></tr>';
+      }).join("");
+    }
+
+    renderStateDetail(byState);
+  }
+
+  function renderGivingLandscape(){
+    renderGiftStats();
+    renderNationalBars();
+    renderGiftTicker();
+    renderStateGrid();
+  }
+  initGivingLandscapeStatic();
+
   // ---------- process library (static reference) ----------
   var PROCESS_DOCS = [
     {title:"Fundraising Fluency", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/3685944c-47a2-43b8-9e43-5b5061caa685"},
@@ -1107,6 +1359,7 @@
 
   // ---------- bootstrap ----------
   function renderAll(){
+    renderGivingLandscape();
     renderBriefing();
     renderSessionPanel();
     renderDashboard();
@@ -1123,7 +1376,7 @@
   function onApiUnavailable(){
     document.getElementById("db-banner").hidden = false;
     document.getElementById("load-note").hidden = true;
-    ["pl-submit","sc-submit","is-submit","rk-submit","vision-save","ps-submit","sess-sc-submit","sess-is-submit"].forEach(function(id){
+    ["pl-submit","sc-submit","is-submit","rk-submit","vision-save","ps-submit","sess-sc-submit","sess-is-submit","gf-submit"].forEach(function(id){
       var el = document.getElementById(id);
       if(el) el.disabled = true;
     });

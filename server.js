@@ -114,13 +114,14 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, visionRes] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM rocks WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
       pool.query("SELECT * FROM prospects WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM digest ORDER BY id ASC"),
+      pool.query("SELECT * FROM gifts WHERE archived_at IS NULL ORDER BY announced_at DESC NULLS LAST, logged_at DESC"),
       pool.query("SELECT * FROM vision WHERE id = 'main'")
     ]);
     res.json({
@@ -130,6 +131,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
       rocks: rocks.rows.map(rowToRock),
       prospects: prospects.rows.map(rowToProspect),
       digest: digest.rows.map(rowToDigest),
+      gifts: gifts.rows.map(rowToGift),
       vision: visionRes.rows[0] ? rowToVision(visionRes.rows[0]) : null
     });
   } catch (err) {
@@ -155,6 +157,9 @@ function rowToProspect(r) {
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
+}
+function rowToGift(r) {
+  return { id: r.id, donor: r.donor, org: r.org, state: r.state, category: r.category, amount: r.amount === null ? 0 : Number(r.amount), headline: r.headline, summary: r.summary, source: r.source, url: r.url, announcedAt: r.announced_at, loggedAt: r.logged_at };
 }
 function rowToVision(r) {
   return { values: r.values_text, focus: r.focus, tenYear: r.ten_year, marketing: r.marketing, threeYear: r.three_year, oneYear: r.one_year, updatedAt: r.updated_at };
@@ -378,6 +383,59 @@ app.post("/api/admin/digest", requireAdminToken, async (req, res) => {
   }
 });
 
+// ---------- gifts (the Giving Landscape ticker) ----------
+// Manual entry, for a gift Franklin hears about directly. Every automatically
+// imported row (from the weekly Field Intelligence pass) goes through
+// /api/admin/gifts below instead, keyed by a stable id so re-running that
+// pass never creates duplicates.
+app.post("/api/gifts", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const id = newId();
+  const now = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [id, b.donor || "", b.org || "", b.state || "", b.category || "other", Number(b.amount || 0), b.headline || "", b.summary || "", b.source || "", b.url || "", b.announcedAt || "", now]
+  );
+  res.json({ id });
+});
+app.delete("/api/gifts/:id", requireAuth, async (req, res) => {
+  await archiveRow("gifts", req.params.id);
+  res.json({ ok: true });
+});
+
+// Admin-only bulk upsert, used by the weekly Field Intelligence research pass
+// to log newly announced major gifts alongside that week's digest refresh.
+// Upserts by id, same pattern as /api/admin/digest, so re-running the same
+// week's pass is always safe.
+app.post("/api/admin/gifts", requireAdminToken, async (req, res) => {
+  const items = (req.body && req.body.items) || [];
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "items array required" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const item of items) {
+      if (!item.id || !item.org) continue;
+      await client.query(
+        `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (id) DO UPDATE SET donor=$2, org=$3, state=$4, category=$5, amount=$6, headline=$7, summary=$8, source=$9, url=$10, announced_at=$11, logged_at=$12`,
+        [item.id, item.donor || "", item.org, item.state || "", item.category || "other", Number(item.amount || 0), item.headline || "", item.summary || "", item.source || "", item.url || "", item.announcedAt || "", item.loggedAt || new Date().toISOString()]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true, count: items.length });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "failed to update gifts" });
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- full backup / restore (admin-only) ----------
 // GET returns every row from every table, including archived ones, as plain
 // JSON - a full point-in-time snapshot. POST restores from that same shape,
@@ -386,7 +444,7 @@ app.post("/api/admin/digest", requireAdminToken, async (req, res) => {
 // whenever the database itself has to move (free-tier Postgres hosts expire
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
-const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest"];
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts"];
 app.get("/api/admin/backup", requireAdminToken, async (req, res) => {
   try {
     const out = {};

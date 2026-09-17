@@ -89,3 +89,26 @@ CREATE TABLE IF NOT EXISTS vision (
   one_year TEXT DEFAULT '',
   updated_at TEXT
 );
+
+-- gifts: the weekly "major named gift" ticker behind the Giving Landscape view.
+-- This is NOT a national statistic, it is Frankly Inspired's own log of publicly
+-- announced major gifts (added by hand, or upserted by the weekly Field
+-- Intelligence research pass the same way the digest table is). state and
+-- category use fixed short keys the frontend maps to labels, matching the
+-- Giving USA recipient-subsector categories so the practice's own tracking
+-- lines up with the national reference chart next to it.
+CREATE TABLE IF NOT EXISTS gifts (
+  id TEXT PRIMARY KEY,
+  donor TEXT DEFAULT '',
+  org TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  category TEXT DEFAULT 'other',
+  amount NUMERIC DEFAULT 0,
+  headline TEXT DEFAULT '',
+  summary TEXT DEFAULT '',
+  source TEXT DEFAULT '',
+  url TEXT DEFAULT '',
+  announced_at TEXT,
+  logged_at TEXT,
+  archived_at TEXT
+);

@@ -1,0 +1,187 @@
+diff --git a/public/app.js b/public/app.js
+index 0788155..2d3d473 100644
+--- a/public/app.js
++++ b/public/app.js
+@@ -1323,11 +1323,15 @@
+     }).join("");
+   }
+ 
+-  // Click-to-open breakdown: gift type, restriction, impact, trend signal,
+-  // and a replication idea, as short labeled data fields rather than a
+-  // paragraph. Renders nothing (no empty disclosure) when a gift has none of
+-  // these filled in yet - e.g. older rows logged before this was added.
+-  function giftCaseStudyHtml(g){
++  // Gift type, restriction, impact, trend signal, and a replication idea, as
++  // short labeled data fields rather than a paragraph. hasCaseStudy/
++  // giftCaseStudyGridHtml are shared with the Playbook Library below, which
++  // is just this same content pulled out of every gift and made searchable
++  // in one place instead of read one collapsed disclosure at a time.
++  function hasCaseStudy(g){
++    return !!(g.impact || g.trendSignal || g.playbook || g.giftType || g.restriction);
++  }
++  function giftCaseStudyGridHtml(g){
+     var fields = [];
+     if(g.impact) fields.push(["Impact — what it funds", esc(g.impact)]);
+     if(g.trendSignal) fields.push(["Trend signal", esc(g.trendSignal)]);
+@@ -1335,11 +1339,18 @@
+     if(fields.length === 0 && !g.giftType && !g.restriction) return "";
+     var pills = (g.giftType ? '<span class="pill">' + esc(g.giftType) + '</span>' : "") +
+       (g.restriction ? '<span class="pill">' + esc(g.restriction) + '</span>' : "");
+-    return '<details class="gift-cs"><summary>View case study breakdown</summary>' +
+-      '<div class="gift-cs-grid">' +
++    return '<div class="gift-cs-grid">' +
+       (pills ? '<div class="gift-cs-field"><span class="gift-cs-label">Gift structure</span><div class="gift-cs-pills">' + pills + '</div></div>' : "") +
+       fields.map(function(f){ return '<div class="gift-cs-field"><span class="gift-cs-label">' + esc(f[0]) + '</span><span class="gift-cs-value">' + f[1] + '</span></div>'; }).join("") +
+-      '</div></details>';
++      '</div>';
++  }
++  // Click-to-open breakdown on the ticker card. Renders nothing (no empty
++  // disclosure) when a gift has none of these filled in yet - e.g. older
++  // rows logged before this was added.
++  function giftCaseStudyHtml(g){
++    var grid = giftCaseStudyGridHtml(g);
++    if(!grid) return "";
++    return '<details class="gift-cs"><summary>View case study breakdown</summary>' + grid + '</details>';
+   }
+ 
+   function stateAggregates(){
+@@ -1908,6 +1919,81 @@
+     return '<tr><td><strong>' + esc(d.title) + '</strong></td><td class="dim">' + esc(d.type) + '</td><td><span class="pill">' + esc(d.feeds) + '</span></td><td><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Open</a></td></tr>';
+   }).join("") + '<tr><td><strong>The Frankly Inspired Operating System</strong></td><td class="dim">Operating system</td><td><span class="pill gold">All five components, live</span></td><td class="dim">You are here</td></tr>';
+ 
++  // ---------- playbook library ----------
++  // Every gift already carries its own case-study read (impact, trend
++  // signal, replication idea, gift type, restriction) - see
++  // giftCaseStudyGridHtml above. This view doesn't add any new data, it
++  // just pulls every gift that has that read filled in out of the ticker
++  // and into one searchable list, so "which gift was the one where we led
++  // with a facility tour" doesn't mean scrolling and opening disclosures
++  // one at a time. Entirely client-side, off state.gifts already in memory
++  // - no new endpoint, and (like the case-study fields themselves) never
++  // exposed on the public Giving Landscape page.
++  var playbookSearch = "";
++  var playbookCategoryFilter = "all";
++
++  function initPlaybookLibraryStatic(){
++    var catBar = document.getElementById("pb-category-filters");
++    var extra = GIVING_USA_CATEGORIES.map(function(c){
++      return '<button type="button" class="filter-btn" data-cat="' + c.key + '">' + esc(c.label) + '</button>';
++    }).join("") + '<button type="button" class="filter-btn" data-cat="other">Other</button>';
++    catBar.insertAdjacentHTML("beforeend", extra);
++    catBar.addEventListener("click", function(e){
++      var btn = e.target.closest(".filter-btn");
++      if(!btn) return;
++      playbookCategoryFilter = btn.getAttribute("data-cat");
++      catBar.querySelectorAll(".filter-btn").forEach(function(b){ b.classList.toggle("is-active", b === btn); });
++      renderPlaybookLibrary();
++    });
++    document.getElementById("pb-search").addEventListener("input", function(e){
++      playbookSearch = e.target.value.trim().toLowerCase();
++      renderPlaybookLibrary();
++    });
++  }
++  initPlaybookLibraryStatic();
++
++  function playbookCardHtml(g){
++    var who = g.donor ? (esc(g.donor) + " &rarr; " + esc(g.org || "Untitled")) : esc(g.org || "Untitled");
++    var stateTag = g.state ? (' &middot; ' + esc(STATE_NAME_BY_ABBR[g.state] || g.state)) : "";
++    return '<div class="gift-card">' +
++      '<div class="gift-card-head"><h4>' + who + '</h4><span class="gift-amount">' + fmtMoneyExact(g.amount) + '</span></div>' +
++      (g.headline || g.summary ? '<p>' + esc(g.headline || g.summary) + '</p>' : '') +
++      '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
++      (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
++      (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
++      '</div>' +
++      giftCaseStudyGridHtml(g) +
++      '</div>';
++  }
++
++  function renderPlaybookLibrary(){
++    var all = state.gifts.filter(hasCaseStudy);
++    var filtered = all.filter(function(g){
++      if(playbookCategoryFilter !== "all" && g.category !== playbookCategoryFilter) return false;
++      if(playbookSearch){
++        var haystack = [g.org, g.donor, g.headline, g.summary, g.impact, g.trendSignal, g.playbook, g.giftType, g.restriction].join(" ").toLowerCase();
++        if(haystack.indexOf(playbookSearch) === -1) return false;
++      }
++      return true;
++    }).sort(function(a,b){ return (b.announcedAt || b.loggedAt || "").localeCompare(a.announcedAt || a.loggedAt || ""); });
++
++    var filtering = !!playbookSearch || playbookCategoryFilter !== "all";
++    document.getElementById("pb-count").textContent = all.length === 0
++      ? "No case studies logged yet"
++      : (filtering ? (filtered.length + " of " + all.length + " case studies match this search") : (all.length + " case " + (all.length === 1 ? "study" : "studies") + " logged"));
++
++    var list = document.getElementById("pb-list");
++    if(all.length === 0){
++      list.innerHTML = '<p class="empty-note">No gift has a case-study read logged yet. Fill in impact, trend signal, gift type, restriction, or a replication idea when you log or edit a gift on the Giving Landscape ticker, and it shows up here automatically.</p>';
++      return;
++    }
++    if(filtered.length === 0){
++      list.innerHTML = '<p class="empty-note">Nothing matches this search or filter.</p>';
++      return;
++    }
++    list.innerHTML = filtered.map(playbookCardHtml).join("");
++  }
++
+   // ---------- bootstrap ----------
+   function renderAll(){
+     renderGivingLandscape();
+@@ -1922,6 +2008,7 @@
+     renderIssues();
+     renderRocks();
+     renderFieldIntel();
++    renderPlaybookLibrary();
+   }
+ 
+   function onApiUnavailable(){
+diff --git a/public/index.html b/public/index.html
+index 6dc39b3..b1618c2 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -57,6 +57,7 @@
+     <button type="button" class="rail-btn" data-view="rocks">Priorities</button>
+     <div class="rail-label">Reference</div>
+     <button type="button" class="rail-btn" data-view="fieldintel">Field Intelligence</button>
++    <button type="button" class="rail-btn" data-view="playbook">Playbook Library</button>
+     <button type="button" class="rail-btn" data-view="process">Process Library</button>
+     <a class="rail-link" href="https://claude.ai/code/artifact/0d5b02f4-66ea-4da0-9a2b-e077857c7a3b" target="_blank" rel="noopener">Advancement Desk &#8599;</a>
+   </nav>
+@@ -534,6 +535,24 @@
+       </div>
+     </section>
+ 
++    <!-- ================= PLAYBOOK LIBRARY ================= -->
++    <section class="view" data-view="playbook" hidden>
++      <div class="view-head"><h2>Playbook Library</h2><span class="tag">what worked, searchable</span></div>
++      <p class="view-intro">Every gift on the ticker that got a real case-study read - what it funded, what it signaled, how we'd pursue something similar - pulled into one place you can search instead of scrolling the ticker for the one you half-remember. Internal only: this is exactly the analysis layer the public Giving Landscape page leaves out.</p>
++
++      <div class="fw-card" data-panel="01 · Search & filter">
++        <input type="search" class="search-input" id="pb-search" placeholder="Search org, donor, impact, trend signal, playbook...">
++        <div class="toolbar" id="pb-category-filters" style="margin-top:12px;">
++          <button type="button" class="filter-btn is-active" data-cat="all">All categories</button>
++        </div>
++      </div>
++
++      <div class="fw-card" data-panel="02 · Case studies">
++        <p class="digest-refreshed" id="pb-count">Loading...</p>
++        <div id="pb-list"></div>
++      </div>
++    </section>
++
+     <!-- ================= PROCESS LIBRARY ================= -->
+     <section class="view" data-view="process" hidden>
+       <div class="view-head"><h2>Process Library</h2><span class="tag">the documented core process</span></div>
+diff --git a/public/styles.css b/public/styles.css
+index c399b3c..76e107d 100644
+--- a/public/styles.css
++++ b/public/styles.css
+@@ -136,6 +136,8 @@ img{max-width:100%;}
+   .action-list .when{font-family:'IBM Plex Mono', monospace;font-size:0.76rem;color:var(--ink-soft);white-space:nowrap;}
+ 
+   .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 18px;}
++  .search-input{width:100%;font-family:'Public Sans', sans-serif;font-size:0.92rem;padding:9px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);}
++  .search-input:focus{outline:2px solid var(--accent-2);outline-offset:1px;}
+   .filter-btn{all:unset;font-family:'IBM Plex Mono', monospace;font-size:0.72rem;padding:5px 12px;border-radius:100px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);cursor:pointer;}
+   .filter-btn.is-active{background:var(--accent);color:#fff;border-color:var(--accent);}
+ 

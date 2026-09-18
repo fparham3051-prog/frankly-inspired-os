@@ -112,3 +112,49 @@ CREATE TABLE IF NOT EXISTS gifts (
   logged_at TEXT,
   archived_at TEXT
 );
+
+-- Case-study fields: turns a ticker row into something usable in an actual
+-- client conversation, not just a logged fact. All optional/blank by default
+-- since the manual "log a gift" form doesn't require them - the weekly
+-- research pass is what reliably fills these in, since it's already reading
+-- the source article closely enough to answer them.
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS gift_type TEXT DEFAULT '';
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS restriction TEXT DEFAULT '';
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS impact TEXT DEFAULT '';
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS trend_signal TEXT DEFAULT '';
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS playbook TEXT DEFAULT '';
+
+-- public_ok: opt-in flag for the unauthenticated public Giving Landscape page
+-- (GET /api/public/giving-landscape and /giving-landscape in server.js).
+-- Defaults to false on purpose - a gift the weekly Field Intelligence pass
+-- logs, or one added by hand, never becomes visible on that page until
+-- Franklin reviews that specific row and turns it on. The public endpoint
+-- only ever selects the gift-fact columns (donor/org/state/category/amount/
+-- headline/summary/source/url/announced_at) - it never selects gift_type,
+-- restriction, impact, trend_signal, or playbook, so a row being public
+-- never exposes Frankly Inspired's own case-study analysis of it, only the
+-- same fact of the gift that was already publicly announced.
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS public_ok BOOLEAN DEFAULT false;
+
+-- Organizational 990 health: a gift's org is free text, so it's never
+-- auto-linked to a specific EIN by name alone (too many similarly-named
+-- nonprofits). org_ein_links is the one confirmed match per org name,
+-- picked once in the Organization Growth Tracker's "look up financial
+-- health" flow. org_financials caches the fetched ProPublica Nonprofit
+-- Explorer filing data per EIN (data stored as a JSON string, matching this
+-- schema's plain-TEXT convention rather than introducing jsonb) so the
+-- tracker isn't re-fetching on every page load.
+CREATE TABLE IF NOT EXISTS org_ein_links (
+  org_name TEXT PRIMARY KEY,
+  ein TEXT NOT NULL,
+  matched_name TEXT DEFAULT '',
+  matched_city TEXT DEFAULT '',
+  matched_state TEXT DEFAULT '',
+  linked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS org_financials (
+  ein TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  fetched_at TEXT
+);

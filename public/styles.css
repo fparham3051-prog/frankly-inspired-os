@@ -6,7 +6,34 @@ img{max-width:100%;}
 
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
+  /* Dark navy/gold is the app-wide default now, for every visitor,
+     regardless of their device's own light/dark setting - this is a
+     deliberate brand choice, not a "dark mode variant" anymore. The old
+     warm cream/gold palette is kept only as an explicit data-theme="light"
+     override, for a future in-app toggle - nothing switches to it on its
+     own. */
   :root{
+    --bg:#121826;
+    --surface:#1B2436;
+    --surface-2:#263149;
+    --ink:#EDEFF3;
+    --ink-soft:#A7B0C2;
+    --accent:#8FA9D9;
+    --accent-strong:#C3D3F0;
+    --accent-2:#C5A971;
+    --warn:#E29A72;
+    --good:#7FBF9B;
+    --good-bg:rgba(127,191,155,0.12);
+    --line:rgba(237,239,243,0.16);
+    --line-soft:rgba(237,239,243,0.08);
+    --shadow:0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.45);
+    --hero-bg:#172337;
+    --hero-line:rgba(245,243,238,0.12);
+    --hero-ink:#F5F3EE;
+    --hero-ink-soft:rgba(245,243,238,0.78);
+    --hero-gold:#C5A971;
+  }
+  :root[data-theme="light"]{
     --bg:#F5F3EE;
     --surface:#FFFFFF;
     --surface-2:#E9E6DC;
@@ -21,29 +48,6 @@ img{max-width:100%;}
     --line:rgba(33,43,61,0.16);
     --line-soft:rgba(33,43,61,0.09);
     --shadow:0 1px 2px rgba(20,26,36,0.08), 0 8px 24px -12px rgba(20,26,36,0.20);
-    --hero-bg:#172337;
-    --hero-line:rgba(245,243,238,0.12);
-    --hero-ink:#F5F3EE;
-    --hero-ink-soft:rgba(245,243,238,0.78);
-    --hero-gold:#C5A971;
-  }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --bg:#121826;
-      --surface:#1B2436;
-      --surface-2:#263149;
-      --ink:#EDEFF3;
-      --ink-soft:#A7B0C2;
-      --accent:#8FA9D9;
-      --accent-strong:#C3D3F0;
-      --accent-2:#C5A971;
-      --warn:#E29A72;
-      --good:#7FBF9B;
-      --good-bg:rgba(127,191,155,0.12);
-      --line:rgba(237,239,243,0.16);
-      --line-soft:rgba(237,239,243,0.08);
-      --shadow:0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.45);
-    }
   }
   :root[data-theme="dark"]{
     --bg:#121826;
@@ -287,8 +291,8 @@ img{max-width:100%;}
   .gift-cs{margin-top:10px;border-top:1px solid var(--line-soft);padding-top:10px;}
   .gift-cs summary{cursor:pointer;font-family:'IBM Plex Mono', monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-2);list-style:none;}
   .gift-cs summary::-webkit-details-marker{display:none;}
-  .gift-cs summary::before{content:"▸ ";display:inline-block;}
-  .gift-cs[open] summary::before{content:"▾ ";}
+  .gift-cs summary::before{content:"â–¸ ";display:inline-block;}
+  .gift-cs[open] summary::before{content:"â–¾ ";}
   .gift-cs summary:hover{color:var(--accent-strong);}
   .gift-cs-grid{display:grid;gap:10px;margin-top:10px;}
   .gift-cs-field{border-left:3px solid var(--accent-2);padding:1px 0 1px 12px;}
@@ -376,8 +380,8 @@ img{max-width:100%;}
   .org-health{padding:0 14px 12px;}
   .org-health summary{cursor:pointer;font-family:'IBM Plex Mono', monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-2);list-style:none;display:flex;align-items:center;}
   .org-health summary::-webkit-details-marker{display:none;}
-  .org-health summary::before{content:"▸ ";display:inline-block;}
-  .org-health[open] summary::before{content:"▾ ";}
+  .org-health summary::before{content:"â–¸ ";display:inline-block;}
+  .org-health[open] summary::before{content:"â–¾ ";}
   .org-health summary:hover{color:var(--accent-strong);}
   .org-health summary .status-dot{margin-left:8px;margin-right:0;order:2;}
   .org-health-body{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:12px;}
@@ -441,24 +445,22 @@ img{max-width:100%;}
     font-family:'IBM Plex Mono', monospace;font-weight:600;font-size:2.05rem;
     font-variant-numeric:tabular-nums;color:var(--ink);
   }
-  :root[data-theme="dark"] .stat-card .num{
+  /* These glow/shadow accents were written for the dark palette - now that
+     dark is the default everywhere, they apply by default too, and are
+     explicitly turned off under the light opt-out below (a gold glow tuned
+     for a navy background reads as a smudge on the cream one). */
+  .stat-card .num{
     text-shadow:0 0 16px color-mix(in srgb, var(--accent-2) 45%, transparent);
   }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .stat-card .num{
-      text-shadow:0 0 16px color-mix(in srgb, var(--accent-2) 45%, transparent);
-    }
-  }
+  :root[data-theme="light"] .stat-card .num{ text-shadow:none; }
 
   .gb-track{height:15px;}
   .gb-value{font-variant-numeric:tabular-nums;}
   .gb-growth{padding:1px 7px;border-radius:100px;font-family:'IBM Plex Mono', monospace;}
   .gb-growth.up{background:var(--good-bg);}
   .gb-growth.down{background:color-mix(in srgb, var(--warn) 14%, transparent);}
-  :root[data-theme="dark"] .gb-fill{box-shadow:0 0 10px color-mix(in srgb, var(--accent-2) 60%, transparent);}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .gb-fill{box-shadow:0 0 10px color-mix(in srgb, var(--accent-2) 60%, transparent);}
-  }
+  .gb-fill{box-shadow:0 0 10px color-mix(in srgb, var(--accent-2) 60%, transparent);}
+  :root[data-theme="light"] .gb-fill{ box-shadow:none; }
 
   .gift-card{border-top:2px solid transparent;transition:border-color .15s ease;}
   .gift-card:hover{border-top-color:var(--accent-2);}
@@ -469,36 +471,25 @@ img{max-width:100%;}
     color:var(--accent-2);
   }
 
-  :root[data-theme="dark"] path.us-state.has-data{filter:drop-shadow(0 0 5px color-mix(in srgb, var(--accent-2) 55%, transparent));}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) path.us-state.has-data{filter:drop-shadow(0 0 5px color-mix(in srgb, var(--accent-2) 55%, transparent));}
-  }
+  path.us-state.has-data{filter:drop-shadow(0 0 5px color-mix(in srgb, var(--accent-2) 55%, transparent));}
+  :root[data-theme="light"] path.us-state.has-data{ filter:none; }
 
-  :root[data-theme="dark"] .gift-cs-field{box-shadow:-3px 0 10px -4px color-mix(in srgb, var(--accent-2) 60%, transparent);}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .gift-cs-field{box-shadow:-3px 0 10px -4px color-mix(in srgb, var(--accent-2) 60%, transparent);}
-  }
+  .gift-cs-field{box-shadow:-3px 0 10px -4px color-mix(in srgb, var(--accent-2) 60%, transparent);}
+  :root[data-theme="light"] .gift-cs-field{ box-shadow:none; }
 
   .ot-total{font-variant-numeric:tabular-nums;}
-  :root[data-theme="dark"] .ot-pt-last{filter:drop-shadow(0 0 4px color-mix(in srgb, var(--good) 70%, transparent));}
-  :root[data-theme="dark"] .ot-move.is-up{box-shadow:0 0 8px -2px color-mix(in srgb, var(--good) 65%, transparent);}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .ot-pt-last{filter:drop-shadow(0 0 4px color-mix(in srgb, var(--good) 70%, transparent));}
-    :root:not([data-theme="light"]) .ot-move.is-up{box-shadow:0 0 8px -2px color-mix(in srgb, var(--good) 65%, transparent);}
-  }
-  :root[data-theme="dark"] .oh-pt-rev{filter:drop-shadow(0 0 3px color-mix(in srgb, var(--accent-2) 65%, transparent));}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .oh-pt-rev{filter:drop-shadow(0 0 3px color-mix(in srgb, var(--accent-2) 65%, transparent));}
-  }
+  .ot-pt-last{filter:drop-shadow(0 0 4px color-mix(in srgb, var(--good) 70%, transparent));}
+  .ot-move.is-up{box-shadow:0 0 8px -2px color-mix(in srgb, var(--good) 65%, transparent);}
+  :root[data-theme="light"] .ot-pt-last{ filter:none; }
+  :root[data-theme="light"] .ot-move.is-up{ box-shadow:none; }
+  .oh-pt-rev{filter:drop-shadow(0 0 3px color-mix(in srgb, var(--accent-2) 65%, transparent));}
+  :root[data-theme="light"] .oh-pt-rev{ filter:none; }
 
   /* Chart-card readouts (Forecasting) pick up the same tabular, glowing
      mono-number treatment as the stat cards, so a trend figure reads with
      the same weight as a landing-page stat. */
-  .chart-card .chart-now{font-variant-numeric:tabular-nums;}
-  :root[data-theme="dark"] .chart-card .chart-now{text-shadow:0 0 14px color-mix(in srgb, var(--accent-2) 40%, transparent);}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .chart-card .chart-now{text-shadow:0 0 14px color-mix(in srgb, var(--accent-2) 40%, transparent);}
-  }
+  .chart-card .chart-now{font-variant-numeric:tabular-nums;text-shadow:0 0 14px color-mix(in srgb, var(--accent-2) 40%, transparent);}
+  :root[data-theme="light"] .chart-card .chart-now{ text-shadow:none; }
 
   .digest-refreshed{font-size:0.84rem;color:var(--ink-soft);margin:0 0 20px;}
   .digest-group{margin-bottom:26px;}

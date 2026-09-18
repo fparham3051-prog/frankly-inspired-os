@@ -116,7 +116,7 @@ app.use(cookieParser());
 // ---------- auth routes ----------
 app.post("/api/login", (req, res) => {
   if (loginRateLimited(req.ip)) {
-    return res.status(429).json({ error: "too many attempts - wait a few minutes and try again" });
+    return res.status(429).json({ error: "Too many attempts. Wait a few minutes and try again." });
   }
   const { password } = req.body || {};
   if (!password || !timingSafeStringEqual(password, ADMIN_PASSWORD)) {
@@ -574,16 +574,16 @@ function analyzeOrgFinancials(ppOrg) {
 
   const flags = [];
   if (years.length === 0) {
-    flags.push({ level: "info", text: "No e-filed Form 990 data found for this EIN in ProPublica's Nonprofit Explorer - it may file a paper return, a 990-N postcard (too small to require full detail), or not yet be indexed." });
+    flags.push({ level: "info", text: "No e-filed Form 990 data found for this EIN in ProPublica's Nonprofit Explorer. It may file a paper return, a 990-N postcard (too small to require full detail), or not yet be indexed." });
     return { years: years, flags: flags };
   }
 
   const last = years[years.length - 1];
   if (last.netIncome < 0) {
-    flags.push({ level: "watch", text: "Ran a deficit of " + fmtUsd(Math.abs(last.netIncome)) + " in " + last.year + " - expenses exceeded revenue." });
+    flags.push({ level: "watch", text: "Ran a deficit of " + fmtUsd(Math.abs(last.netIncome)) + " in " + last.year + ": expenses exceeded revenue." });
   }
   if (last.reserveMonths !== null && last.reserveMonths < 3) {
-    flags.push({ level: "watch", text: "Net assets cover about " + last.reserveMonths.toFixed(1) + " months of expenses as of " + last.year + " - under the 3-6 months most nonprofit finance guidance treats as a healthy operating reserve." });
+    flags.push({ level: "watch", text: "Net assets cover about " + last.reserveMonths.toFixed(1) + " months of expenses as of " + last.year + ", under the 3-6 months most nonprofit finance guidance treats as a healthy operating reserve." });
   }
   const recent = years.slice(-3);
   const deficitYears = recent.filter(function (y) { return y.netIncome < 0; }).length;
@@ -601,7 +601,7 @@ function analyzeOrgFinancials(ppOrg) {
     }
   }
   if (years.length === 1) {
-    flags.push({ level: "info", text: "Only one filed year available - not enough history yet to show a trend." });
+    flags.push({ level: "info", text: "Only one filed year available. Not enough history yet to show a trend." });
   }
   if (flags.length === 0) {
     flags.push({ level: "good", text: "No deficit or thin-reserve signal in the filed years available." });
@@ -640,7 +640,7 @@ app.get("/api/org-financials/search", requireAuth, async (req, res) => {
     res.json({ results });
   } catch (err) {
     console.error("org-financials search failed:", err.message);
-    res.status(502).json({ error: "ProPublica search failed - try again in a moment" });
+    res.status(502).json({ error: "ProPublica search failed. Try again in a moment." });
   }
 });
 
@@ -663,7 +663,7 @@ app.get("/api/org-financials", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("org-financials fetch failed:", err.message);
-    res.status(502).json({ error: "Could not load financials right now - try again in a moment" });
+    res.status(502).json({ error: "Could not load financials right now. Try again in a moment." });
   }
 });
 
@@ -684,7 +684,7 @@ app.post("/api/org-financials/link", requireAuth, async (req, res) => {
     res.json({ ok: true, ein: ein, matchedName: b.matchedName || "", fetchedAt: fetchedAt, analysis: analyzeOrgFinancials(data) });
   } catch (err) {
     console.error("org-financials link failed:", err.message);
-    res.status(502).json({ error: "Linked, but could not fetch financials for that EIN yet - try refreshing in a moment" });
+    res.status(502).json({ error: "Linked, but could not fetch financials for that EIN yet. Try refreshing in a moment." });
   }
 });
 
@@ -701,7 +701,45 @@ app.post("/api/org-financials/:ein/refresh", requireAuth, async (req, res) => {
     res.json({ ok: true, fetchedAt: fetchedAt, analysis: analyzeOrgFinancials(data) });
   } catch (err) {
     console.error("org-financials refresh failed:", err.message);
-    res.status(502).json({ error: "Refresh failed - try again in a moment" });
+    res.status(502).json({ error: "Refresh failed. Try again in a moment." });
+  }
+});
+
+// Backs the "Structural" card in Time Horizon (see below): a compact,
+// cache-only summary of every org that already has a confirmed EIN link and
+// a cached 990 filing history. Deliberately never calls loadOrCacheFinancials
+// or hits ProPublica - it only reads what's already in org_financials, so
+// opening Time Horizon never triggers a wave of outbound fetches for every
+// tracked org. An org with a link but no cached filings yet (never opened in
+// the Organization Tracker) is left out; the UI explains that gap rather
+// than treating it as a zero.
+app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.org_name, l.ein, l.matched_name, f.data
+       FROM org_ein_links l JOIN org_financials f ON f.ein = l.ein`
+    );
+    const orgs = rows.map(function (r) {
+      const analysis = analyzeOrgFinancials(JSON.parse(r.data));
+      const years = analysis.years;
+      const first = years[0] || null;
+      const last = years[years.length - 1] || null;
+      const notable = analysis.flags.find(function (fl) { return fl.level === "watch"; }) || analysis.flags[0] || null;
+      return {
+        org: r.org_name,
+        matchedName: r.matched_name || r.org_name,
+        ein: r.ein,
+        yearsAvailable: years.length,
+        earliestYear: first ? first.year : null,
+        latestYear: last ? last.year : null,
+        revenueChangePct: (first && last && first !== last && first.revenue > 0) ? (last.revenue - first.revenue) / first.revenue : null,
+        flag: notable
+      };
+    });
+    res.json({ orgs: orgs });
+  } catch (err) {
+    console.error("org-financials structural summary failed:", err.message);
+    res.status(500).json({ error: "Could not load structural summary right now. Try again in a moment." });
   }
 });
 

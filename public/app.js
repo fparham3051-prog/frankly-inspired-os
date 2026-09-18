@@ -59,6 +59,12 @@
   }
 
   var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], ready:false };
+  // Structural-horizon data (see renderTimeHorizon below) loads separately
+  // from the rest of state: it's a cache-only read of org 990 history, not
+  // part of the gifts/pipeline/etc. payload /api/state already returns, and
+  // it starts null (loading) rather than an empty array (nothing found) so
+  // the panel can tell those two states apart.
+  var orgStructuralSummary = null;
   var pipelineFilter = "all";
   var issueFilter = "all";
   var giftCategoryFilter = "all";
@@ -1316,7 +1322,7 @@
         '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
         (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
         (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
-        ' <button type="button" class="btn public-toggle' + (g.publicOk ? ' is-on' : '') + ' gift-public-toggle" data-public="' + (g.publicOk ? "1" : "0") + '" style="margin-left:8px;" title="Show this gift - just the gift, not our case-study notes - on the public Giving Landscape page.">' + (g.publicOk ? "On public page" : "Add to public page") + '</button>' +
+        ' <button type="button" class="btn public-toggle' + (g.publicOk ? ' is-on' : '') + ' gift-public-toggle" data-public="' + (g.publicOk ? "1" : "0") + '" style="margin-left:8px;" title="Show this gift (just the gift, not our case-study notes) on the public Giving Landscape page.">' + (g.publicOk ? "On public page" : "Add to public page") + '</button>' +
         ' <button type="button" class="btn danger gift-delete" style="margin-left:8px;">Remove</button></div>' +
         giftCaseStudyHtml(g) +
         '</div>';
@@ -1333,7 +1339,7 @@
   }
   function giftCaseStudyGridHtml(g){
     var fields = [];
-    if(g.impact) fields.push(["Impact — what it funds", esc(g.impact)]);
+    if(g.impact) fields.push(["Impact", esc(g.impact)]);
     if(g.trendSignal) fields.push(["Trend signal", esc(g.trendSignal)]);
     if(g.playbook) fields.push(["Replication idea", esc(g.playbook)]);
     if(fields.length === 0 && !g.giftType && !g.restriction) return "";
@@ -1565,7 +1571,7 @@
       if(!ui.candidates || ui.candidates.length === 0){
         html += '<p class="empty-note" style="border:none;padding-left:0;">No matches found on ProPublica&rsquo;s Nonprofit Explorer. Try a shorter or different spelling of the name.</p>';
       } else {
-        html += '<p class="oh-hint">Pick the right organization &mdash; matches by name only, so confirm the city/state before choosing.</p>' +
+        html += '<p class="oh-hint">Pick the right organization. Matches are by name only, so confirm the city/state before choosing.</p>' +
           '<div class="oh-candidates">' + ui.candidates.map(function(c){
             var loc = esc(c.city || "") + (c.city && c.state ? ", " : "") + esc(c.state || "");
             return '<button type="button" class="oh-pick-btn" data-org="' + esc(orgName) + '" data-ein="' + esc(c.ein) + '" data-name="' + esc(c.name) + '" data-city="' + esc(c.city || "") + '" data-state="' + esc(c.state || "") + '">' +
@@ -1653,7 +1659,7 @@
     if(showLinked){
       var worst = orgHealthWorstFlagLevel(ui.analysis);
       if(worst) dotHtml = '<span class="status-dot ' + orgHealthDotClass(worst) + '"></span>';
-      summaryText = "Financial health &mdash; " + esc(link.matchedName || orgName);
+      summaryText = "Financial health &middot; " + esc(link.matchedName || orgName);
       bodyHtml = orgHealthLinkedBodyHtml(orgName, link, ui);
     } else {
       summaryText = "Look up financial health (990 filings)";
@@ -1857,7 +1863,7 @@
     notesEl.value = data.notes || "";
     var statusEl = document.getElementById("ps-status");
     if(statusEl){
-      statusEl.textContent = "Pre-filled from Giving Landscape — check the details, then log it.";
+      statusEl.textContent = "Pre-filled from Giving Landscape. Check the details, then log it.";
       setTimeout(function(){ statusEl.textContent = ""; }, 4000);
     }
     var form = document.getElementById("prospect-form");
@@ -1994,6 +2000,112 @@
     list.innerHTML = filtered.map(playbookCardHtml).join("");
   }
 
+  // ---------- Time Horizon (Giving Landscape): current / trend / structural ----------
+  // Mirrors the three-horizon framing Franklin uses in a diagnostic
+  // engagement (current standing, multi-year trend, long-run structural
+  // behavior), applied to what this tracker actually has on hand rather
+  // than a nonprofit's own audited financials:
+  //  - Current pulls from the gifts logged in the last 12 months.
+  //  - Trend groups every logged gift by year, so the shape sharpens as
+  //    more weeks of Field Intelligence passes and manual entries accumulate.
+  //  - Structural reuses the real, multi-year 990 filing history already
+  //    fetched for any org confirmed in the Organization Tracker below -
+  //    the one dataset here that actually spans several years today.
+  function loadOrgStructuralSummary(){
+    return apiFetch("/api/org-financials/structural-summary").then(function(resp){
+      orgStructuralSummary = resp.orgs || [];
+      renderTimeHorizon();
+    }).catch(function(){
+      orgStructuralSummary = [];
+      renderTimeHorizon();
+    });
+  }
+
+  function timeHorizonCurrentHtml(){
+    var cutoff = Date.now() - 365 * 24 * 60 * 60 * 1000;
+    var recent = state.gifts.filter(function(g){
+      var d = Date.parse(g.announcedAt || g.loggedAt || "");
+      return !isNaN(d) && d >= cutoff;
+    });
+    if(recent.length === 0){
+      return '<p class="empty-note">No gift logged with an announcement date in the last 12 months yet.</p>';
+    }
+    var total = recent.reduce(function(sum,g){ return sum + (Number(g.amount) || 0); }, 0);
+    var byCategory = {};
+    recent.forEach(function(g){
+      var cat = g.category || "other";
+      byCategory[cat] = (byCategory[cat] || 0) + (Number(g.amount) || 0);
+    });
+    var topCategory = Object.keys(byCategory).sort(function(a,b){ return byCategory[b] - byCategory[a]; })[0];
+    var topCategoryLabel = (GIFT_CATEGORY_LABELS && GIFT_CATEGORY_LABELS[topCategory]) || topCategory;
+    return '<div class="th-stat-row">' +
+      '<div class="th-stat"><span class="num mono">' + recent.length + '</span><span class="cap">gifts in the last 12 months</span></div>' +
+      '<div class="th-stat"><span class="num mono">' + fmtMoneyShort(total) + '</span><span class="cap">tracked over that span</span></div>' +
+      '<div class="th-stat"><span class="num mono" style="font-size:1.3rem;">' + esc(topCategoryLabel) + '</span><span class="cap">leading category by dollars</span></div>' +
+      '</div>';
+  }
+
+  function timeHorizonTrendHtml(){
+    var byYear = {};
+    state.gifts.forEach(function(g){
+      var d = Date.parse(g.announcedAt || g.loggedAt || "");
+      if(isNaN(d)) return;
+      var y = new Date(d).getFullYear();
+      if(!byYear[y]) byYear[y] = { count: 0, total: 0 };
+      byYear[y].count++;
+      byYear[y].total += (Number(g.amount) || 0);
+    });
+    var years = Object.keys(byYear).sort();
+    if(years.length === 0){
+      return '<p class="empty-note">No gift has an announcement date logged yet, so there is nothing to group into years.</p>';
+    }
+    if(years.length === 1){
+      return '<p class="empty-note">Every gift logged so far falls in ' + esc(years[0]) + '. This view fills in as gifts from other years get logged, either by hand or through the weekly Field Intelligence pass, and starts showing a real multi-year trend once there is more than one year on the board.</p>';
+    }
+    var maxTotal = Math.max.apply(null, years.map(function(y){ return byYear[y].total; }));
+    return '<div class="th-year-list">' + years.map(function(y){
+      var pct = maxTotal > 0 ? Math.round((byYear[y].total / maxTotal) * 100) : 0;
+      return '<div class="th-year-row">' +
+        '<span class="th-year-label">' + esc(y) + '</span>' +
+        '<div class="gb-track"><div class="gb-fill" style="width:' + pct + '%;"></div></div>' +
+        '<span class="th-year-value">' + fmtMoneyShort(byYear[y].total) + ' &middot; ' + byYear[y].count + (byYear[y].count === 1 ? " gift" : " gifts") + '</span>' +
+        '</div>';
+    }).join("") + '</div>';
+  }
+
+  function timeHorizonStructuralHtml(){
+    if(orgStructuralSummary === null){
+      return '<p class="empty-note">Loading&hellip;</p>';
+    }
+    if(orgStructuralSummary.length === 0){
+      return '<p class="empty-note">No organization has confirmed 990 data yet. Open a row in the Organization Tracker below and look up its financial health. Once at least one is confirmed, its real multi-year filing history shows up here.</p>';
+    }
+    return '<div class="th-org-list">' + orgStructuralSummary.map(function(o){
+      var span = o.yearsAvailable === 0 ? "no filed years yet"
+        : (o.yearsAvailable === 1 ? o.latestYear + " only" : o.earliestYear + "–" + o.latestYear + " (" + o.yearsAvailable + " years filed)");
+      var changeHtml = "";
+      if(o.revenueChangePct !== null){
+        var pct = Math.round(o.revenueChangePct * 100);
+        changeHtml = '<span class="pill ' + (pct >= 0 ? "good" : "") + '">' + (pct >= 0 ? "+" : "") + pct + "% revenue" + '</span>';
+      }
+      return '<div class="th-org-row">' +
+        '<div class="th-org-head"><span class="th-org-name">' + esc(o.matchedName) + '</span>' + changeHtml + '</div>' +
+        '<div class="th-org-span">' + esc(span) + '</div>' +
+        (o.flag ? orgHealthFlagHtml(o.flag) : "") +
+        '</div>';
+    }).join("") + '</div>';
+  }
+
+  function renderTimeHorizon(){
+    var currentEl = document.getElementById("th-current");
+    var trendEl = document.getElementById("th-trend");
+    var structuralEl = document.getElementById("th-structural");
+    if(!currentEl) return; // panel not on this page yet
+    currentEl.innerHTML = timeHorizonCurrentHtml();
+    trendEl.innerHTML = timeHorizonTrendHtml();
+    structuralEl.innerHTML = timeHorizonStructuralHtml();
+  }
+
   // ---------- bootstrap ----------
   function renderAll(){
     renderGivingLandscape();
@@ -2009,6 +2121,7 @@
     renderRocks();
     renderFieldIntel();
     renderPlaybookLibrary();
+    renderTimeHorizon();
   }
 
   function onApiUnavailable(){
@@ -2025,6 +2138,7 @@
     apiReady = true;
     document.getElementById("load-note").hidden = true;
     renderAll();
+    loadOrgStructuralSummary();
   }).catch(function(){
     onApiUnavailable();
   });

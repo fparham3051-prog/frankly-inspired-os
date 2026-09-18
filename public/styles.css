@@ -291,8 +291,8 @@ img{max-width:100%;}
   .gift-cs{margin-top:10px;border-top:1px solid var(--line-soft);padding-top:10px;}
   .gift-cs summary{cursor:pointer;font-family:'IBM Plex Mono', monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-2);list-style:none;}
   .gift-cs summary::-webkit-details-marker{display:none;}
-  .gift-cs summary::before{content:"â–¸ ";display:inline-block;}
-  .gift-cs[open] summary::before{content:"â–¾ ";}
+  .gift-cs summary::before{content:"▸ ";display:inline-block;}
+  .gift-cs[open] summary::before{content:"▾ ";}
   .gift-cs summary:hover{color:var(--accent-strong);}
   .gift-cs-grid{display:grid;gap:10px;margin-top:10px;}
   .gift-cs-field{border-left:3px solid var(--accent-2);padding:1px 0 1px 12px;}
@@ -348,6 +348,28 @@ img{max-width:100%;}
   .ot-actions{padding:0 14px 6px;}
   .ot-actions .ics-link{margin-left:0;}
 
+  /* ---------- Time Horizon (Giving Landscape) ---------- */
+  .th-block{margin-top:20px;padding-top:16px;border-top:1px solid var(--line-soft);}
+  .th-block:first-of-type{margin-top:16px;padding-top:0;border-top:none;}
+  .th-block-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .th-block-tag{font-family:'IBM Plex Mono', monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-2);font-weight:600;}
+  .th-block-sub{font-size:0.82rem;color:var(--ink-soft);}
+  .th-stat-row{display:flex;gap:28px;flex-wrap:wrap;}
+  .th-stat{display:flex;flex-direction:column;gap:2px;}
+  .th-stat .num{font-family:'IBM Plex Mono', monospace;font-weight:600;font-size:1.6rem;font-variant-numeric:tabular-nums;color:var(--ink);}
+  .th-stat .cap{font-size:0.72rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;}
+  .th-year-list{display:flex;flex-direction:column;gap:10px;}
+  .th-year-row{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;}
+  .th-year-label{font-family:'IBM Plex Mono', monospace;font-size:0.82rem;color:var(--ink-soft);}
+  .th-year-value{font-family:'IBM Plex Mono', monospace;font-size:0.78rem;font-variant-numeric:tabular-nums;color:var(--ink-soft);white-space:nowrap;}
+  .th-org-list{display:flex;flex-direction:column;gap:14px;}
+  .th-org-row{padding-bottom:12px;border-bottom:1px solid var(--line-soft);}
+  .th-org-row:last-child{border-bottom:none;padding-bottom:0;}
+  .th-org-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:3px;}
+  .th-org-name{font-family:'Public Sans', sans-serif;font-size:0.92rem;color:var(--ink);}
+  .th-org-span{font-family:'IBM Plex Mono', monospace;font-size:0.74rem;color:var(--ink-soft);margin-bottom:6px;}
+  .pill.good{border-color:color-mix(in srgb, var(--good) 45%, var(--line));color:var(--good);}
+
   /* The same 990 disclosure, reused inside the Prospecting table: a
      full-width row under the prospect's own row, so the chart gets real
      width instead of being squeezed into a table cell. */
@@ -380,8 +402,8 @@ img{max-width:100%;}
   .org-health{padding:0 14px 12px;}
   .org-health summary{cursor:pointer;font-family:'IBM Plex Mono', monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-2);list-style:none;display:flex;align-items:center;}
   .org-health summary::-webkit-details-marker{display:none;}
-  .org-health summary::before{content:"â–¸ ";display:inline-block;}
-  .org-health[open] summary::before{content:"â–¾ ";}
+  .org-health summary::before{content:"▸ ";display:inline-block;}
+  .org-health[open] summary::before{content:"▾ ";}
   .org-health summary:hover{color:var(--accent-strong);}
   .org-health summary .status-dot{margin-left:8px;margin-right:0;order:2;}
   .org-health-body{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:12px;}

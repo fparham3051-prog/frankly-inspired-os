@@ -121,9 +121,9 @@
           <div class="form-grid">
             <div class="field"><label for="gf-gifttype">Gift type</label><select id="gf-gifttype"></select></div>
             <div class="field"><label for="gf-restriction">Restriction</label><select id="gf-restriction"></select></div>
-            <div class="field wide"><label for="gf-impact">Impact — what it funds</label><input id="gf-impact" placeholder="e.g. funds 50 need-based scholarships over 4 years"></div>
-            <div class="field wide"><label for="gf-trend">Trend signal — what it says about the sector</label><input id="gf-trend" placeholder="e.g. continues 2026's wave of DAF-sourced mega-gifts to STEM"></div>
-            <div class="field wide"><label for="gf-playbook">Replication idea — how another org could pursue a similar ask</label><input id="gf-playbook" placeholder="e.g. multi-year cultivation ending on a campaign anniversary"></div>
+            <div class="field wide"><label for="gf-impact">Impact (what it funds)</label><input id="gf-impact" placeholder="e.g. funds 50 need-based scholarships over 4 years"></div>
+            <div class="field wide"><label for="gf-trend">Trend signal (what it says about the sector)</label><input id="gf-trend" placeholder="e.g. continues 2026's wave of DAF-sourced mega-gifts to STEM"></div>
+            <div class="field wide"><label for="gf-playbook">Replication idea (how another org could pursue a similar ask)</label><input id="gf-playbook" placeholder="e.g. multi-year cultivation ending on a campaign anniversary"></div>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn" id="gf-submit">Log gift</button>
@@ -153,11 +153,29 @@
           <h3 style="margin:0;">Organizational Growth Tracker</h3>
           <span class="pill gold" id="gl-orgtracker-refreshed">No positions open yet</span>
         </div>
-        <p>Every recipient organization in the ticker, tracked like a position: a running total built from the gifts logged for it, a sparkline of that growth, and how much the most recent gift moved it &mdash; the way you'd watch a holding, not a headline. Open a row to look up its lifetime 990 filings and check its financial health.</p>
+        <p>Every recipient organization in the ticker, tracked like a position: a running total built from the gifts logged for it, a sparkline of that growth, and how much the most recent gift moved it, the way you'd watch a holding, not a headline. Open a row to look up its lifetime 990 filings and check its financial health.</p>
         <div class="org-tracker-head">
           <span>Organization</span><span>Trend</span><span>Tracked total</span><span>Latest move</span>
         </div>
         <div id="gl-org-tracker"><p class="empty-note">Nothing to track yet. Log a gift above to open the first position.</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="05 · Time horizon">
+        <h3>Time Horizon</h3>
+        <p>The same three-horizon read we'd use to open a diagnostic engagement, applied to what this tracker actually has on hand: gifts logged here for the near term and the multi-year trend, and real 990 filing history for the long-run structural read once an org is confirmed below.</p>
+
+        <div class="th-block">
+          <div class="th-block-head"><span class="th-block-tag">Current</span><span class="th-block-sub">Last 12 months, from the gift ticker</span></div>
+          <div id="th-current"></div>
+        </div>
+        <div class="th-block">
+          <div class="th-block-head"><span class="th-block-tag">Trend</span><span class="th-block-sub">Every logged gift, grouped by year</span></div>
+          <div id="th-trend"></div>
+        </div>
+        <div class="th-block">
+          <div class="th-block-head"><span class="th-block-tag">Structural</span><span class="th-block-sub">Multi-year 990 history, confirmed orgs only</span></div>
+          <div id="th-structural"></div>
+        </div>
       </div>
     </section>
 
@@ -538,7 +556,7 @@
     <!-- ================= PLAYBOOK LIBRARY ================= -->
     <section class="view" data-view="playbook" hidden>
       <div class="view-head"><h2>Playbook Library</h2><span class="tag">what worked, searchable</span></div>
-      <p class="view-intro">Every gift on the ticker that got a real case-study read - what it funded, what it signaled, how we'd pursue something similar - pulled into one place you can search instead of scrolling the ticker for the one you half-remember. Internal only: this is exactly the analysis layer the public Giving Landscape page leaves out.</p>
+      <p class="view-intro">Every gift on the ticker that got a real case-study read (what it funded, what it signaled, how we'd pursue something similar) pulled into one place you can search, instead of scrolling the ticker for the one you half-remember. Internal only: this is exactly the analysis layer the public Giving Landscape page leaves out.</p>
 
       <div class="fw-card" data-panel="01 · Search & filter">
         <input type="search" class="search-input" id="pb-search" placeholder="Search org, donor, impact, trend signal, playbook...">

@@ -49,7 +49,7 @@
     document.getElementById("gp-stat-states").textContent = Object.keys(states).length;
 
     if(gifts.length === 0){
-      noteEl.textContent = "Nothing shared on this public page yet — check back soon.";
+      noteEl.textContent = "Nothing shared on this public page yet. Check back soon.";
       cardEl.hidden = true;
       return;
     }
@@ -73,7 +73,7 @@
     .then(function(r){ if(!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
     .then(function(data){ render(data.gifts || []); })
     .catch(function(err){
-      document.getElementById("gp-load-note").textContent = "Could not load this page right now — please try again shortly.";
+      document.getElementById("gp-load-note").textContent = "Could not load this page right now. Please try again shortly.";
       console.error(err);
     });
 })();

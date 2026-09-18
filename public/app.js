@@ -58,12 +58,19 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], ready:false };
   var pipelineFilter = "all";
   var issueFilter = "all";
   var giftCategoryFilter = "all";
   var selectedGiftState = null;
   var apiReady = false;
+  var usMapData = null;
+  var usMapLoading = false;
+  // Ephemeral, per-org UI state for the 990 financial-health lookup flow
+  // (open/closed, search query, candidates, fetched analysis). Never comes
+  // from the server and isn't part of `state` - it just needs to survive
+  // renderOrgTracker() rebuilding the tracker's HTML on every data refresh.
+  var orgHealthUi = {};
 
   // Giving USA 2026 report's nine recipient-subsector categories for 2025 giving
   // (the most recent year reported). Percentages are Giving USA's own rounded
@@ -87,6 +94,11 @@
   var GIFT_CATEGORY_LABELS = { "other": "Other / unspecified" };
   GIVING_USA_CATEGORIES.forEach(function(c){ GIFT_CATEGORY_LABELS[c.key] = c.label; });
 
+  // Fixed vocab for the case-study breakdown, so gift type and restriction
+  // stay short, comparable pills rather than free text.
+  var GIFT_TYPES = ["Outright cash gift", "Multi-year pledge", "Endowment gift", "Donor-advised fund grant", "Matching / challenge gift", "Planned gift / bequest", "In-kind gift", "Campaign lead gift", "Other"];
+  var GIFT_RESTRICTIONS = ["Unrestricted", "Program-restricted", "Capital / naming", "Endowment", "Not stated"];
+
   // U.S. Census Bureau's four regions / nine divisions, used to group the state
   // grid instead of plotting states on a literal map, so a state's position on
   // the page is never a guess, only the data behind it is shown.
@@ -100,7 +112,7 @@
   US_REGIONS.forEach(function(r){ r.states.forEach(function(s){ STATE_NAME_BY_ABBR[s[0]] = s[1]; }); });
 
   var PROSPECT_STATUS_LABELS = {"new":"New", researching:"Researching", contacted:"Contacted", responded:"Responded", meeting:"Meeting booked", "not-fit":"Not a fit"};
-  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", other:"Other"};
+  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", other:"Other"};
 
   // ---------- nav ----------
   var navButtons = document.querySelectorAll("#app-nav .rail-btn");
@@ -325,6 +337,7 @@
       state.digest = data.digest || [];
       state.gifts = data.gifts || [];
       state.vision = data.vision || null;
+      state.orgLinks = data.orgLinks || [];
       state.ready = true;
     });
   }
@@ -424,7 +437,7 @@
       var nameCell = p.link
         ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener">' + esc(p.name || "Untitled") + '</a>'
         : esc(p.name || "Untitled");
-      return '<tr data-id="' + esc(p.id) + '">' +
+      var row = '<tr data-id="' + esc(p.id) + '">' +
         '<td>' + dotHtml(prospectHealth(p)) + '<strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</div></td>' +
         '<td class="dim">' + esc(p.org || "") + '</td>' +
         '<td class="dim">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</td>' +
@@ -432,7 +445,19 @@
         '<td class="dim">' + esc(p.notes || "") + '</td>' +
         '<td><button type="button" class="btn ps-promote">Promote</button> <button type="button" class="btn danger ps-delete">Remove</button></td>' +
         '</tr>';
+      // Same 990 financial-health disclosure as the Giving Landscape org
+      // tracker, keyed by prospect.org instead of gift.org - a prospect tied
+      // to an organization gets the same lifetime filing lookup, in its own
+      // full-width row so the chart isn't squeezed into a table cell.
+      if(p.org){
+        row += '<tr class="oh-row"><td colspan="6" class="oh-cell">' + orgHealthHtml(p.org) + '</td></tr>';
+      }
+      return row;
     }).join("");
+    body.querySelectorAll(".ot-pt, .oh-chart-pt").forEach(function(pt){
+      pt.addEventListener("mousemove", function(e){ showChartTooltip(e, pt.getAttribute("data-tip")); });
+      pt.addEventListener("mouseleave", hideChartTooltip);
+    });
   }
   document.getElementById("prospect-rows").addEventListener("change", function(e){
     if(!e.target.classList.contains("ps-stage-select")) return;
@@ -1159,21 +1184,49 @@
       return '<option value="' + c.key + '">' + esc(c.label) + '</option>';
     }).join("") + '<option value="other" selected>Other / unspecified</option>';
 
-    document.getElementById("gl-state-grid").addEventListener("click", function(e){
-      var btn = e.target.closest(".state-tile");
-      if(!btn) return;
-      var abbr = btn.getAttribute("data-abbr");
+    var giftTypeSel = document.getElementById("gf-gifttype");
+    giftTypeSel.innerHTML = '<option value="">Not specified</option>' + GIFT_TYPES.map(function(t){
+      return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+    }).join("");
+
+    var restrictionSel = document.getElementById("gf-restriction");
+    restrictionSel.innerHTML = '<option value="">Not specified</option>' + GIFT_RESTRICTIONS.map(function(t){
+      return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+    }).join("");
+
+    var mapWrap = document.getElementById("gl-us-map-wrap");
+    mapWrap.addEventListener("click", function(e){
+      var pathEl = e.target.closest(".us-state");
+      if(!pathEl) return;
+      var abbr = pathEl.getAttribute("data-abbr");
       selectedGiftState = (selectedGiftState === abbr) ? null : abbr;
       renderStateGrid();
       renderGiftTicker();
     });
+    mapWrap.addEventListener("mousemove", function(e){
+      var pathEl = e.target.closest(".us-state");
+      if(!pathEl){ hideChartTooltip(); return; }
+      showChartTooltip(e, pathEl.getAttribute("data-tip"));
+    });
+    mapWrap.addEventListener("mouseleave", hideChartTooltip);
+
+    loadUsMapData();
+    bindOrgHealthEvents();
 
     document.getElementById("gl-ticker-list").addEventListener("click", function(e){
-      var btn = e.target.closest(".gift-delete");
-      if(!btn) return;
-      var id = btn.closest(".gift-card").getAttribute("data-id");
-      if(!confirm("Remove this gift from the ticker?")) return;
-      apiFetch("/api/gifts/" + id, { method: "DELETE" }).then(refreshAndRender).catch(function(err){ console.error(err); });
+      var delBtn = e.target.closest(".gift-delete");
+      if(delBtn){
+        var id = delBtn.closest(".gift-card").getAttribute("data-id");
+        if(!confirm("Remove this gift from the ticker?")) return;
+        apiFetch("/api/gifts/" + id, { method: "DELETE" }).then(refreshAndRender).catch(function(err){ console.error(err); });
+        return;
+      }
+      var pubBtn = e.target.closest(".gift-public-toggle");
+      if(pubBtn){
+        var gid = pubBtn.closest(".gift-card").getAttribute("data-id");
+        var nextVal = pubBtn.getAttribute("data-public") !== "1";
+        apiFetch("/api/gifts/" + gid + "/public", { method: "POST", body: { publicOk: nextVal } }).then(refreshAndRender).catch(function(err){ console.error(err); });
+      }
     });
 
     document.getElementById("gift-form").addEventListener("submit", function(e){
@@ -1190,7 +1243,12 @@
         announcedAt: document.getElementById("gf-date").value,
         headline: document.getElementById("gf-headline").value.trim(),
         source: document.getElementById("gf-source").value.trim(),
-        url: document.getElementById("gf-url").value.trim()
+        url: document.getElementById("gf-url").value.trim(),
+        giftType: document.getElementById("gf-gifttype").value,
+        restriction: document.getElementById("gf-restriction").value,
+        impact: document.getElementById("gf-impact").value.trim(),
+        trendSignal: document.getElementById("gf-trend").value.trim(),
+        playbook: document.getElementById("gf-playbook").value.trim()
       };
       apiFetch("/api/gifts", { method: "POST", body: data }).then(function(){
         document.getElementById("gift-form").reset();
@@ -1258,9 +1316,41 @@
         '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
         (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
         (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
+        ' <button type="button" class="btn public-toggle' + (g.publicOk ? ' is-on' : '') + ' gift-public-toggle" data-public="' + (g.publicOk ? "1" : "0") + '" style="margin-left:8px;" title="Show this gift - just the gift, not our case-study notes - on the public Giving Landscape page.">' + (g.publicOk ? "On public page" : "Add to public page") + '</button>' +
         ' <button type="button" class="btn danger gift-delete" style="margin-left:8px;">Remove</button></div>' +
+        giftCaseStudyHtml(g) +
         '</div>';
     }).join("");
+  }
+
+  // Gift type, restriction, impact, trend signal, and a replication idea, as
+  // short labeled data fields rather than a paragraph. hasCaseStudy/
+  // giftCaseStudyGridHtml are shared with the Playbook Library below, which
+  // is just this same content pulled out of every gift and made searchable
+  // in one place instead of read one collapsed disclosure at a time.
+  function hasCaseStudy(g){
+    return !!(g.impact || g.trendSignal || g.playbook || g.giftType || g.restriction);
+  }
+  function giftCaseStudyGridHtml(g){
+    var fields = [];
+    if(g.impact) fields.push(["Impact — what it funds", esc(g.impact)]);
+    if(g.trendSignal) fields.push(["Trend signal", esc(g.trendSignal)]);
+    if(g.playbook) fields.push(["Replication idea", esc(g.playbook)]);
+    if(fields.length === 0 && !g.giftType && !g.restriction) return "";
+    var pills = (g.giftType ? '<span class="pill">' + esc(g.giftType) + '</span>' : "") +
+      (g.restriction ? '<span class="pill">' + esc(g.restriction) + '</span>' : "");
+    return '<div class="gift-cs-grid">' +
+      (pills ? '<div class="gift-cs-field"><span class="gift-cs-label">Gift structure</span><div class="gift-cs-pills">' + pills + '</div></div>' : "") +
+      fields.map(function(f){ return '<div class="gift-cs-field"><span class="gift-cs-label">' + esc(f[0]) + '</span><span class="gift-cs-value">' + f[1] + '</span></div>'; }).join("") +
+      '</div>';
+  }
+  // Click-to-open breakdown on the ticker card. Renders nothing (no empty
+  // disclosure) when a gift has none of these filled in yet - e.g. older
+  // rows logged before this was added.
+  function giftCaseStudyHtml(g){
+    var grid = giftCaseStudyGridHtml(g);
+    if(!grid) return "";
+    return '<details class="gift-cs"><summary>View case study breakdown</summary>' + grid + '</details>';
   }
 
   function stateAggregates(){
@@ -1292,25 +1382,52 @@
       esc(agg.latest.org || "Untitled") + (agg.latest.donor ? (" from " + esc(agg.latest.donor)) : "") + ', ' + fmtDate(agg.latest.announcedAt || agg.latest.loggedAt) + '.</p>';
   }
 
+  function loadUsMapData(){
+    if(usMapData || usMapLoading) return;
+    usMapLoading = true;
+    fetch("/us-states.json").then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function(data){
+      usMapData = data;
+      usMapLoading = false;
+      renderStateGrid();
+    }).catch(function(err){
+      usMapLoading = false;
+      console.error("Could not load map data", err);
+      var wrap = document.getElementById("gl-us-map-wrap");
+      if(wrap) wrap.innerHTML = '<p class="empty-note">Map data could not be loaded.</p>';
+    });
+  }
+
+  function renderUsMap(byState, maxTotal){
+    var wrap = document.getElementById("gl-us-map-wrap");
+    if(!wrap) return;
+    if(!usMapData){
+      wrap.innerHTML = '<p class="empty-note">Loading map&hellip;</p>';
+      return;
+    }
+    var paths = Object.keys(usMapData.states).map(function(abbr){
+      var s = usMapData.states[abbr];
+      var name = STATE_NAME_BY_ABBR[abbr] || abbr;
+      var agg = byState[abbr];
+      var hasData = !!agg;
+      var intensity = hasData && maxTotal > 0 ? Math.max(0.18, agg.total/maxTotal) : 0;
+      var selected = selectedGiftState === abbr;
+      var cls = "us-state" + (hasData ? " has-data" : "") + (selected ? " is-selected" : "");
+      var tip = esc(name) + (hasData ? (': ' + agg.count + ' gift' + (agg.count === 1 ? '' : 's') + ', ' + fmtMoneyExact(agg.total)) : ': no gifts logged yet');
+      return '<path class="' + cls + '" data-abbr="' + abbr + '" data-tip="' + tip + '" d="' + s.d + '"' +
+        (hasData ? (' style="fill-opacity:' + intensity.toFixed(2) + '"') : '') + '></path>';
+    }).join("");
+    wrap.innerHTML = '<svg viewBox="0 0 ' + usMapData.viewBox[0] + ' ' + usMapData.viewBox[1] + '" role="img" aria-label="Map of U.S. states shaded by total gift dollars logged, darker means more">' + paths + '</svg>';
+  }
+
   function renderStateGrid(){
     var byState = stateAggregates();
     var maxTotal = 0;
     Object.keys(byState).forEach(function(k){ if(byState[k].total > maxTotal) maxTotal = byState[k].total; });
 
-    var grid = document.getElementById("gl-state-grid");
-    grid.innerHTML = US_REGIONS.map(function(region){
-      var tiles = region.states.map(function(s){
-        var abbr = s[0], name = s[1];
-        var agg = byState[abbr];
-        var hasData = !!agg;
-        var intensity = hasData && maxTotal > 0 ? Math.max(0.18, agg.total/maxTotal) : 0;
-        var barHtml = hasData ? ('<span class="st-bar" style="opacity:' + intensity.toFixed(2) + '"></span>') : "";
-        var selected = selectedGiftState === abbr;
-        return '<button type="button" class="state-tile' + (selected ? ' is-selected' : '') + '" data-abbr="' + abbr + '" title="' + esc(name) + (hasData ? (': ' + agg.count + ' gift' + (agg.count === 1 ? '' : 's') + ', ' + fmtMoneyExact(agg.total)) : ': no gifts logged yet') + '">' +
-          barHtml + '<span class="st-abbr">' + abbr + '</span><span class="st-count">' + (hasData ? agg.count : '&middot;') + '</span></button>';
-      }).join("");
-      return '<div class="state-region"><h4>' + esc(region.name) + '</h4><div class="state-tiles">' + tiles + '</div></div>';
-    }).join("");
+    renderUsMap(byState, maxTotal);
 
     var rows = Object.keys(byState).map(function(k){ var a = byState[k]; return { abbr: k, count: a.count, total: a.total, latest: a.latest }; })
       .sort(function(a,b){ return b.total - a.total; });
@@ -1326,11 +1443,456 @@
     renderStateDetail(byState);
   }
 
+  // Each recipient organization tracked like a position: gifts logged for it,
+  // in the order they were announced, rolled into a running total. "Growth"
+  // is that total's history; the "move" a stock tracker would show for today
+  // is, here, how much the most recent gift added to the total that came
+  // before it - the only notion of a period this data actually has.
+  function orgGrowthData(){
+    var byOrg = {};
+    state.gifts.forEach(function(g){
+      var org = (g.org || "").trim();
+      if(!org) return;
+      (byOrg[org] = byOrg[org] || []).push(g);
+    });
+    var orgs = Object.keys(byOrg).map(function(org){
+      var gifts = byOrg[org].slice().sort(function(a,b){
+        return (a.announcedAt || a.loggedAt || "").localeCompare(b.announcedAt || b.loggedAt || "");
+      });
+      var running = 0;
+      var cumulative = gifts.map(function(g){
+        running += Number(g.amount) || 0;
+        return { date: g.announcedAt || g.loggedAt || "", value: running };
+      });
+      var prevTotal = cumulative.length > 1 ? cumulative[cumulative.length - 2].value : 0;
+      var latest = gifts[gifts.length - 1];
+      var latestAmount = Number(latest.amount) || 0;
+      var pctMove = prevTotal > 0 ? (latestAmount / prevTotal) * 100 : (cumulative.length > 1 ? 0 : null);
+      return {
+        org: org,
+        state: latest.state,
+        count: gifts.length,
+        total: running,
+        cumulative: cumulative,
+        latest: latest,
+        pctMove: pctMove
+      };
+    });
+    orgs.sort(function(a,b){ return b.total - a.total; });
+    return orgs;
+  }
+
+  function buildOrgSparkline(cumulative){
+    var w = 96, h = 30, pad = 4;
+    var n = cumulative.length;
+    var label = n + " gift" + (n === 1 ? "" : "s") + " logged, running total " + fmtMoneyExact(cumulative[n-1].value);
+    if(n === 1){
+      return '<div class="ot-spark"><svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(label) + '">' +
+        '<circle class="ot-pt ot-pt-last" cx="' + (w/2) + '" cy="' + (h/2) + '" r="3" data-tip="' + esc(fmtDate(cumulative[0].date)) + ': ' + esc(fmtMoneyExact(cumulative[0].value)) + '"></circle>' +
+        '</svg></div>';
+    }
+    var values = cumulative.map(function(c){ return c.value; });
+    var minY = Math.min.apply(null, values.concat([0]));
+    var maxY = Math.max.apply(null, values);
+    if(minY === maxY) maxY = minY + 1;
+    var xScale = function(i){ return pad + (i/(n-1)) * (w - pad*2); };
+    var yScale = function(v){ return pad + (1 - (v-minY)/(maxY-minY)) * (h - pad*2); };
+    var pts = cumulative.map(function(c,i){ return { x: xScale(i), y: yScale(c.value), c: c }; });
+    var linePath = pts.map(function(p,i){ return (i===0?"M":"L") + p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" ");
+    var areaPath = linePath + " L" + pts[n-1].x.toFixed(1) + "," + (h-pad).toFixed(1) + " L" + pts[0].x.toFixed(1) + "," + (h-pad).toFixed(1) + " Z";
+    var markers = pts.map(function(p,i){
+      var isLast = i === n - 1;
+      var tip = esc(fmtDate(p.c.date)) + ': ' + esc(fmtMoneyExact(p.c.value));
+      return '<circle class="ot-pt' + (isLast ? ' ot-pt-last' : '') + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (isLast ? 2.8 : 1.6) + '" data-tip="' + tip + '"></circle>';
+    }).join("");
+    return '<div class="ot-spark"><svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(label) + '">' +
+      '<path class="ot-spark-area" d="' + areaPath + '"></path>' +
+      '<path class="ot-spark-line" d="' + linePath + '"></path>' +
+      markers +
+      '</svg></div>';
+  }
+
+  function orgMoveHtml(pctMove){
+    if(pctMove === null) return '<span class="ot-move is-new">New</span>';
+    if(pctMove === 0) return '<span class="ot-move is-flat">&mdash; flat</span>';
+    if(pctMove < 0) return '<span class="ot-move is-down">&#9660; ' + pctMove.toFixed(1) + '%</span>';
+    return '<span class="ot-move is-up">&#9650; +' + pctMove.toFixed(1) + '%</span>';
+  }
+
+  function orgLinksByName(){
+    var map = {};
+    (state.orgLinks || []).forEach(function(l){ map[l.org] = l; });
+    return map;
+  }
+
+  // ---------- organizational 990 financial health (per-org disclosure) ----------
+  // A gift's org is free text, so it's never auto-matched to an EIN by name
+  // alone - Franklin searches and confirms the right nonprofit once, and
+  // that link is reused after that. The confirmed link lives in state
+  // (from the server); the search/candidate-picking flow itself is
+  // ephemeral UI state in orgHealthUi, keyed by org name.
+  function orgHealthWorstFlagLevel(analysis){
+    if(!analysis || !analysis.flags) return null;
+    var rank = { watch: 2, info: 1, good: 0 };
+    var worst = null, worstRank = -1;
+    analysis.flags.forEach(function(f){
+      var r = rank[f.level] || 0;
+      if(r > worstRank){ worstRank = r; worst = f.level; }
+    });
+    return worst;
+  }
+  function orgHealthDotClass(level){
+    if(level === "watch") return "dot-warn";
+    if(level === "good") return "dot-good";
+    return "dot-neutral";
+  }
+  function orgHealthFlagHtml(f){
+    return '<div class="oh-flag"><span class="status-dot ' + orgHealthDotClass(f.level) + '"></span>' + esc(f.text) + '</div>';
+  }
+
+  function orgHealthSearchBodyHtml(orgName, ui){
+    var query = ui.query !== undefined && ui.query !== null ? ui.query : orgName;
+    var html = '<form class="oh-search-form" data-org="' + esc(orgName) + '">' +
+      '<div class="oh-search-row">' +
+      '<input type="text" class="oh-query" value="' + esc(query) + '" placeholder="Organization name">' +
+      '<button type="submit" class="btn secondary">Search ProPublica</button>' +
+      '</div></form>';
+    if(ui.mode === "loading-search"){
+      html += '<p class="empty-note" style="border:none;padding-left:0;">Searching&hellip;</p>';
+    } else if(ui.mode === "error"){
+      html += '<p class="save-status" style="color:var(--warn);">' + esc(ui.error || "Search failed.") + '</p>';
+    } else if(ui.mode === "candidates"){
+      if(!ui.candidates || ui.candidates.length === 0){
+        html += '<p class="empty-note" style="border:none;padding-left:0;">No matches found on ProPublica&rsquo;s Nonprofit Explorer. Try a shorter or different spelling of the name.</p>';
+      } else {
+        html += '<p class="oh-hint">Pick the right organization &mdash; matches by name only, so confirm the city/state before choosing.</p>' +
+          '<div class="oh-candidates">' + ui.candidates.map(function(c){
+            var loc = esc(c.city || "") + (c.city && c.state ? ", " : "") + esc(c.state || "");
+            return '<button type="button" class="oh-pick-btn" data-org="' + esc(orgName) + '" data-ein="' + esc(c.ein) + '" data-name="' + esc(c.name) + '" data-city="' + esc(c.city || "") + '" data-state="' + esc(c.state || "") + '">' +
+              '<strong>' + esc(c.name) + '</strong><span>' + loc + (loc ? ' &middot; ' : '') + 'EIN ' + esc(c.strein || c.ein) + '</span>' +
+              '</button>';
+          }).join("") + '</div>';
+      }
+    }
+    return html;
+  }
+
+  function orgHealthChartHtml(years){
+    var w = Math.max(280, years.length * 56), h = 140, padL = 22, padR = 22, padT = 10, padB = 22;
+    var vals = [];
+    years.forEach(function(y){ vals.push(y.revenue, y.expenses, 0); });
+    var minY = Math.min.apply(null, vals), maxY = Math.max.apply(null, vals);
+    if(maxY === minY) maxY = minY + 1;
+    var n = years.length;
+    var xScale = function(i){ return n === 1 ? (w/2) : (padL + (i/(n-1)) * (w - padL - padR)); };
+    var yScale = function(v){ return padT + (1 - (v - minY)/(maxY - minY)) * (h - padT - padB); };
+    function seriesPath(key){
+      return years.map(function(y,i){ return (i===0?"M":"L") + xScale(i).toFixed(1) + "," + yScale(y[key]).toFixed(1); }).join(" ");
+    }
+    function markers(key, cls, label){
+      return years.map(function(y,i){
+        var tip = y.year + ' ' + label + ': ' + fmtMoneyExact(y[key]);
+        return '<circle class="oh-chart-pt ' + cls + '" cx="' + xScale(i).toFixed(1) + '" cy="' + yScale(y[key]).toFixed(1) + '" r="2.6" data-tip="' + esc(tip) + '"></circle>';
+      }).join("");
+    }
+    var xLabels = years.map(function(y,i){
+      return '<text class="oh-chart-xlabel" x="' + xScale(i).toFixed(1) + '" y="' + (h-7) + '" text-anchor="middle">' + y.year + '</text>';
+    }).join("");
+    var zeroY = yScale(0);
+    var zeroLine = minY < 0 ? ('<line x1="' + padL + '" y1="' + zeroY.toFixed(1) + '" x2="' + (w-padR) + '" y2="' + zeroY.toFixed(1) + '" stroke="var(--line)" stroke-width="1"></line>') : "";
+    return '<div class="oh-chart"><svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Revenue and expenses by filed year">' +
+      zeroLine +
+      '<path d="' + seriesPath("revenue") + '" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>' +
+      '<path d="' + seriesPath("expenses") + '" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3"></path>' +
+      markers("revenue", "oh-pt-rev", "revenue") + markers("expenses", "oh-pt-exp", "expenses") +
+      xLabels +
+      '</svg><div class="oh-chart-legend"><span><i class="oh-swatch oh-swatch-rev"></i>Revenue</span><span><i class="oh-swatch oh-swatch-exp"></i>Expenses</span></div></div>';
+  }
+
+  function orgHealthLinkedBodyHtml(orgName, link, ui){
+    var loc = (link.matchedCity || link.matchedState) ? (' &middot; ' + esc(link.matchedCity || "") + (link.matchedCity && link.matchedState ? ", " : "") + esc(link.matchedState || "")) : "";
+    var head = '<div class="oh-linked-head"><span>Matched to <strong>' + esc(link.matchedName || orgName) + '</strong>' + loc + ' &middot; EIN ' + esc(link.ein) + '</span>' +
+      '<span class="oh-linked-actions">' +
+      '<button type="button" class="oh-refresh-btn" data-org="' + esc(orgName) + '" data-ein="' + esc(link.ein) + '">Refresh</button>' +
+      '<button type="button" class="oh-relink-btn" data-org="' + esc(orgName) + '">Not this org?</button>' +
+      '</span></div>';
+
+    if(ui.mode === "error"){
+      return head + '<p class="save-status" style="color:var(--warn);">' + esc(ui.error || "Could not load financials.") + '</p>';
+    }
+    if(!ui.analysis){
+      return head + '<p class="empty-note" style="border:none;padding-left:0;">Loading filings from ProPublica&hellip;</p>';
+    }
+    var analysis = ui.analysis;
+    var years = analysis.years;
+    var flagsHtml = '<div class="oh-flags">' + analysis.flags.map(orgHealthFlagHtml).join("") + '</div>';
+    if(years.length === 0){
+      return head + flagsHtml;
+    }
+    var chart = orgHealthChartHtml(years);
+    var tableRows = years.slice().reverse().map(function(y){
+      var netCls = y.netIncome < 0 ? ' class="oh-neg"' : '';
+      return '<tr><td>' + y.year + '</td><td>' + fmtMoneyExact(y.revenue) + '</td><td>' + fmtMoneyExact(y.expenses) + '</td>' +
+        '<td' + netCls + '>' + (y.netIncome < 0 ? '&minus;' : '') + fmtMoneyExact(Math.abs(y.netIncome)) + '</td>' +
+        '<td>' + (y.reserveMonths === null ? '&mdash;' : y.reserveMonths.toFixed(1) + ' mo') + '</td>' +
+        '<td>' + (y.pdfUrl ? ('<a href="' + esc(y.pdfUrl) + '" target="_blank" rel="noopener">990 PDF</a>') : '&mdash;') + '</td></tr>';
+    }).join("");
+    var fetchedNote = ui.fetchedAt ? ('<div class="oh-fetched-note">From ProPublica&rsquo;s Nonprofit Explorer (public 990 filings), last fetched ' + esc(fmtDate(String(ui.fetchedAt).slice(0,10))) + '.</div>') : '';
+    return head + flagsHtml + chart +
+      '<div class="table-wrap"><table class="oh-table"><thead><tr><th>Year</th><th>Revenue</th><th>Expenses</th><th>Net</th><th>Reserve</th><th>Source</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+      fetchedNote;
+  }
+
+  function orgHealthHtml(orgName){
+    var ui = orgHealthUi[orgName] || (orgHealthUi[orgName] = { open: false, mode: "idle", query: orgName });
+    var link = orgLinksByName()[orgName];
+    var showLinked = link && ui.mode !== "search" && ui.mode !== "candidates" && ui.mode !== "loading-search";
+    var dotHtml = "";
+    var summaryText;
+    var bodyHtml;
+    if(showLinked){
+      var worst = orgHealthWorstFlagLevel(ui.analysis);
+      if(worst) dotHtml = '<span class="status-dot ' + orgHealthDotClass(worst) + '"></span>';
+      summaryText = "Financial health &mdash; " + esc(link.matchedName || orgName);
+      bodyHtml = orgHealthLinkedBodyHtml(orgName, link, ui);
+    } else {
+      summaryText = "Look up financial health (990 filings)";
+      bodyHtml = orgHealthSearchBodyHtml(orgName, ui);
+    }
+    return '<details class="org-health"' + (ui.open ? " open" : "") + ' data-org="' + esc(orgName) + '">' +
+      '<summary>' + dotHtml + summaryText + '</summary>' +
+      '<div class="org-health-body">' + bodyHtml + '</div>' +
+      '</details>';
+  }
+
+  // The same .org-health disclosure now renders in two different places -
+  // the Giving Landscape org tracker and the Prospecting table - so any
+  // state change (a fetch resolving, a pick, a refresh) re-renders whichever
+  // of those containers is actually present, instead of assuming one.
+  function renderOrgHealthHosts(){
+    if(document.getElementById("gl-org-tracker")) renderOrgTracker();
+    if(document.getElementById("prospect-rows")) renderProspecting();
+  }
+
+  function fetchOrgFinancials(org){
+    var ui = orgHealthUi[org];
+    apiFetch("/api/org-financials?org=" + encodeURIComponent(org)).then(function(resp){
+      if(resp.linked){
+        ui.mode = "linked";
+        ui.analysis = resp.analysis;
+        ui.fetchedAt = resp.fetchedAt;
+      } else {
+        ui.mode = "search";
+      }
+      renderOrgHealthHosts();
+    }).catch(function(err){
+      ui.mode = "error";
+      ui.error = "Could not load financials: " + err.message;
+      renderOrgHealthHosts();
+    });
+  }
+
+  function bindOrgHealthEvents(){
+    // Bound on <main> rather than the org tracker container alone, since the
+    // same .org-health disclosure now also renders inside the Prospecting
+    // table (keyed by prospect.org) - one set of delegated handlers serves
+    // every org-health block in the app, wherever it's rendered.
+    var el = document.querySelector("main");
+    if(!el) return;
+    // The 'toggle' event on <details> does not bubble, so delegation only
+    // works on the capture phase (capture happens on the way down to the
+    // target regardless of whether the event bubbles back up afterward).
+    el.addEventListener("toggle", function(e){
+      var det = e.target.closest ? e.target.closest(".org-health") : null;
+      if(!det || !el.contains(det)) return;
+      var org = det.getAttribute("data-org");
+      var ui = orgHealthUi[org] || (orgHealthUi[org] = { open: false, mode: "idle", query: org });
+      ui.open = det.open;
+      if(det.open){
+        var link = orgLinksByName()[org];
+        if(link && !ui.analysis && ui.mode !== "loading" && ui.mode !== "error"){
+          ui.mode = "loading";
+          fetchOrgFinancials(org);
+        }
+      }
+    }, true);
+
+    el.addEventListener("submit", function(e){
+      var form = e.target.closest(".oh-search-form");
+      if(!form) return;
+      e.preventDefault();
+      var org = form.getAttribute("data-org");
+      var input = form.querySelector(".oh-query");
+      var query = ((input && input.value) || "").trim();
+      var ui = orgHealthUi[org] || (orgHealthUi[org] = { open: true, mode: "idle", query: org });
+      ui.open = true;
+      ui.query = query || org;
+      if(!query) return;
+      ui.mode = "loading-search";
+      renderOrgHealthHosts();
+      apiFetch("/api/org-financials/search?q=" + encodeURIComponent(query)).then(function(resp){
+        ui.mode = "candidates";
+        ui.candidates = resp.results || [];
+        renderOrgHealthHosts();
+      }).catch(function(err){
+        ui.mode = "error";
+        ui.error = "Search failed: " + err.message;
+        renderOrgHealthHosts();
+      });
+    });
+
+    el.addEventListener("click", function(e){
+      var flagBtn = e.target.closest(".ot-flag-btn");
+      if(flagBtn){
+        e.preventDefault();
+        flagOrgAsProspect(flagBtn.getAttribute("data-org"));
+        return;
+      }
+      var pickBtn = e.target.closest(".oh-pick-btn");
+      if(pickBtn){
+        var org = pickBtn.getAttribute("data-org");
+        var ui = orgHealthUi[org] || (orgHealthUi[org] = { open: true, mode: "idle" });
+        ui.open = true;
+        ui.mode = "loading";
+        renderOrgHealthHosts();
+        apiFetch("/api/org-financials/link", { method: "POST", body: {
+          org: org, ein: pickBtn.getAttribute("data-ein"), matchedName: pickBtn.getAttribute("data-name"),
+          matchedCity: pickBtn.getAttribute("data-city"), matchedState: pickBtn.getAttribute("data-state")
+        }}).then(function(resp){
+          state.orgLinks = (state.orgLinks || []).filter(function(l){ return l.org !== org; });
+          state.orgLinks.push({ org: org, ein: resp.ein, matchedName: resp.matchedName, matchedCity: pickBtn.getAttribute("data-city"), matchedState: pickBtn.getAttribute("data-state"), linkedAt: new Date().toISOString() });
+          ui.mode = "linked";
+          ui.analysis = resp.analysis;
+          ui.fetchedAt = resp.fetchedAt;
+          renderOrgHealthHosts();
+        }).catch(function(err){
+          ui.mode = "error";
+          ui.error = "Could not link that organization: " + err.message;
+          renderOrgHealthHosts();
+        });
+        return;
+      }
+      var relinkBtn = e.target.closest(".oh-relink-btn");
+      if(relinkBtn){
+        var org2 = relinkBtn.getAttribute("data-org");
+        var ui2 = orgHealthUi[org2] || (orgHealthUi[org2] = {});
+        ui2.open = true;
+        ui2.mode = "search";
+        ui2.query = org2;
+        ui2.candidates = null;
+        renderOrgHealthHosts();
+        return;
+      }
+      var refreshBtn = e.target.closest(".oh-refresh-btn");
+      if(refreshBtn){
+        var org3 = refreshBtn.getAttribute("data-org");
+        var ein3 = refreshBtn.getAttribute("data-ein");
+        var ui3 = orgHealthUi[org3] || (orgHealthUi[org3] = {});
+        ui3.open = true;
+        ui3.mode = "loading";
+        renderOrgHealthHosts();
+        apiFetch("/api/org-financials/" + encodeURIComponent(ein3) + "/refresh", { method: "POST" }).then(function(resp){
+          ui3.mode = "linked";
+          ui3.analysis = resp.analysis;
+          ui3.fetchedAt = resp.fetchedAt;
+          renderOrgHealthHosts();
+        }).catch(function(err){
+          ui3.mode = "error";
+          ui3.error = "Refresh failed: " + err.message;
+          renderOrgHealthHosts();
+        });
+        return;
+      }
+    });
+  }
+
+  function renderOrgTracker(){
+    var container = document.getElementById("gl-org-tracker");
+    var refreshedEl = document.getElementById("gl-orgtracker-refreshed");
+    if(!container || !refreshedEl) return;
+    var orgs = orgGrowthData();
+    if(orgs.length === 0){
+      refreshedEl.textContent = "No positions open yet";
+      container.innerHTML = '<p class="empty-note">Nothing to track yet. Log a gift above to open the first position.</p>';
+      return;
+    }
+    refreshedEl.textContent = orgs.length + " organization" + (orgs.length === 1 ? "" : "s") + " tracked";
+    container.innerHTML = orgs.map(function(o){
+      var stateTag = o.state ? (' &middot; ' + esc(STATE_NAME_BY_ABBR[o.state] || o.state)) : '';
+      return '<div class="org-position">' +
+        '<div class="org-ticker-row">' +
+        '<div class="ot-name"><strong>' + esc(o.org) + '</strong><span class="ot-meta">' + o.count + ' gift' + (o.count === 1 ? '' : 's') + stateTag + '</span></div>' +
+        buildOrgSparkline(o.cumulative) +
+        '<div class="ot-total">' + fmtMoneyExact(o.total) + '</div>' +
+        '<div class="ot-move-wrap">' + orgMoveHtml(o.pctMove) + '</div>' +
+        '</div>' +
+        '<div class="ot-actions"><a href="#" class="ics-link ot-flag-btn" data-org="' + esc(o.org) + '">+ Flag as prospect</a></div>' +
+        orgHealthHtml(o.org) +
+        '</div>';
+    }).join("");
+    container.querySelectorAll(".ot-pt, .oh-chart-pt").forEach(function(pt){
+      pt.addEventListener("mousemove", function(e){ showChartTooltip(e, pt.getAttribute("data-tip")); });
+      pt.addEventListener("mouseleave", hideChartTooltip);
+    });
+  }
+
+  // Flagging a tracked org as a prospect never silently creates the record -
+  // the same "confirm before trusting a match" discipline as the 990 EIN
+  // lookup above. It only jumps to Prospecting with the form pre-filled
+  // from the gift history (and any 990 flag already loaded for that org),
+  // so Franklin reviews and edits before pressing Add prospect.
+  function prefillProspectForm(data){
+    var nameEl = document.getElementById("ps-name");
+    var orgEl = document.getElementById("ps-org");
+    var sourceEl = document.getElementById("ps-source");
+    var stageEl = document.getElementById("ps-stage-select");
+    var linkEl = document.getElementById("ps-link");
+    var notesEl = document.getElementById("ps-notes");
+    if(!nameEl) return;
+    nameEl.value = data.name || "";
+    orgEl.value = data.org || "";
+    sourceEl.value = data.source || "linkedin";
+    stageEl.value = "new";
+    linkEl.value = "";
+    notesEl.value = data.notes || "";
+    var statusEl = document.getElementById("ps-status");
+    if(statusEl){
+      statusEl.textContent = "Pre-filled from Giving Landscape — check the details, then log it.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 4000);
+    }
+    var form = document.getElementById("prospect-form");
+    if(form) form.scrollIntoView({ behavior: "smooth", block: "start" });
+    nameEl.focus();
+  }
+
+  function flagOrgAsProspect(orgName){
+    var o = orgGrowthData().filter(function(x){ return x.org === orgName; })[0];
+    if(!o) return;
+    var notes = [];
+    notes.push(o.count + " gift" + (o.count === 1 ? "" : "s") + " tracked in the Giving Landscape ticker, " + fmtMoneyExact(o.total) + " total.");
+    if(o.latest){
+      notes.push("Most recent: " + fmtMoneyExact(Number(o.latest.amount) || 0) + " on " + fmtDate(o.latest.announcedAt || o.latest.loggedAt) + (o.latest.headline ? " (" + o.latest.headline + ")" : "") + ".");
+    }
+    var ui = orgHealthUi[orgName];
+    if(ui && ui.analysis && ui.analysis.flags && ui.analysis.flags.length){
+      var worst = orgHealthWorstFlagLevel(ui.analysis);
+      if(worst === "watch"){
+        var watchText = ui.analysis.flags.filter(function(f){ return f.level === "watch"; }).map(function(f){ return f.text; }).join(" ");
+        notes.push("990 flag to check: " + watchText);
+      } else if(worst === "good"){
+        notes.push("990 filings look healthy.");
+      }
+    }
+    goToView("prospecting");
+    prefillProspectForm({ name: orgName, org: orgName, source: "giving", notes: notes.join(" ") });
+  }
+
   function renderGivingLandscape(){
     renderGiftStats();
     renderNationalBars();
     renderGiftTicker();
     renderStateGrid();
+    renderOrgTracker();
   }
   initGivingLandscapeStatic();
 
@@ -1357,6 +1919,81 @@
     return '<tr><td><strong>' + esc(d.title) + '</strong></td><td class="dim">' + esc(d.type) + '</td><td><span class="pill">' + esc(d.feeds) + '</span></td><td><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Open</a></td></tr>';
   }).join("") + '<tr><td><strong>The Frankly Inspired Operating System</strong></td><td class="dim">Operating system</td><td><span class="pill gold">All five components, live</span></td><td class="dim">You are here</td></tr>';
 
+  // ---------- playbook library ----------
+  // Every gift already carries its own case-study read (impact, trend
+  // signal, replication idea, gift type, restriction) - see
+  // giftCaseStudyGridHtml above. This view doesn't add any new data, it
+  // just pulls every gift that has that read filled in out of the ticker
+  // and into one searchable list, so "which gift was the one where we led
+  // with a facility tour" doesn't mean scrolling and opening disclosures
+  // one at a time. Entirely client-side, off state.gifts already in memory
+  // - no new endpoint, and (like the case-study fields themselves) never
+  // exposed on the public Giving Landscape page.
+  var playbookSearch = "";
+  var playbookCategoryFilter = "all";
+
+  function initPlaybookLibraryStatic(){
+    var catBar = document.getElementById("pb-category-filters");
+    var extra = GIVING_USA_CATEGORIES.map(function(c){
+      return '<button type="button" class="filter-btn" data-cat="' + c.key + '">' + esc(c.label) + '</button>';
+    }).join("") + '<button type="button" class="filter-btn" data-cat="other">Other</button>';
+    catBar.insertAdjacentHTML("beforeend", extra);
+    catBar.addEventListener("click", function(e){
+      var btn = e.target.closest(".filter-btn");
+      if(!btn) return;
+      playbookCategoryFilter = btn.getAttribute("data-cat");
+      catBar.querySelectorAll(".filter-btn").forEach(function(b){ b.classList.toggle("is-active", b === btn); });
+      renderPlaybookLibrary();
+    });
+    document.getElementById("pb-search").addEventListener("input", function(e){
+      playbookSearch = e.target.value.trim().toLowerCase();
+      renderPlaybookLibrary();
+    });
+  }
+  initPlaybookLibraryStatic();
+
+  function playbookCardHtml(g){
+    var who = g.donor ? (esc(g.donor) + " &rarr; " + esc(g.org || "Untitled")) : esc(g.org || "Untitled");
+    var stateTag = g.state ? (' &middot; ' + esc(STATE_NAME_BY_ABBR[g.state] || g.state)) : "";
+    return '<div class="gift-card">' +
+      '<div class="gift-card-head"><h4>' + who + '</h4><span class="gift-amount">' + fmtMoneyExact(g.amount) + '</span></div>' +
+      (g.headline || g.summary ? '<p>' + esc(g.headline || g.summary) + '</p>' : '') +
+      '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
+      (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
+      (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
+      '</div>' +
+      giftCaseStudyGridHtml(g) +
+      '</div>';
+  }
+
+  function renderPlaybookLibrary(){
+    var all = state.gifts.filter(hasCaseStudy);
+    var filtered = all.filter(function(g){
+      if(playbookCategoryFilter !== "all" && g.category !== playbookCategoryFilter) return false;
+      if(playbookSearch){
+        var haystack = [g.org, g.donor, g.headline, g.summary, g.impact, g.trendSignal, g.playbook, g.giftType, g.restriction].join(" ").toLowerCase();
+        if(haystack.indexOf(playbookSearch) === -1) return false;
+      }
+      return true;
+    }).sort(function(a,b){ return (b.announcedAt || b.loggedAt || "").localeCompare(a.announcedAt || a.loggedAt || ""); });
+
+    var filtering = !!playbookSearch || playbookCategoryFilter !== "all";
+    document.getElementById("pb-count").textContent = all.length === 0
+      ? "No case studies logged yet"
+      : (filtering ? (filtered.length + " of " + all.length + " case studies match this search") : (all.length + " case " + (all.length === 1 ? "study" : "studies") + " logged"));
+
+    var list = document.getElementById("pb-list");
+    if(all.length === 0){
+      list.innerHTML = '<p class="empty-note">No gift has a case-study read logged yet. Fill in impact, trend signal, gift type, restriction, or a replication idea when you log or edit a gift on the Giving Landscape ticker, and it shows up here automatically.</p>';
+      return;
+    }
+    if(filtered.length === 0){
+      list.innerHTML = '<p class="empty-note">Nothing matches this search or filter.</p>';
+      return;
+    }
+    list.innerHTML = filtered.map(playbookCardHtml).join("");
+  }
+
   // ---------- bootstrap ----------
   function renderAll(){
     renderGivingLandscape();
@@ -1371,6 +2008,7 @@
     renderIssues();
     renderRocks();
     renderFieldIntel();
+    renderPlaybookLibrary();
   }
 
   function onApiUnavailable(){

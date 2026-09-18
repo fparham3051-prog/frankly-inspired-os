@@ -57,6 +57,7 @@
     <button type="button" class="rail-btn" data-view="rocks">Priorities</button>
     <div class="rail-label">Reference</div>
     <button type="button" class="rail-btn" data-view="fieldintel">Field Intelligence</button>
+    <button type="button" class="rail-btn" data-view="playbook">Playbook Library</button>
     <button type="button" class="rail-btn" data-view="process">Process Library</button>
     <a class="rail-link" href="https://claude.ai/code/artifact/0d5b02f4-66ea-4da0-9a2b-e077857c7a3b" target="_blank" rel="noopener">Advancement Desk &#8599;</a>
   </nav>
@@ -80,7 +81,7 @@
         <div class="stat-card"><span class="num mono" id="gl-stat-state-count">0</span><span class="cap">states with a gift logged</span></div>
       </div>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="01 · National reference">
         <h3>Where the Philanthropic Dollar Goes, Nationally</h3>
         <p>Giving USA's nine recipient categories for 2025, the most recent year reported. Religion remains the largest single category; education, public-society benefit, and environment/animals organizations grew the fastest year over year.</p>
         <div class="giving-bars" id="gl-national-bars"></div>
@@ -90,7 +91,7 @@
         </div>
       </div>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="02 · Gift ticker">
         <div class="digest-toolbar">
           <h3 style="margin:0;">The Weekly Gift Ticker</h3>
           <span class="pill gold" id="gl-ticker-refreshed">No gifts logged yet</span>
@@ -116,6 +117,14 @@
             <div class="field"><label for="gf-source">Source</label><input id="gf-source" placeholder="Chronicle of Philanthropy, a press release, etc."></div>
             <div class="field"><label for="gf-url">Link</label><input id="gf-url" type="url" placeholder="https://..."></div>
           </div>
+          <div class="form-subhead">Case study breakdown (optional)</div>
+          <div class="form-grid">
+            <div class="field"><label for="gf-gifttype">Gift type</label><select id="gf-gifttype"></select></div>
+            <div class="field"><label for="gf-restriction">Restriction</label><select id="gf-restriction"></select></div>
+            <div class="field wide"><label for="gf-impact">Impact — what it funds</label><input id="gf-impact" placeholder="e.g. funds 50 need-based scholarships over 4 years"></div>
+            <div class="field wide"><label for="gf-trend">Trend signal — what it says about the sector</label><input id="gf-trend" placeholder="e.g. continues 2026's wave of DAF-sourced mega-gifts to STEM"></div>
+            <div class="field wide"><label for="gf-playbook">Replication idea — how another org could pursue a similar ask</label><input id="gf-playbook" placeholder="e.g. multi-year cultivation ending on a campaign anniversary"></div>
+          </div>
           <div class="form-actions">
             <button type="submit" class="btn" id="gf-submit">Log gift</button>
             <span class="save-status" id="gf-status"></span>
@@ -123,15 +132,32 @@
         </form>
       </div>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="03 · By state">
         <h3>By State</h3>
-        <p>Grouped by U.S. Census region rather than plotted on a literal map, so a state's position is never a guess, only its data is shown. Click a state for the aggregate a director in that state would ask about: how many gifts, how much, and the most recent one.</p>
-        <div class="state-grid" id="gl-state-grid"></div>
+        <p>Click a state for the aggregate a director in that state would ask about: how many gifts, how much, and the most recent one. Shading tracks total dollars logged, from lightest (none yet) to deepest (the most).</p>
+        <div class="us-map-wrap" id="gl-us-map-wrap"><p class="empty-note">Loading map&hellip;</p></div>
+        <div class="map-legend">
+          <span>Fewer gifts logged</span>
+          <div class="map-legend-scale" aria-hidden="true"></div>
+          <span>More gifts logged</span>
+        </div>
         <div class="fw-card" id="gl-state-detail" hidden style="background:var(--surface-2);box-shadow:none;margin-top:16px;margin-bottom:0;"></div>
         <div class="table-wrap" style="margin-top:16px;"><table>
           <thead><tr><th>State</th><th>Gifts logged</th><th>Total tracked</th><th>Most recent</th></tr></thead>
           <tbody id="gl-state-table"><tr><td colspan="4" class="empty-note">No gifts logged yet.</td></tr></tbody>
         </table></div>
+      </div>
+
+      <div class="fw-card" data-panel="04 · Organization tracker">
+        <div class="digest-toolbar">
+          <h3 style="margin:0;">Organizational Growth Tracker</h3>
+          <span class="pill gold" id="gl-orgtracker-refreshed">No positions open yet</span>
+        </div>
+        <p>Every recipient organization in the ticker, tracked like a position: a running total built from the gifts logged for it, a sparkline of that growth, and how much the most recent gift moved it &mdash; the way you'd watch a holding, not a headline. Open a row to look up its lifetime 990 filings and check its financial health.</p>
+        <div class="org-tracker-head">
+          <span>Organization</span><span>Trend</span><span>Tracked total</span><span>Latest move</span>
+        </div>
+        <div id="gl-org-tracker"><p class="empty-note">Nothing to track yet. Log a gift above to open the first position.</p></div>
       </div>
     </section>
 
@@ -140,7 +166,7 @@
       <div class="view-head"><h2>Daily Briefing</h2><span class="tag">start here</span></div>
       <p class="view-intro">A short, spoken style readout of where the practice stands this morning, written fresh from whatever is in Pipeline, Scorecard, Issues, and Priorities right now. Nothing is stored here, it regenerates every time you open the tool.</p>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="01 · Morning readout">
         <div class="briefing-actions">
           <button type="button" class="btn" id="briefing-speak">Read aloud</button>
           <button type="button" class="btn danger" id="briefing-stop" hidden>Stop reading</button>
@@ -231,13 +257,13 @@
       <div class="view-head"><h2>Dashboard</h2><span class="tag">the rollup</span></div>
       <p class="view-intro">A rollup of the five sections. Nothing here is entered directly, it all comes from Pipeline, Scorecard, Issues, and Priorities.</p>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="01 · Next up in the pipeline">
         <h3>Next up in the pipeline</h3>
         <p style="margin-top:-2px;">The five records with the nearest next step date. Set a next step and a date on any pipeline record to have it show up here.</p>
         <ul class="action-list" id="dashboard-next-actions"><li class="empty-note" style="border:none;">Loading...</li></ul>
       </div>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="02 · Open issues, oldest first">
         <h3>Open issues, oldest first</h3>
         <p style="margin-top:-2px;">Anything logged in the Issues List that is not yet solved. The Identify, Discuss, Solve discipline works only if this list stays short.</p>
         <ul class="action-list" id="dashboard-open-issues"><li class="empty-note" style="border:none;">Loading...</li></ul>
@@ -254,56 +280,58 @@
       <div class="view-head"><h2>Pipeline</h2><span class="tag">lead to graduation</span></div>
       <p class="view-intro">Every relationship, from a first warm call through discovery, the InstitutionalOS Assessment, an active engagement, and on to graduation or referral. This is the tracker Call Before You Build described, brought inside the operating system instead of living in a separate workbook.</p>
 
-      <form class="entry-form" id="pipeline-form">
-        <div class="form-title">Add a pipeline record</div>
-        <div class="form-grid">
-          <div class="field"><label for="pl-name">Contact name</label><input id="pl-name" required></div>
-          <div class="field"><label for="pl-org">Organization</label><input id="pl-org"></div>
-          <div class="field"><label for="pl-source">Source</label><input id="pl-source" placeholder="warm list, referral, talk, other"></div>
-          <div class="field"><label for="pl-track">Likely track</label>
-            <select id="pl-track">
-              <option value="undecided">Undecided</option>
-              <option value="coaching">Coaching</option>
-              <option value="consulting">Project Consulting</option>
-              <option value="institutionalos">InstitutionalOS Assessment</option>
-            </select>
+      <div class="fw-card" data-panel="01 · Pipeline records">
+        <form class="entry-form" id="pipeline-form">
+          <div class="form-title">Add a pipeline record</div>
+          <div class="form-grid">
+            <div class="field"><label for="pl-name">Contact name</label><input id="pl-name" required></div>
+            <div class="field"><label for="pl-org">Organization</label><input id="pl-org"></div>
+            <div class="field"><label for="pl-source">Source</label><input id="pl-source" placeholder="warm list, referral, talk, other"></div>
+            <div class="field"><label for="pl-track">Likely track</label>
+              <select id="pl-track">
+                <option value="undecided">Undecided</option>
+                <option value="coaching">Coaching</option>
+                <option value="consulting">Project Consulting</option>
+                <option value="institutionalos">InstitutionalOS Assessment</option>
+              </select>
+            </div>
+            <div class="field"><label for="pl-stage">Stage</label>
+              <select id="pl-stage">
+                <option value="lead">Lead</option>
+                <option value="discovery">Discovery Call</option>
+                <option value="assessment">InstitutionalOS Assessment</option>
+                <option value="engaged">Engaged</option>
+                <option value="graduated">Graduated</option>
+                <option value="referred">Referred Out</option>
+                <option value="lost">Lost, No Fit</option>
+              </select>
+            </div>
+            <div class="field"><label for="pl-next">Next step</label><input id="pl-next" placeholder="send proposal, follow up call"></div>
+            <div class="field"><label for="pl-next-date">Next step date</label><input id="pl-next-date" type="date"></div>
+            <div class="field wide"><label for="pl-notes">Notes</label><textarea id="pl-notes"></textarea></div>
           </div>
-          <div class="field"><label for="pl-stage">Stage</label>
-            <select id="pl-stage">
-              <option value="lead">Lead</option>
-              <option value="discovery">Discovery Call</option>
-              <option value="assessment">InstitutionalOS Assessment</option>
-              <option value="engaged">Engaged</option>
-              <option value="graduated">Graduated</option>
-              <option value="referred">Referred Out</option>
-              <option value="lost">Lost, No Fit</option>
-            </select>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="pl-submit">Add record</button>
+            <span class="save-status" id="pl-status"></span>
           </div>
-          <div class="field"><label for="pl-next">Next step</label><input id="pl-next" placeholder="send proposal, follow up call"></div>
-          <div class="field"><label for="pl-next-date">Next step date</label><input id="pl-next-date" type="date"></div>
-          <div class="field wide"><label for="pl-notes">Notes</label><textarea id="pl-notes"></textarea></div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn" id="pl-submit">Add record</button>
-          <span class="save-status" id="pl-status"></span>
-        </div>
-      </form>
+        </form>
 
-      <div class="toolbar" id="pipeline-filters">
-        <button type="button" class="filter-btn is-active" data-stage="all">All</button>
-        <button type="button" class="filter-btn" data-stage="lead">Lead</button>
-        <button type="button" class="filter-btn" data-stage="discovery">Discovery</button>
-        <button type="button" class="filter-btn" data-stage="assessment">Assessment</button>
-        <button type="button" class="filter-btn" data-stage="engaged">Engaged</button>
-        <button type="button" class="filter-btn" data-stage="graduated">Graduated</button>
-        <button type="button" class="filter-btn" data-stage="referred">Referred</button>
-        <button type="button" class="filter-btn" data-stage="lost">Lost</button>
+        <div class="toolbar" id="pipeline-filters">
+          <button type="button" class="filter-btn is-active" data-stage="all">All</button>
+          <button type="button" class="filter-btn" data-stage="lead">Lead</button>
+          <button type="button" class="filter-btn" data-stage="discovery">Discovery</button>
+          <button type="button" class="filter-btn" data-stage="assessment">Assessment</button>
+          <button type="button" class="filter-btn" data-stage="engaged">Engaged</button>
+          <button type="button" class="filter-btn" data-stage="graduated">Graduated</button>
+          <button type="button" class="filter-btn" data-stage="referred">Referred</button>
+          <button type="button" class="filter-btn" data-stage="lost">Lost</button>
+        </div>
+
+        <div class="table-wrap"><table>
+          <thead><tr><th>Contact</th><th>Track</th><th>Stage</th><th>Next step</th><th>Next date</th><th>Source</th><th></th></tr></thead>
+          <tbody id="pipeline-rows"><tr><td colspan="7" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
       </div>
-
-      <div class="table-wrap"><table>
-        <thead><tr><th>Contact</th><th>Track</th><th>Stage</th><th>Next step</th><th>Next date</th><th>Source</th><th></th></tr></thead>
-        <tbody id="pipeline-rows"><tr><td colspan="7" class="empty-note">Loading...</td></tr></tbody>
-      </table></div>
     </section>
 
     <!-- ================= PROSPECTING ================= -->
@@ -316,44 +344,47 @@
         <p class="extra">This page cannot search LinkedIn directly, LinkedIn does not allow that and it is not something to work around. Two honest paths forward instead: ask in chat for help researching a specific niche or organization type and log the results here by hand, or connect a prospecting or contact enrichment tool in claude.ai, once one is connected this view can be extended to search from inside the tool itself.</p>
       </div>
 
-      <form class="entry-form" id="prospect-form">
-        <div class="form-title">Log a prospect</div>
-        <div class="form-grid">
-          <div class="field"><label for="ps-name">Name</label><input id="ps-name" required></div>
-          <div class="field"><label for="ps-org">Organization / title</label><input id="ps-org"></div>
-          <div class="field"><label for="ps-source">Source</label>
-            <select id="ps-source">
-              <option value="linkedin">LinkedIn</option>
-              <option value="referral">Referral</option>
-              <option value="conference">Conference / event</option>
-              <option value="warm">Warm network</option>
-              <option value="inbound">Inbound</option>
-              <option value="other">Other</option>
-            </select>
+      <div class="fw-card" data-panel="01 · Prospect list">
+        <form class="entry-form" id="prospect-form">
+          <div class="form-title">Log a prospect</div>
+          <div class="form-grid">
+            <div class="field"><label for="ps-name">Name</label><input id="ps-name" required></div>
+            <div class="field"><label for="ps-org">Organization / title</label><input id="ps-org"></div>
+            <div class="field"><label for="ps-source">Source</label>
+              <select id="ps-source">
+                <option value="linkedin">LinkedIn</option>
+                <option value="referral">Referral</option>
+                <option value="conference">Conference / event</option>
+                <option value="warm">Warm network</option>
+                <option value="inbound">Inbound</option>
+                <option value="giving">Giving Landscape</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field"><label for="ps-stage-select">Status</label>
+              <select id="ps-stage-select">
+                <option value="new">New</option>
+                <option value="researching">Researching</option>
+                <option value="contacted">Contacted</option>
+                <option value="responded">Responded</option>
+                <option value="meeting">Meeting booked</option>
+                <option value="not-fit">Not a fit</option>
+              </select>
+            </div>
+            <div class="field"><label for="ps-link">Profile link</label><input id="ps-link" type="url" placeholder="https://www.linkedin.com/in/..."></div>
+            <div class="field wide"><label for="ps-notes">Why they might be a fit</label><textarea id="ps-notes"></textarea></div>
           </div>
-          <div class="field"><label for="ps-stage-select">Status</label>
-            <select id="ps-stage-select">
-              <option value="new">New</option>
-              <option value="researching">Researching</option>
-              <option value="contacted">Contacted</option>
-              <option value="responded">Responded</option>
-              <option value="meeting">Meeting booked</option>
-              <option value="not-fit">Not a fit</option>
-            </select>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="ps-submit">Add prospect</button>
+            <span class="save-status" id="ps-status"></span>
           </div>
-          <div class="field"><label for="ps-link">Profile link</label><input id="ps-link" type="url" placeholder="https://www.linkedin.com/in/..."></div>
-          <div class="field wide"><label for="ps-notes">Why they might be a fit</label><textarea id="ps-notes"></textarea></div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn" id="ps-submit">Add prospect</button>
-          <span class="save-status" id="ps-status"></span>
-        </div>
-      </form>
+        </form>
 
-      <div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Org / title</th><th>Source</th><th>Status</th><th>Notes</th><th></th></tr></thead>
-        <tbody id="prospect-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
-      </table></div>
+        <div class="table-wrap"><table class="prospect-table">
+          <thead><tr><th>Name</th><th>Org / title</th><th>Source</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+          <tbody id="prospect-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
     </section>
 
     <!-- ================= SCORECARD ================= -->
@@ -361,28 +392,30 @@
       <div class="view-head"><h2>Scorecard</h2><span class="tag">the numbers that say the business is healthy</span></div>
       <p class="view-intro">A short list of measurables logged weekly, the EOS style discipline of watching a handful of numbers instead of guessing. Pulled straight from what the pipeline and the discovery calls actually produce.</p>
 
-      <form class="entry-form" id="scorecard-form">
-        <div class="form-title">Log a week</div>
-        <div class="form-grid">
-          <div class="field"><label for="sc-week">Week of</label><input id="sc-week" type="date" required></div>
-          <div class="field"><label for="sc-calls">Discovery calls made</label><input id="sc-calls" type="number" min="0" step="1" value="0"></div>
-          <div class="field"><label for="sc-leads">New leads added</label><input id="sc-leads" type="number" min="0" step="1" value="0"></div>
-          <div class="field"><label for="sc-active">Active engagements</label><input id="sc-active" type="number" min="0" step="1" value="0"></div>
-          <div class="field"><label for="sc-won">Engagements won</label><input id="sc-won" type="number" min="0" step="1" value="0"></div>
-          <div class="field"><label for="sc-lost">Opportunities lost</label><input id="sc-lost" type="number" min="0" step="1" value="0"></div>
-          <div class="field"><label for="sc-referrals">Referrals received</label><input id="sc-referrals" type="number" min="0" step="1" value="0"></div>
-          <div class="field wide"><label for="sc-notes">Notes</label><textarea id="sc-notes"></textarea></div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn" id="sc-submit">Log week</button>
-          <span class="save-status" id="sc-status"></span>
-        </div>
-      </form>
+      <div class="fw-card" data-panel="01 · Weekly log">
+        <form class="entry-form" id="scorecard-form">
+          <div class="form-title">Log a week</div>
+          <div class="form-grid">
+            <div class="field"><label for="sc-week">Week of</label><input id="sc-week" type="date" required></div>
+            <div class="field"><label for="sc-calls">Discovery calls made</label><input id="sc-calls" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-leads">New leads added</label><input id="sc-leads" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-active">Active engagements</label><input id="sc-active" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-won">Engagements won</label><input id="sc-won" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-lost">Opportunities lost</label><input id="sc-lost" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-referrals">Referrals received</label><input id="sc-referrals" type="number" min="0" step="1" value="0"></div>
+            <div class="field wide"><label for="sc-notes">Notes</label><textarea id="sc-notes"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="sc-submit">Log week</button>
+            <span class="save-status" id="sc-status"></span>
+          </div>
+        </form>
 
-      <div class="table-wrap"><table>
-        <thead><tr><th>Week of</th><th>Calls</th><th>New leads</th><th>Active</th><th>Won</th><th>Lost</th><th>Referrals</th><th>Close rate</th><th></th></tr></thead>
-        <tbody id="scorecard-rows"><tr><td colspan="9" class="empty-note">Loading...</td></tr></tbody>
-      </table></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Week of</th><th>Calls</th><th>New leads</th><th>Active</th><th>Won</th><th>Lost</th><th>Referrals</th><th>Close rate</th><th></th></tr></thead>
+          <tbody id="scorecard-rows"><tr><td colspan="9" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
     </section>
 
     <!-- ================= FORECASTING ================= -->
@@ -390,8 +423,10 @@
       <div class="view-head"><h2>Forecasting</h2><span class="tag">trend, not guesswork</span></div>
       <p class="view-intro">A simple projection built from the Scorecard history logged so far: a straight line fit through the recent weeks of each number, with a shaded band for how much it has actually varied. Log at least three weeks to see a trend, more weeks make the projection steadier.</p>
 
-      <div class="chart-grid" id="forecast-charts">
-        <p class="empty-note">Log a few weeks of Scorecard data to see trend charts here.</p>
+      <div class="fw-card" data-panel="01 · Trend charts">
+        <div class="chart-grid" id="forecast-charts">
+          <p class="empty-note">Log a few weeks of Scorecard data to see trend charts here.</p>
+        </div>
       </div>
 
       <div class="example-box">
@@ -405,7 +440,7 @@
       <div class="view-head"><h2>Vision</h2><span class="tag">the V slash TO, kept short on purpose</span></div>
       <p class="view-intro">The standing answers, in one place, edited directly here rather than rewritten in a slide deck no one reopens. Change any field and press save, every viewer sees the update.</p>
 
-      <div class="fw-card">
+      <div class="fw-card" data-panel="01 · Standing answers">
         <div class="vision-grid">
           <div class="vision-field full"><label for="v-values">Core values</label><textarea id="v-values" placeholder="the few standards that decide who Frankly Inspired works with and how"></textarea></div>
           <div class="vision-field full"><label for="v-focus">Core focus, the niche and the purpose</label><textarea id="v-focus" placeholder="what Frankly Inspired does better than a generalist consultant, and why it matters"></textarea></div>
@@ -426,29 +461,31 @@
       <div class="view-head"><h2>Issues List</h2><span class="tag">identify, discuss, solve</span></div>
       <p class="view-intro">Anything blocking the practice, from a client pattern worth naming to a pricing question to a piece of the InstitutionalOS methodology that needs rethinking. The discipline is to write it down once, move it to solved, and stop carrying it in your head.</p>
 
-      <form class="entry-form" id="issue-form">
-        <div class="form-title">Log an issue</div>
-        <div class="form-grid">
-          <div class="field wide"><label for="is-title">Issue</label><input id="is-title" required placeholder="short, one line"></div>
-          <div class="field wide"><label for="is-detail">Detail</label><textarea id="is-detail"></textarea></div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn" id="is-submit">Add issue</button>
-          <span class="save-status" id="is-status"></span>
-        </div>
-      </form>
+      <div class="fw-card" data-panel="01 · Open issues">
+        <form class="entry-form" id="issue-form">
+          <div class="form-title">Log an issue</div>
+          <div class="form-grid">
+            <div class="field wide"><label for="is-title">Issue</label><input id="is-title" required placeholder="short, one line"></div>
+            <div class="field wide"><label for="is-detail">Detail</label><textarea id="is-detail"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="is-submit">Add issue</button>
+            <span class="save-status" id="is-status"></span>
+          </div>
+        </form>
 
-      <div class="toolbar" id="issue-filters">
-        <button type="button" class="filter-btn is-active" data-status="all">All</button>
-        <button type="button" class="filter-btn" data-status="open">Open</button>
-        <button type="button" class="filter-btn" data-status="discussing">Discussing</button>
-        <button type="button" class="filter-btn" data-status="solved">Solved</button>
+        <div class="toolbar" id="issue-filters">
+          <button type="button" class="filter-btn is-active" data-status="all">All</button>
+          <button type="button" class="filter-btn" data-status="open">Open</button>
+          <button type="button" class="filter-btn" data-status="discussing">Discussing</button>
+          <button type="button" class="filter-btn" data-status="solved">Solved</button>
+        </div>
+
+        <div class="table-wrap"><table>
+          <thead><tr><th>Issue</th><th>Detail</th><th>Status</th><th>Logged</th><th></th></tr></thead>
+          <tbody id="issue-rows"><tr><td colspan="5" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
       </div>
-
-      <div class="table-wrap"><table>
-        <thead><tr><th>Issue</th><th>Detail</th><th>Status</th><th>Logged</th><th></th></tr></thead>
-        <tbody id="issue-rows"><tr><td colspan="5" class="empty-note">Loading...</td></tr></tbody>
-      </table></div>
     </section>
 
     <!-- ================= ROCKS / PRIORITIES ================= -->
@@ -456,24 +493,26 @@
       <div class="view-head"><h2>Priorities</h2><span class="tag">the quarter's rocks</span></div>
       <p class="view-intro">The three to seven things that most need to be true ninety days from now for the practice to move forward, the EOS style Traction discipline. Kept as a short, named list rather than a running to do pile.</p>
 
-      <form class="entry-form" id="rock-form">
-        <div class="form-title">Add a priority</div>
-        <div class="form-grid">
-          <div class="field wide"><label for="rk-title">Priority</label><input id="rk-title" required></div>
-          <div class="field"><label for="rk-quarter">Quarter</label><input id="rk-quarter" placeholder="Q4 2026"></div>
-          <div class="field"><label for="rk-due">Due date</label><input id="rk-due" type="date"></div>
-          <div class="field wide"><label for="rk-notes">Notes</label><textarea id="rk-notes"></textarea></div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn" id="rk-submit">Add priority</button>
-          <span class="save-status" id="rk-status"></span>
-        </div>
-      </form>
+      <div class="fw-card" data-panel="01 · This quarter's priorities">
+        <form class="entry-form" id="rock-form">
+          <div class="form-title">Add a priority</div>
+          <div class="form-grid">
+            <div class="field wide"><label for="rk-title">Priority</label><input id="rk-title" required></div>
+            <div class="field"><label for="rk-quarter">Quarter</label><input id="rk-quarter" placeholder="Q4 2026"></div>
+            <div class="field"><label for="rk-due">Due date</label><input id="rk-due" type="date"></div>
+            <div class="field wide"><label for="rk-notes">Notes</label><textarea id="rk-notes"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="rk-submit">Add priority</button>
+            <span class="save-status" id="rk-status"></span>
+          </div>
+        </form>
 
-      <div class="table-wrap"><table>
-        <thead><tr><th>Priority</th><th>Quarter</th><th>Status</th><th>Due</th><th>Notes</th><th></th></tr></thead>
-        <tbody id="rock-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
-      </table></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Priority</th><th>Quarter</th><th>Status</th><th>Due</th><th>Notes</th><th></th></tr></thead>
+          <tbody id="rock-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
     </section>
 
     <!-- ================= FIELD INTELLIGENCE ================= -->
@@ -481,16 +520,36 @@
       <div class="view-head"><h2>Field Intelligence</h2><span class="tag">outside the practice</span></div>
       <p class="view-intro">A running digest of philanthropy news, donor-advised fund research, fundraising trends, and nonprofit sector updates, pulled from leading publications and refreshed automatically on a weekly cadence.</p>
 
-      <div class="digest-toolbar">
-        <p class="digest-refreshed" id="digest-refreshed">Loading...</p>
-        <button type="button" class="btn secondary" id="digest-readaloud-btn" hidden>&#128266; Read Aloud</button>
-      </div>
+      <div class="fw-card" data-panel="01 · Weekly digest">
+        <div class="digest-toolbar">
+          <p class="digest-refreshed" id="digest-refreshed">Loading...</p>
+          <button type="button" class="btn secondary" id="digest-readaloud-btn" hidden>&#128266; Read Aloud</button>
+        </div>
 
-      <div id="digest-body"><p class="empty-note">Loading...</p></div>
+        <div id="digest-body"><p class="empty-note">Loading...</p></div>
+      </div>
 
       <div class="example-box">
         <span class="eb-label">How this stays current</span>
         <p class="extra">This list is not pulled live while you browse, a page cannot search the web on its own. Instead, a scheduled research pass runs weekly, reads leading sources such as the Chronicle of Philanthropy, Giving USA, the DAF Research Collaborative, Fidelity Charitable, Candid, Independent Sector, and the Urban Institute, and writes a fresh set of items here, four each for philanthropy, donor-advised funds, fundraising, and the nonprofit sector. Ask in chat any time for a refresh sooner, or for a deeper dive on any item below.</p>
+      </div>
+    </section>
+
+    <!-- ================= PLAYBOOK LIBRARY ================= -->
+    <section class="view" data-view="playbook" hidden>
+      <div class="view-head"><h2>Playbook Library</h2><span class="tag">what worked, searchable</span></div>
+      <p class="view-intro">Every gift on the ticker that got a real case-study read - what it funded, what it signaled, how we'd pursue something similar - pulled into one place you can search instead of scrolling the ticker for the one you half-remember. Internal only: this is exactly the analysis layer the public Giving Landscape page leaves out.</p>
+
+      <div class="fw-card" data-panel="01 · Search & filter">
+        <input type="search" class="search-input" id="pb-search" placeholder="Search org, donor, impact, trend signal, playbook...">
+        <div class="toolbar" id="pb-category-filters" style="margin-top:12px;">
+          <button type="button" class="filter-btn is-active" data-cat="all">All categories</button>
+        </div>
+      </div>
+
+      <div class="fw-card" data-panel="02 · Case studies">
+        <p class="digest-refreshed" id="pb-count">Loading...</p>
+        <div id="pb-list"></div>
       </div>
     </section>
 
@@ -499,10 +558,12 @@
       <div class="view-head"><h2>Process Library</h2><span class="tag">the documented core process</span></div>
       <p class="view-intro">EOS calls this component Process, the handful of workflows written down well enough that anyone could follow them. For Frankly Inspired, that is the seventeen document series itself. Nothing below duplicates that content, it is the index back to it, grouped by what each piece actually feeds.</p>
 
-      <div class="table-wrap"><table>
-        <thead><tr><th>Document</th><th>Type</th><th>Feeds</th><th></th></tr></thead>
-        <tbody id="process-rows"></tbody>
-      </table></div>
+      <div class="fw-card" data-panel="01 · Document index">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Document</th><th>Type</th><th>Feeds</th><th></th></tr></thead>
+          <tbody id="process-rows"></tbody>
+        </table></div>
+      </div>
     </section>
 
   </main>

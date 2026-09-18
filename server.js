@@ -80,12 +80,44 @@ function requireAdminToken(req, res, next) {
   return res.status(401).json({ error: "invalid admin token" });
 }
 
+// ---------- login rate limiting ----------
+// There are no per-user accounts here, just one shared password (see above),
+// which means the login endpoint is the entire attack surface for a guessed
+// or leaked password. This is a plain in-memory limiter, not a distributed
+// one - fine for a single-instance app like this, and cheap enough that it
+// costs nothing if the deployment ever changes. Counts are per source IP;
+// `app.set("trust proxy", 1)` below is what makes req.ip the real visitor
+// address rather than Render's edge proxy for every request.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 8;
+const loginAttempts = new Map(); // ip -> { count, windowStart }
+function loginRateLimited(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.windowStart > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > LOGIN_MAX_ATTEMPTS;
+}
+setInterval(() => {
+  const cutoff = Date.now() - LOGIN_WINDOW_MS;
+  for (const [ip, entry] of loginAttempts) {
+    if (entry.windowStart < cutoff) loginAttempts.delete(ip);
+  }
+}, LOGIN_WINDOW_MS).unref();
+
 const app = express();
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // ---------- auth routes ----------
 app.post("/api/login", (req, res) => {
+  if (loginRateLimited(req.ip)) {
+    return res.status(429).json({ error: "too many attempts - wait a few minutes and try again" });
+  }
   const { password } = req.body || {};
   if (!password || !timingSafeStringEqual(password, ADMIN_PASSWORD)) {
     return res.status(401).json({ error: "incorrect password" });
@@ -114,7 +146,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -122,7 +154,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM prospects WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM digest ORDER BY id ASC"),
       pool.query("SELECT * FROM gifts WHERE archived_at IS NULL ORDER BY announced_at DESC NULLS LAST, logged_at DESC"),
-      pool.query("SELECT * FROM vision WHERE id = 'main'")
+      pool.query("SELECT * FROM vision WHERE id = 'main'"),
+      pool.query("SELECT * FROM org_ein_links")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -132,7 +165,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       prospects: prospects.rows.map(rowToProspect),
       digest: digest.rows.map(rowToDigest),
       gifts: gifts.rows.map(rowToGift),
-      vision: visionRes.rows[0] ? rowToVision(visionRes.rows[0]) : null
+      vision: visionRes.rows[0] ? rowToVision(visionRes.rows[0]) : null,
+      orgLinks: orgLinks.rows.map(rowToOrgLink)
     });
   } catch (err) {
     console.error(err);
@@ -159,10 +193,13 @@ function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
 }
 function rowToGift(r) {
-  return { id: r.id, donor: r.donor, org: r.org, state: r.state, category: r.category, amount: r.amount === null ? 0 : Number(r.amount), headline: r.headline, summary: r.summary, source: r.source, url: r.url, announcedAt: r.announced_at, loggedAt: r.logged_at };
+  return { id: r.id, donor: r.donor, org: r.org, state: r.state, category: r.category, amount: r.amount === null ? 0 : Number(r.amount), headline: r.headline, summary: r.summary, source: r.source, url: r.url, announcedAt: r.announced_at, loggedAt: r.logged_at, giftType: r.gift_type, restriction: r.restriction, impact: r.impact, trendSignal: r.trend_signal, playbook: r.playbook, publicOk: r.public_ok === true };
 }
 function rowToVision(r) {
   return { values: r.values_text, focus: r.focus, tenYear: r.ten_year, marketing: r.marketing, threeYear: r.three_year, oneYear: r.one_year, updatedAt: r.updated_at };
+}
+function rowToOrgLink(r) {
+  return { org: r.org_name, ein: r.ein, matchedName: r.matched_name, matchedCity: r.matched_city, matchedState: r.matched_state, linkedAt: r.linked_at };
 }
 
 function newId() {
@@ -393,15 +430,25 @@ app.post("/api/gifts", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-    [id, b.donor || "", b.org || "", b.state || "", b.category || "other", Number(b.amount || 0), b.headline || "", b.summary || "", b.source || "", b.url || "", b.announcedAt || "", now]
+    `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at, gift_type, restriction, impact, trend_signal, playbook)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [id, b.donor || "", b.org || "", b.state || "", b.category || "other", Number(b.amount || 0), b.headline || "", b.summary || "", b.source || "", b.url || "", b.announcedAt || "", now, b.giftType || "", b.restriction || "", b.impact || "", b.trendSignal || "", b.playbook || ""]
   );
   res.json({ id });
 });
 app.delete("/api/gifts/:id", requireAuth, async (req, res) => {
   await archiveRow("gifts", req.params.id);
   res.json({ ok: true });
+});
+
+// Toggles whether one gift appears on the public, no-login Giving Landscape
+// page (see /api/public/giving-landscape below). Off by default for every
+// gift - this is the only way it turns on, and it's an explicit per-row
+// decision, never a bulk switch.
+app.post("/api/gifts/:id/public", requireAuth, async (req, res) => {
+  const publicOk = !!(req.body && req.body.publicOk);
+  await pool.query("UPDATE gifts SET public_ok = $1 WHERE id = $2", [publicOk, req.params.id]);
+  res.json({ ok: true, publicOk });
 });
 
 // Admin-only bulk upsert, used by the weekly Field Intelligence research pass
@@ -419,10 +466,10 @@ app.post("/api/admin/gifts", requireAdminToken, async (req, res) => {
     for (const item of items) {
       if (!item.id || !item.org) continue;
       await client.query(
-        `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         ON CONFLICT (id) DO UPDATE SET donor=$2, org=$3, state=$4, category=$5, amount=$6, headline=$7, summary=$8, source=$9, url=$10, announced_at=$11, logged_at=$12`,
-        [item.id, item.donor || "", item.org, item.state || "", item.category || "other", Number(item.amount || 0), item.headline || "", item.summary || "", item.source || "", item.url || "", item.announcedAt || "", item.loggedAt || new Date().toISOString()]
+        `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at, gift_type, restriction, impact, trend_signal, playbook)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         ON CONFLICT (id) DO UPDATE SET donor=$2, org=$3, state=$4, category=$5, amount=$6, headline=$7, summary=$8, source=$9, url=$10, announced_at=$11, logged_at=$12, gift_type=$13, restriction=$14, impact=$15, trend_signal=$16, playbook=$17`,
+        [item.id, item.donor || "", item.org, item.state || "", item.category || "other", Number(item.amount || 0), item.headline || "", item.summary || "", item.source || "", item.url || "", item.announcedAt || "", item.loggedAt || new Date().toISOString(), item.giftType || "", item.restriction || "", item.impact || "", item.trendSignal || "", item.playbook || ""]
       );
     }
     await client.query("COMMIT");
@@ -433,6 +480,228 @@ app.post("/api/admin/gifts", requireAdminToken, async (req, res) => {
     res.status(500).json({ error: "failed to update gifts" });
   } finally {
     client.release();
+  }
+});
+
+// ---------- public, no-login Giving Landscape ----------
+// Deliberately outside requireAuth - this is the one piece of this app meant
+// for an anonymous visitor. Two things keep it safe: (1) it only ever
+// selects gifts with public_ok = true, which starts false for every row and
+// is only ever flipped one at a time from the authenticated app (see
+// POST /api/gifts/:id/public above); (2) the column list below is a fixed
+// whitelist of gift-fact fields. It does not select gift_type, restriction,
+// impact, trend_signal, or playbook - Frankly Inspired's own case-study
+// analysis of a gift - and it has no route into org_financials or
+// org_ein_links at all, so nothing from the 990 lookup can reach this page
+// however those tables change in the future.
+app.get("/api/public/giving-landscape", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, donor, org, state, category, amount, headline, summary, source, url, announced_at
+       FROM gifts WHERE archived_at IS NULL AND public_ok = true
+       ORDER BY announced_at DESC NULLS LAST, logged_at DESC LIMIT 200`
+    );
+    res.json({
+      gifts: rows.map((r) => ({
+        id: r.id, donor: r.donor, org: r.org, state: r.state, category: r.category,
+        amount: r.amount === null ? 0 : Number(r.amount), headline: r.headline,
+        summary: r.summary, source: r.source, url: r.url, announcedAt: r.announced_at
+      }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "failed to load public giving landscape" });
+  }
+});
+
+// ---------- organizational 990 health (ProPublica Nonprofit Explorer) ----------
+// A gift's "org" field is free text, so it is never auto-linked to a specific
+// EIN by name alone - a name match can be ambiguous (there are dozens of
+// similarly-named orgs for any given cause) and silently attaching the wrong
+// nonprofit's financials would be worse than showing none. Franklin searches
+// and confirms the right match once per org name; that link is stored in
+// org_ein_links and reused from then on. The filing data itself is cached in
+// org_financials for 30 days so the tracker isn't re-fetching ProPublica on
+// every page load - "Refresh" forces an early re-fetch.
+const PP_USER_AGENT = "FranklyInspiredOS/1.0 (nonprofit gift tracker; github.com/fparham3051-prog/frankly-inspired-os)";
+const ORG_FINANCIALS_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+
+async function ppFetchJson(url) {
+  const resp = await fetch(url, { headers: { "User-Agent": PP_USER_AGENT }, signal: AbortSignal.timeout(10000) });
+  if (!resp.ok) throw new Error(`ProPublica request failed: HTTP ${resp.status}`);
+  return resp.json();
+}
+
+function fmtUsd(n) {
+  n = Number(n) || 0;
+  return "$" + Math.round(n).toLocaleString("en-US");
+}
+
+// Turns ProPublica's raw filing extracts into a clean year-by-year series
+// plus a short list of plain-language signals. Deliberately does not compute
+// a "program expense ratio" - that split (program vs. management vs.
+// fundraising cost) isn't present in this data source at this granularity,
+// and fabricating it would be worse than leaving it out. Flags are signals
+// to check, not a verdict - the year-by-year figures are always shown too.
+function analyzeOrgFinancials(ppOrg) {
+  const filings = ((ppOrg && ppOrg.filings_with_data) || [])
+    .filter(function (f) { return f && f.tax_prd_yr; })
+    .sort(function (a, b) { return a.tax_prd_yr - b.tax_prd_yr; });
+
+  const years = filings.map(function (f) {
+    const revenue = Number(f.totrevenue) || 0;
+    const expenses = Number(f.totfuncexpns) || 0;
+    const netAssets = (f.totnetassetend === null || f.totnetassetend === undefined) ? null : Number(f.totnetassetend);
+    const liabilities = (f.totliabend === null || f.totliabend === undefined) ? null : Number(f.totliabend);
+    const assets = (f.totassetsend === null || f.totassetsend === undefined) ? null : Number(f.totassetsend);
+    const contributions = Number(f.totcntrbgfts) || 0;
+    return {
+      year: f.tax_prd_yr,
+      revenue: revenue,
+      expenses: expenses,
+      netIncome: revenue - expenses,
+      netAssets: netAssets,
+      liabilities: liabilities,
+      assets: assets,
+      contributions: contributions,
+      contributionShare: revenue > 0 ? contributions / revenue : null,
+      reserveMonths: (netAssets !== null && expenses > 0) ? netAssets / (expenses / 12) : null,
+      debtRatio: (liabilities !== null && assets) ? liabilities / assets : null,
+      formType: f.formtype === undefined ? null : f.formtype,
+      pdfUrl: f.pdf_url || null
+    };
+  });
+
+  const flags = [];
+  if (years.length === 0) {
+    flags.push({ level: "info", text: "No e-filed Form 990 data found for this EIN in ProPublica's Nonprofit Explorer - it may file a paper return, a 990-N postcard (too small to require full detail), or not yet be indexed." });
+    return { years: years, flags: flags };
+  }
+
+  const last = years[years.length - 1];
+  if (last.netIncome < 0) {
+    flags.push({ level: "watch", text: "Ran a deficit of " + fmtUsd(Math.abs(last.netIncome)) + " in " + last.year + " - expenses exceeded revenue." });
+  }
+  if (last.reserveMonths !== null && last.reserveMonths < 3) {
+    flags.push({ level: "watch", text: "Net assets cover about " + last.reserveMonths.toFixed(1) + " months of expenses as of " + last.year + " - under the 3-6 months most nonprofit finance guidance treats as a healthy operating reserve." });
+  }
+  const recent = years.slice(-3);
+  const deficitYears = recent.filter(function (y) { return y.netIncome < 0; }).length;
+  if (deficitYears >= 2) {
+    flags.push({ level: "watch", text: "Ran a deficit in " + deficitYears + " of the last " + recent.length + " filed years." });
+  }
+  if (years.length >= 2) {
+    const first = years[0];
+    if (first.revenue > 0) {
+      const change = (last.revenue - first.revenue) / first.revenue;
+      flags.push({
+        level: change >= 0 ? "good" : "watch",
+        text: "Revenue " + (change >= 0 ? "grew" : "fell") + " " + (Math.abs(change) * 100).toFixed(0) + "% from " + first.year + " (" + fmtUsd(first.revenue) + ") to " + last.year + " (" + fmtUsd(last.revenue) + ")."
+      });
+    }
+  }
+  if (years.length === 1) {
+    flags.push({ level: "info", text: "Only one filed year available - not enough history yet to show a trend." });
+  }
+  if (flags.length === 0) {
+    flags.push({ level: "good", text: "No deficit or thin-reserve signal in the filed years available." });
+  }
+  return { years: years, flags: flags };
+}
+
+async function loadOrCacheFinancials(ein, force) {
+  if (!force) {
+    const { rows } = await pool.query("SELECT data, fetched_at FROM org_financials WHERE ein = $1", [ein]);
+    if (rows[0]) {
+      const age = Date.now() - new Date(rows[0].fetched_at).getTime();
+      if (age < ORG_FINANCIALS_MAX_AGE_MS) {
+        return { data: JSON.parse(rows[0].data), fetchedAt: rows[0].fetched_at };
+      }
+    }
+  }
+  const data = await ppFetchJson("https://projects.propublica.org/nonprofits/api/v2/organizations/" + encodeURIComponent(ein) + ".json");
+  const fetchedAt = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO org_financials (ein, data, fetched_at) VALUES ($1,$2,$3)
+     ON CONFLICT (ein) DO UPDATE SET data = $2, fetched_at = $3`,
+    [String(ein), JSON.stringify(data), fetchedAt]
+  );
+  return { data: data, fetchedAt: fetchedAt };
+}
+
+app.get("/api/org-financials/search", requireAuth, async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) return res.status(400).json({ error: "q required" });
+  try {
+    const data = await ppFetchJson("https://projects.propublica.org/nonprofits/api/v2/search.json?q=" + encodeURIComponent(q));
+    const results = (data.organizations || []).slice(0, 8).map(function (o) {
+      return { ein: String(o.ein), strein: o.strein || "", name: o.name || "", city: o.city || "", state: o.state || "" };
+    });
+    res.json({ results });
+  } catch (err) {
+    console.error("org-financials search failed:", err.message);
+    res.status(502).json({ error: "ProPublica search failed - try again in a moment" });
+  }
+});
+
+app.get("/api/org-financials", requireAuth, async (req, res) => {
+  const org = String(req.query.org || "").trim();
+  if (!org) return res.status(400).json({ error: "org required" });
+  try {
+    const { rows } = await pool.query("SELECT * FROM org_ein_links WHERE org_name = $1", [org]);
+    if (!rows[0]) return res.json({ linked: false });
+    const link = rows[0];
+    const { data, fetchedAt } = await loadOrCacheFinancials(link.ein, false);
+    res.json({
+      linked: true,
+      ein: link.ein,
+      matchedName: link.matched_name,
+      matchedCity: link.matched_city,
+      matchedState: link.matched_state,
+      fetchedAt: fetchedAt,
+      analysis: analyzeOrgFinancials(data)
+    });
+  } catch (err) {
+    console.error("org-financials fetch failed:", err.message);
+    res.status(502).json({ error: "Could not load financials right now - try again in a moment" });
+  }
+});
+
+app.post("/api/org-financials/link", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const org = String(b.org || "").trim();
+  const ein = String(b.ein || "").trim();
+  if (!org || !ein) return res.status(400).json({ error: "org and ein required" });
+  const now = new Date().toISOString();
+  try {
+    await pool.query(
+      `INSERT INTO org_ein_links (org_name, ein, matched_name, matched_city, matched_state, linked_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (org_name) DO UPDATE SET ein=$2, matched_name=$3, matched_city=$4, matched_state=$5, linked_at=$6`,
+      [org, ein, b.matchedName || "", b.matchedCity || "", b.matchedState || "", now]
+    );
+    const { data, fetchedAt } = await loadOrCacheFinancials(ein, false);
+    res.json({ ok: true, ein: ein, matchedName: b.matchedName || "", fetchedAt: fetchedAt, analysis: analyzeOrgFinancials(data) });
+  } catch (err) {
+    console.error("org-financials link failed:", err.message);
+    res.status(502).json({ error: "Linked, but could not fetch financials for that EIN yet - try refreshing in a moment" });
+  }
+});
+
+app.delete("/api/org-financials/link", requireAuth, async (req, res) => {
+  const org = String(req.query.org || "").trim();
+  if (!org) return res.status(400).json({ error: "org required" });
+  await pool.query("DELETE FROM org_ein_links WHERE org_name = $1", [org]);
+  res.json({ ok: true });
+});
+
+app.post("/api/org-financials/:ein/refresh", requireAuth, async (req, res) => {
+  try {
+    const { data, fetchedAt } = await loadOrCacheFinancials(req.params.ein, true);
+    res.json({ ok: true, fetchedAt: fetchedAt, analysis: analyzeOrgFinancials(data) });
+  } catch (err) {
+    console.error("org-financials refresh failed:", err.message);
+    res.status(502).json({ error: "Refresh failed - try again in a moment" });
   }
 });
 
@@ -454,6 +723,12 @@ app.get("/api/admin/backup", requireAdminToken, async (req, res) => {
     }
     const visionRes = await pool.query("SELECT * FROM vision WHERE id = 'main'");
     out.vision = visionRes.rows[0] || null;
+    // org_ein_links is real, hand-confirmed state (which EIN Franklin picked
+    // for which org name) and worth carrying across a migration; its cache
+    // table org_financials is deliberately left out - it's just a 30-day
+    // cache of public ProPublica data, trivially re-fetched, not worth the
+    // backup's weight.
+    out.orgEinLinks = (await pool.query("SELECT * FROM org_ein_links")).rows;
     out.exportedAt = new Date().toISOString();
     res.json(out);
   } catch (err) {
@@ -501,6 +776,19 @@ app.post("/api/admin/restore", requireAdminToken, async (req, res) => {
       );
       counts.vision = 1;
     }
+    if (Array.isArray(body.orgEinLinks)) {
+      counts.orgEinLinks = 0;
+      for (const link of body.orgEinLinks) {
+        if (!link || !link.org_name || !link.ein) continue;
+        await client.query(
+          `INSERT INTO org_ein_links (org_name, ein, matched_name, matched_city, matched_state, linked_at)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (org_name) DO UPDATE SET ein=$2, matched_name=$3, matched_city=$4, matched_state=$5, linked_at=$6`,
+          [link.org_name, link.ein, link.matched_name || "", link.matched_city || "", link.matched_state || "", link.linked_at || new Date().toISOString()]
+        );
+        counts.orgEinLinks++;
+      }
+    }
     await client.query("COMMIT");
     res.json({ ok: true, counts });
   } catch (err) {
@@ -517,12 +805,15 @@ app.use("/icons", express.static(path.join(__dirname, "public", "icons"), { maxA
 app.get("/favicon.ico", (req, res) => res.sendFile(path.join(__dirname, "public", "icons", "favicon.ico")));
 app.get("/manifest.webmanifest", (req, res) => res.sendFile(path.join(__dirname, "public", "manifest.webmanifest")));
 app.get("/styles.css", (req, res) => res.sendFile(path.join(__dirname, "public", "styles.css")));
+app.get("/us-states.json", (req, res) => res.sendFile(path.join(__dirname, "public", "us-states.json")));
 app.get("/app.js", (req, res) => {
   const token = req.cookies[COOKIE_NAME];
   if (!verify(token)) return res.status(401).end();
   res.sendFile(path.join(__dirname, "public", "app.js"));
 });
 app.get("/login.js", (req, res) => res.sendFile(path.join(__dirname, "public", "login.js")));
+app.get("/giving-landscape", (req, res) => res.sendFile(path.join(__dirname, "public", "giving-landscape-public.html")));
+app.get("/giving-landscape-public.js", (req, res) => res.sendFile(path.join(__dirname, "public", "giving-landscape-public.js")));
 
 // ---------- page routes ----------
 app.get("/", (req, res) => {

@@ -48,13 +48,10 @@
     <button type="button" class="rail-btn" data-view="briefing">Daily Briefing</button>
     <button type="button" class="rail-btn" data-view="session">Weekly Session</button>
     <div class="rail-label">Run the practice</div>
-    <button type="button" class="rail-btn" data-view="dashboard">Dashboard</button>
     <button type="button" class="rail-btn" data-view="pipeline">Pipeline</button>
     <button type="button" class="rail-btn" data-view="prospecting">Prospecting</button>
-    <button type="button" class="rail-btn" data-view="scorecard">Scorecard</button>
-    <button type="button" class="rail-btn" data-view="forecasting">Forecasting</button>
-    <button type="button" class="rail-btn" data-view="finance">Finance</button>
-    <button type="button" class="rail-btn" data-view="delivery">Delivery</button>
+    <button type="button" class="rail-btn" data-view="scorecard">Scorecard &amp; Forecasting</button>
+    <button type="button" class="rail-btn" data-view="finance">Finance &amp; Delivery</button>
     <div class="rail-label">Client Tools</div>
     <button type="button" class="rail-btn" data-view="portfolio">Portfolio Analysis</button>
     <div class="rail-label">Direction</div>
@@ -104,6 +101,12 @@
         <div id="cc-automation-health-list"><p class="empty-note" style="border:none;">Loading...</p></div>
       </div>
 
+      <div class="fw-card" data-panel="04b · Open issues, oldest first">
+        <h3>Open Issues, Oldest First</h3>
+        <p style="margin-top:-2px;">Anything logged in the Issues List that is not yet solved. The Identify, Discuss, Solve discipline works only if this list stays short. <a href="#" id="cc-issues-link">Open Issues List &rarr;</a></p>
+        <ul class="action-list" id="cc-open-issues"><li class="empty-note" style="border:none;">Loading...</li></ul>
+      </div>
+
       <div class="fw-card" data-panel="05 · Practice trends">
         <h3>Practice Trends</h3>
         <p style="margin-top:-2px;">This month's headline number for each trend Forecasting tracks in full. <a href="#" id="cc-trends-link">Open the full charts &rarr;</a></p>
@@ -122,6 +125,11 @@
         <div class="stat-grid" id="cc-finance-stats"></div>
         <p style="margin-top:14px;" id="cc-delivery-summary">Loading...</p>
         <ul class="action-list" id="cc-delivery-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
+      </div>
+
+      <div class="example-box good">
+        <span class="eb-label">On the login question</span>
+        <p class="extra">This site sits behind a single shared password, entered once per device, so it can be opened from any browser or phone without going through Claude or any other account. The password can be changed at any time. If an associate ever joins and needs their own access instead of the shared one, that is a real login system to add later, not something this version needs yet.</p>
       </div>
     </section>
 
@@ -353,35 +361,6 @@
       </div>
     </section>
 
-    <!-- ================= DASHBOARD ================= -->
-    <section class="view" data-view="dashboard" hidden>
-      <div class="view-head"><h2>Dashboard</h2><span class="tag">the rollup</span></div>
-      <p class="view-intro">A rollup of the five sections. Nothing here is entered directly, it all comes from Pipeline, Scorecard, Issues, and Priorities.</p>
-
-      <div class="fw-card" data-panel="01 · Next up in the pipeline">
-        <h3>Next up in the pipeline</h3>
-        <p style="margin-top:-2px;">The five records with the nearest next step date. Set a next step and a date on any pipeline record to have it show up here.</p>
-        <ul class="action-list" id="dashboard-next-actions"><li class="empty-note" style="border:none;">Loading...</li></ul>
-      </div>
-
-      <div class="fw-card" data-panel="02 · Open issues, oldest first">
-        <h3>Open issues, oldest first</h3>
-        <p style="margin-top:-2px;">Anything logged in the Issues List that is not yet solved. The Identify, Discuss, Solve discipline works only if this list stays short.</p>
-        <ul class="action-list" id="dashboard-open-issues"><li class="empty-note" style="border:none;">Loading...</li></ul>
-      </div>
-
-      <div class="fw-card" data-panel="03 · Automation health">
-        <h3>Automation health</h3>
-        <p style="margin-top:-2px;">The last known run of each scheduled job behind this app: the weekly gift ticker, the daily lead import, the weekly Field Intelligence refresh, the weekly calendar briefing, and the weekly pipeline review nudge. A job reports in only if it can reach this app and gets far enough to say so &mdash; "Never reported" means either it hasn't run since this was added, or its last run never made it to that closing step.</p>
-        <div id="automation-health-list"><p class="empty-note" style="border:none;">Loading...</p></div>
-      </div>
-
-      <div class="example-box good">
-        <span class="eb-label">On the login question</span>
-        <p class="extra">This site sits behind a single shared password, entered once per device, so it can be opened from any browser or phone without going through Claude or any other account. The password can be changed at any time. If an associate ever joins and needs their own access instead of the shared one, that is a real login system to add later, not something this version needs yet.</p>
-      </div>
-    </section>
-
     <!-- ================= PIPELINE ================= -->
     <section class="view" data-view="pipeline" hidden>
       <div class="view-head"><h2>Pipeline</h2><span class="tag">lead to graduation</span></div>
@@ -497,10 +476,15 @@
 
     <!-- ================= SCORECARD ================= -->
     <section class="view" data-view="scorecard" hidden>
-      <div class="view-head"><h2>Scorecard</h2><span class="tag">the numbers that say the business is healthy</span></div>
-      <p class="view-intro">A short list of measurables logged weekly, the EOS style discipline of watching a handful of numbers instead of guessing. Pulled straight from what the pipeline and the discovery calls actually produce.</p>
+      <div class="view-head"><h2>Scorecard &amp; Forecasting</h2><span class="tag">the numbers, and the trend they're forming</span></div>
+      <p class="view-intro">A short list of measurables logged weekly, the EOS style discipline of watching a handful of numbers instead of guessing, plus the trend those numbers are forming over time. Pulled straight from what the pipeline and the discovery calls actually produce.</p>
 
-      <div class="fw-card" data-panel="01 · Weekly log">
+      <div class="toolbar" id="sc-tabs" role="tablist" aria-label="Scorecard sections">
+        <button type="button" class="filter-btn is-active" data-sc-tab="log" role="tab" aria-selected="true">Weekly Log</button>
+        <button type="button" class="filter-btn" data-sc-tab="trends" role="tab" aria-selected="false">Trends</button>
+      </div>
+
+      <div class="fw-card" data-panel="01 · Weekly log" data-sc-tab="log">
         <form class="entry-form" id="scorecard-form">
           <div class="form-title">Log a week</div>
           <div class="form-grid">
@@ -526,25 +510,21 @@
           <tbody id="scorecard-rows"><tr><td colspan="11" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
       </div>
-    </section>
 
-    <!-- ================= FORECASTING ================= -->
-    <section class="view" data-view="forecasting" hidden>
-      <div class="view-head"><h2>Forecasting</h2><span class="tag">trend, not guesswork</span></div>
-      <p class="view-intro">A simple projection built from the Scorecard history logged so far: a straight line fit through the recent weeks of each number, with a shaded band for how much it has actually varied. Log at least three weeks to see a trend, more weeks make the projection steadier.</p>
-
-      <div class="fw-card" data-panel="01 · Trend charts">
+      <div class="fw-card" data-panel="02 · Trend charts" data-sc-tab="trends" hidden>
+        <h3>Trend Charts</h3>
+        <p style="margin-top:-2px;">A simple projection built from the Scorecard history logged so far: a straight line fit through the recent weeks of each number, with a shaded band for how much it has actually varied. Log at least three weeks to see a trend, more weeks make the projection steadier.</p>
         <div class="chart-grid" id="forecast-charts">
           <p class="empty-note">Log a few weeks of Scorecard data to see trend charts here.</p>
         </div>
       </div>
 
-      <div class="example-box">
+      <div class="example-box" data-sc-tab="trends" hidden>
         <span class="eb-label">What this is, and is not</span>
         <p class="extra">This is plain least squares regression run on the practice's own numbers, the same math behind a trendline in a spreadsheet, dressed up with a variance band. It is enough to answer "am I trending up or down" for one practice's own pipeline. A client-facing fundraising forecast, donor retention curves, gift capacity modeling, campaign readiness scoring, is a materially bigger build with its own data requirements, and per Before Scale's validation gate that is only worth building once real client demand asks for it, not speculatively.</p>
       </div>
 
-      <div class="fw-card" data-panel="02 · Practice trends">
+      <div class="fw-card" data-panel="03 · Practice trends" data-sc-tab="trends" hidden>
         <h3>Practice Trends</h3>
         <p>What actually happened, not a projection: pipeline conversion rate, average deal size, and prospect velocity, each grouped by the month it happened. The same as-originally-logged discipline used for the National Giving Trends benchmark on Giving Landscape, pointed at this practice's own numbers instead.</p>
         <div class="chart-grid" id="practice-trends-charts">
@@ -553,12 +533,17 @@
       </div>
     </section>
 
-    <!-- ================= FINANCE ================= -->
+    <!-- ================= FINANCE & DELIVERY ================= -->
     <section class="view" data-view="finance" hidden>
-      <div class="view-head"><h2>Finance</h2><span class="tag">revenue and AR</span></div>
-      <p class="view-intro">Invoices for real, signed engagements &mdash; every one tied to a Pipeline record, never a separate client list. Log an invoice once work is signed, mark it sent, then mark it paid when the money lands.</p>
+      <div class="view-head"><h2>Finance &amp; Delivery</h2><span class="tag">revenue, AR, and the five pillars</span></div>
+      <p class="view-intro">Invoices for real, signed engagements, and session-by-session delivery for every active one &mdash; every record tied to a Pipeline record, never a separate client list.</p>
 
-      <div class="fw-card" data-panel="01 · Log an invoice">
+      <div class="toolbar" id="fd-tabs" role="tablist" aria-label="Finance and Delivery sections">
+        <button type="button" class="filter-btn is-active" data-fd-tab="finance" role="tab" aria-selected="true">Finance</button>
+        <button type="button" class="filter-btn" data-fd-tab="delivery" role="tab" aria-selected="false">Delivery</button>
+      </div>
+
+      <div class="fw-card" data-panel="01 · Log an invoice" data-fd-tab="finance">
         <form class="entry-form" id="invoice-form">
           <div class="form-title">Log an invoice</div>
           <div class="form-grid">
@@ -593,33 +578,29 @@
         </form>
       </div>
 
-      <div class="fw-card" data-panel="02 · Accounts receivable">
+      <div class="fw-card" data-panel="02 · Accounts receivable" data-fd-tab="finance">
         <h3>Accounts Receivable</h3>
         <p style="margin-top:-2px;">Every sent, unpaid invoice, aged from its due date.</p>
         <div class="stat-grid" id="fin-ar-aging"></div>
       </div>
 
-      <div class="fw-card" data-panel="03 · Revenue this quarter">
+      <div class="fw-card" data-panel="03 · Revenue this quarter" data-fd-tab="finance">
         <h3>Revenue This Quarter</h3>
         <p style="margin-top:-2px;">From invoices marked paid this quarter, and this quarter's Scorecard entries for revenue booked.</p>
         <div class="stat-grid" id="fin-revenue-stats"></div>
       </div>
 
-      <div class="fw-card" data-panel="04 · All invoices">
+      <div class="fw-card" data-panel="04 · All invoices" data-fd-tab="finance">
         <h3>All Invoices</h3>
         <div class="table-wrap"><table>
           <thead><tr><th>Engagement</th><th>Offering</th><th>Amount</th><th>Status</th><th>Due</th><th></th></tr></thead>
           <tbody id="invoice-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
       </div>
-    </section>
 
-    <!-- ================= DELIVERY ================= -->
-    <section class="view" data-view="delivery" hidden>
-      <div class="view-head"><h2>Delivery</h2><span class="tag">the five pillars, tracked</span></div>
-      <p class="view-intro">Session-by-session delivery for every active engagement, matching the five pillars The InstitutionalOS Runbook already sequences: Governing Foundation, Build Before the Ask, Fundraising Fluency, Zero to Portfolio, Funding Pathway Finder. Every module and time entry is tied to a Pipeline record.</p>
-
-      <div class="fw-card" data-panel="01 · Log a module">
+      <div class="fw-card" data-panel="05 · Log a module" data-fd-tab="delivery" hidden>
+        <h3>Log a Module</h3>
+        <p style="margin-top:-2px;">Matching the five pillars The InstitutionalOS Runbook already sequences: Governing Foundation, Build Before the Ask, Fundraising Fluency, Zero to Portfolio, Funding Pathway Finder. Every module and time entry is tied to a Pipeline record.</p>
         <form class="entry-form" id="module-form">
           <div class="form-title">Log a module</div>
           <div class="form-grid">
@@ -648,13 +629,13 @@
         </form>
       </div>
 
-      <div class="fw-card" data-panel="02 · Engagement progress">
+      <div class="fw-card" data-panel="06 · Engagement progress" data-fd-tab="delivery" hidden>
         <h3>Engagement Progress</h3>
         <p style="margin-top:-2px;">Every engagement with at least one module logged, modules complete out of modules planned.</p>
         <div id="delivery-progress-list"><p class="empty-note">Nothing logged yet.</p></div>
       </div>
 
-      <div class="fw-card" data-panel="03 · All modules">
+      <div class="fw-card" data-panel="07 · All modules" data-fd-tab="delivery" hidden>
         <h3>All Modules</h3>
         <div class="table-wrap"><table>
           <thead><tr><th>Engagement</th><th>Module</th><th>Status</th><th>Session date</th><th>Deliverable</th><th></th></tr></thead>
@@ -662,7 +643,7 @@
         </table></div>
       </div>
 
-      <div class="fw-card" data-panel="04 · Time log">
+      <div class="fw-card" data-panel="08 · Time log" data-fd-tab="delivery" hidden>
         <h3>Time Log</h3>
         <p style="margin-top:-2px;">A manual log, not a stopwatch &mdash; entered the same way everything else in this app is.</p>
         <form class="entry-form" id="time-form">

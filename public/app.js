@@ -372,31 +372,26 @@
   })();
 
   // ---------- dashboard ----------
-  function renderDashboard(){
+  // Feeds the four clickable stat tiles in the global masthead, present on
+  // every view. This used to live inside renderDashboard(); pulled out on
+  // its own so it keeps working now that Dashboard itself is retired.
+  function renderMastheadStats(){
     document.getElementById("stat-active").textContent = state.pipeline.filter(function(p){ return !CLOSED_STAGES[p.stage]; }).length;
     document.getElementById("stat-issues").textContent = state.issues.filter(function(i){ return i.status !== "solved"; }).length;
     document.getElementById("stat-rocks").textContent = state.rocks.filter(function(r){ return r.status === "on-track"; }).length;
     document.getElementById("stat-weeks").textContent = state.scorecard.length;
+  }
 
-    var nextList = state.pipeline
-      .filter(function(p){ return p.nextStepDate && !CLOSED_STAGES[p.stage]; })
-      .sort(function(a,b){ return (a.nextStepDate || "").localeCompare(b.nextStepDate || ""); })
-      .slice(0,5);
-    var nextEl = document.getElementById("dashboard-next-actions");
-    if(nextList.length === 0){
-      nextEl.innerHTML = '<li class="empty-note" style="border:none;">Nothing scheduled yet. Add a next step and a date to any pipeline record.</li>';
-    } else {
-      nextEl.innerHTML = nextList.map(function(p){
-        var overdue = isOverduePipeline(p);
-        return '<li' + (overdue ? ' class="row-overdue"' : '') + '><span>' + dotHtml(pipelineHealth(p)) + '<span class="who">' + esc(p.name || "Untitled") + '</span> &middot; ' + esc(p.nextStep || "next step not set") + '</span><span class="when">' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span></li>';
-      }).join("");
-    }
-
+  // Dashboard's one panel that wasn't a duplicate of something already on
+  // Command Center (its "next up in the pipeline" panel was byte-identical
+  // to Engagements in Motion above) — folded in here directly.
+  function renderCcOpenIssues(){
+    var issueEl = document.getElementById("cc-open-issues");
+    if(!issueEl) return;
     var issueList = state.issues
       .filter(function(i){ return i.status !== "solved"; })
       .sort(function(a,b){ return (a.createdAt || "").localeCompare(b.createdAt || ""); })
       .slice(0,6);
-    var issueEl = document.getElementById("dashboard-open-issues");
     if(issueList.length === 0){
       issueEl.innerHTML = '<li class="empty-note" style="border:none;">No open issues logged.</li>';
     } else {
@@ -577,24 +572,30 @@
     renderCcEngagements();
     renderCcStageStats();
     renderCcRocks();
+    renderCcOpenIssues();
     renderCcTrendTiles();
     renderCcFieldIntel();
     renderCcFinanceDelivery();
   }
-  var ccTrendsLink = document.getElementById("cc-trends-link");
-  if(ccTrendsLink) ccTrendsLink.addEventListener("click", function(e){ e.preventDefault(); goToView("forecasting"); });
-  var ccFieldIntelLink = document.getElementById("cc-fieldintel-link");
-  if(ccFieldIntelLink) ccFieldIntelLink.addEventListener("click", function(e){ e.preventDefault(); goToView("fieldintel"); });
-  var ccFinanceLink = document.getElementById("cc-finance-link");
-  if(ccFinanceLink) ccFinanceLink.addEventListener("click", function(e){ e.preventDefault(); goToView("finance"); });
-  var ccDeliveryLink = document.getElementById("cc-delivery-link");
-  if(ccDeliveryLink) ccDeliveryLink.addEventListener("click", function(e){ e.preventDefault(); goToView("delivery"); });
-
-  // ---------- dashboard stat tiles (clickable, jump to the relevant view) ----------
+  // ---------- masthead stat tiles + cross-links (clickable, jump to the relevant view/tab) ----------
   function goToView(view){
     var btn = document.querySelector('#app-nav .rail-btn[data-view="' + view + '"]');
     if(btn) btn.click();
   }
+  function goToTab(tabsId, dataAttr, target){
+    var btn = document.querySelector('#' + tabsId + ' [' + dataAttr + '="' + target + '"]');
+    if(btn) btn.click();
+  }
+  var ccTrendsLink = document.getElementById("cc-trends-link");
+  if(ccTrendsLink) ccTrendsLink.addEventListener("click", function(e){ e.preventDefault(); goToView("scorecard"); goToTab("sc-tabs", "data-sc-tab", "trends"); });
+  var ccFieldIntelLink = document.getElementById("cc-fieldintel-link");
+  if(ccFieldIntelLink) ccFieldIntelLink.addEventListener("click", function(e){ e.preventDefault(); goToView("fieldintel"); });
+  var ccIssuesLink = document.getElementById("cc-issues-link");
+  if(ccIssuesLink) ccIssuesLink.addEventListener("click", function(e){ e.preventDefault(); goToView("issues"); });
+  var ccFinanceLink = document.getElementById("cc-finance-link");
+  if(ccFinanceLink) ccFinanceLink.addEventListener("click", function(e){ e.preventDefault(); goToView("finance"); goToTab("fd-tabs", "data-fd-tab", "finance"); });
+  var ccDeliveryLink = document.getElementById("cc-delivery-link");
+  if(ccDeliveryLink) ccDeliveryLink.addEventListener("click", function(e){ e.preventDefault(); goToView("finance"); goToTab("fd-tabs", "data-fd-tab", "delivery"); });
   document.getElementById("stat-tile-active").addEventListener("click", function(){ goToView("pipeline"); });
   document.getElementById("stat-tile-rocks").addEventListener("click", function(){ goToView("rocks"); });
   document.getElementById("stat-tile-weeks").addEventListener("click", function(){ goToView("scorecard"); });
@@ -1712,7 +1713,7 @@
   // this way there is exactly one place that turns automationStatus into
   // markup for either of them to stay in sync with.
   function renderAutomationHealth(){
-    var ids = ["automation-health-list", "cc-automation-health-list"];
+    var ids = ["cc-automation-health-list"];
     var html;
     if(automationStatus === null){
       html = '<p class="empty-note" style="border:none;">Loading&hellip;</p>';
@@ -2300,6 +2301,34 @@
         });
       });
     }
+
+    // Generic version of the same pattern, for the Scorecard/Forecasting
+    // and Finance/Delivery tab groups below. panelSelector defaults to
+    // .fw-card but can widen to catch an example-box riding along in a tab.
+    function wireTabToolbar(tabsId, viewName, dataAttr, panelSelector){
+      var tabsEl = document.getElementById(tabsId);
+      if(!tabsEl) return;
+      panelSelector = panelSelector || ".fw-card";
+      tabsEl.addEventListener("click", function(e){
+        var btn = e.target.closest("[" + dataAttr + "]");
+        if(!btn) return;
+        var target = btn.getAttribute(dataAttr);
+        tabsEl.querySelectorAll("[" + dataAttr + "]").forEach(function(b){
+          var active = b === btn;
+          b.classList.toggle("is-active", active);
+          b.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        var scopedSelector = panelSelector.split(",").map(function(sel){
+          return '.view[data-view="' + viewName + '"] ' + sel.trim();
+        }).join(", ");
+        document.querySelectorAll(scopedSelector).forEach(function(card){
+          if(!card.hasAttribute(dataAttr)) return;
+          card.hidden = (card.getAttribute(dataAttr) !== target);
+        });
+      });
+    }
+    wireTabToolbar("sc-tabs", "scorecard", "data-sc-tab", ".fw-card, .example-box");
+    wireTabToolbar("fd-tabs", "finance", "data-fd-tab", ".fw-card");
 
     document.getElementById("gl-ticker-list").addEventListener("click", function(e){
       var delBtn = e.target.closest(".gift-delete");
@@ -3347,8 +3376,8 @@
     renderGivingLandscape();
     renderBriefing();
     renderSessionPanel();
+    renderMastheadStats();
     renderCommandCenter();
-    renderDashboard();
     renderPipeline();
     renderProspecting();
     renderScorecard();

@@ -563,6 +563,18 @@ img{max-width:100%;}
 
   footer{border-top:1px solid var(--line);padding:22px 0 40px;font-size:0.82rem;color:var(--ink-soft);}
 
+  /* ---------- Portfolio Analysis (client-side only, nothing persisted) ---------- */
+  .csv-input{width:100%;font-family:'IBM Plex Mono', monospace;font-size:0.82rem;min-height:150px;}
+  .donor-tier-pill{font-family:'IBM Plex Mono', monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;padding:2px 7px;border-radius:100px;border:1px solid var(--line);white-space:nowrap;}
+  .donor-tier-pill.tier-leadership{color:var(--accent-strong);border-color:var(--accent-strong);}
+  .donor-tier-pill.tier-major{color:var(--accent-2);border-color:var(--accent-2);}
+  .donor-tier-pill.tier-individual{color:var(--ink-soft);}
+  .donor-status-pill{font-family:'IBM Plex Mono', monospace;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;padding:2px 7px;border-radius:100px;white-space:nowrap;}
+  .donor-status-pill.status-active{color:var(--good);border:1px solid var(--good);}
+  .donor-status-pill.status-lybunt{color:var(--warn);border:1px solid var(--warn);}
+  .donor-status-pill.status-sybunt{color:var(--ink-soft);border:1px solid var(--line);}
+  .donor-new-badge{font-size:0.68rem;color:var(--accent-strong);margin-left:6px;}
+
 /* ---------- login page ---------- */
 body.login-body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--hero-bg);padding:24px;}
 .login-card{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);padding:36px 32px;max-width:360px;width:100%;}

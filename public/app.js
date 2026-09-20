@@ -1283,6 +1283,270 @@
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
 
+  // ---------- Portfolio Analysis (LYBUNT/SYBUNT, gift tiers, retention) ----------
+  // Deliberately client-side only, start to finish: nothing typed or
+  // uploaded here ever reaches apiFetch or the server. This is a client's
+  // own donor data, not Frankly Inspired's, so unlike every other view in
+  // this app it is never written to Postgres - the analysis lives in
+  // portfolioAnalysis (a plain JS variable) for as long as this tab is
+  // open, and is gone on refresh or navigation away from the app.
+  var PORTFOLIO_TIER_LABELS = { individual: "Individual", major: "Major Gift", leadership: "Leadership Gift" };
+  var PORTFOLIO_STATUS_LABELS = { active: "Active", lybunt: "LYBUNT", sybunt: "SYBUNT" };
+  var portfolioAnalysis = null;
+
+  function parseCsvLine(line){
+    var out = [];
+    var cur = "";
+    var inQuotes = false;
+    for(var i = 0; i < line.length; i++){
+      var ch = line[i];
+      if(inQuotes){
+        if(ch === '"'){
+          if(line[i + 1] === '"'){ cur += '"'; i++; }
+          else { inQuotes = false; }
+        } else { cur += ch; }
+      } else {
+        if(ch === '"'){ inQuotes = true; }
+        else if(ch === ','){ out.push(cur); cur = ""; }
+        else { cur += ch; }
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+  function parsePortfolioDate(s){
+    if(!s) return null;
+    var iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if(iso) return iso[1] + "-" + iso[2] + "-" + iso[3];
+    var us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if(us){
+      var mm = ("0" + us[1]).slice(-2), dd = ("0" + us[2]).slice(-2);
+      return us[3] + "-" + mm + "-" + dd;
+    }
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
+  function parsePortfolioAmount(s){
+    if(s == null) return null;
+    var cleaned = String(s).replace(/[$,\s]/g, "");
+    if(cleaned === "") return null;
+    var n = Number(cleaned);
+    return isNaN(n) ? null : n;
+  }
+  // A header row is detected, not assumed: if the third column of the
+  // first row doesn't parse as an amount, that row is a header and skipped.
+  function parsePortfolioCsv(text){
+    var lines = text.split(/\r\n|\r|\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l.length > 0; });
+    var rows = lines.map(parseCsvLine);
+    if(rows.length > 0 && rows[0].length >= 3 && parsePortfolioAmount(rows[0][2]) == null){
+      rows = rows.slice(1);
+    }
+    var gifts = [];
+    var errors = 0;
+    rows.forEach(function(r){
+      if(r.length < 3){ errors++; return; }
+      var name = (r[0] || "").trim();
+      var dateStr = parsePortfolioDate((r[1] || "").trim());
+      var amount = parsePortfolioAmount(r[2]);
+      if(!name || !dateStr || amount == null){ errors++; return; }
+      gifts.push({ donor: name, date: dateStr, amount: amount });
+    });
+    return { gifts: gifts, errors: errors };
+  }
+
+  // Fiscal years are keyed by the calendar year their FY starts in, so a
+  // fiscal year running July 2025 to June 2026 is fyKey 2025 - avoids
+  // picking a naming convention (some shops call that "FY25", others "FY26").
+  function fyKeyForDate(dateStr, fyStartMonth){
+    var d = new Date(dateStr + "T00:00:00");
+    var y = d.getFullYear(), m = d.getMonth() + 1;
+    if(fyStartMonth === 1) return y;
+    return m >= fyStartMonth ? y : y - 1;
+  }
+  function fyLabel(fyKey, fyStartMonth){
+    return fyStartMonth === 1 ? ("FY " + fyKey) : ("FY " + fyKey + "–" + (fyKey + 1));
+  }
+
+  function analyzePortfolio(gifts, opts){
+    var fyStartMonth = opts.fyStartMonth, asOf = opts.asOf;
+    var majorFloor = opts.majorFloor, leadershipFloor = opts.leadershipFloor;
+    var currentFyKey = fyKeyForDate(asOf, fyStartMonth);
+    var lastFyKey = currentFyKey - 1;
+    var priorFyKey = currentFyKey - 2;
+
+    var donors = {};
+    gifts.forEach(function(g){
+      var fk = fyKeyForDate(g.date, fyStartMonth);
+      if(!donors[g.donor]) donors[g.donor] = { totalsByFy: {}, lastGiftDate: g.date, firstGiftFyKey: fk };
+      var d = donors[g.donor];
+      d.totalsByFy[fk] = (d.totalsByFy[fk] || 0) + g.amount;
+      if(g.date > d.lastGiftDate) d.lastGiftDate = g.date;
+      if(fk < d.firstGiftFyKey) d.firstGiftFyKey = fk;
+    });
+
+    var rows = Object.keys(donors).map(function(name){
+      var d = donors[name];
+      var currentTotal = d.totalsByFy[currentFyKey] || 0;
+      var lastTotal = d.totalsByFy[lastFyKey] || 0;
+      var priorTotal = d.totalsByFy[priorFyKey] || 0;
+      var earlierTotal = 0;
+      Object.keys(d.totalsByFy).forEach(function(k){
+        if(Number(k) < lastFyKey) earlierTotal += d.totalsByFy[k];
+      });
+      // Same off-track-Rock-style priority logic as elsewhere in this app:
+      // a donor giving right now is "active" regardless of history; only
+      // lapsed once neither this year nor last year shows a gift.
+      var status = currentTotal > 0 ? "active" : (lastTotal > 0 ? "lybunt" : "sybunt");
+      var tier = lastTotal > 0
+        ? (lastTotal >= leadershipFloor ? "leadership" : (lastTotal >= majorFloor ? "major" : "individual"))
+        : null;
+      return {
+        donor: name, currentTotal: currentTotal, lastTotal: lastTotal, priorTotal: priorTotal,
+        lastGiftDate: d.lastGiftDate, status: status, isNew: d.firstGiftFyKey === currentFyKey, tier: tier
+      };
+    });
+
+    // Retention compares the last two COMPLETE fiscal years only (prior ->
+    // last), never the in-progress current year, which would understate it.
+    var priorDonors = rows.filter(function(r){ return r.priorTotal > 0; });
+    var retainedDonors = priorDonors.filter(function(r){ return r.lastTotal > 0; });
+    var priorDollarTotal = priorDonors.reduce(function(s, r){ return s + r.priorTotal; }, 0);
+    var retainedDollarTotal = priorDonors.reduce(function(s, r){ return s + r.lastTotal; }, 0);
+
+    var tiers = { individual: { count: 0, total: 0 }, major: { count: 0, total: 0 }, leadership: { count: 0, total: 0 } };
+    rows.forEach(function(r){
+      if(r.tier){ tiers[r.tier].count++; tiers[r.tier].total += r.lastTotal; }
+    });
+
+    return {
+      rows: rows, currentFyKey: currentFyKey, lastFyKey: lastFyKey, priorFyKey: priorFyKey, fyStartMonth: fyStartMonth,
+      donorRetentionRate: priorDonors.length > 0 ? (retainedDonors.length / priorDonors.length) : null,
+      dollarRetentionRate: priorDollarTotal > 0 ? (retainedDollarTotal / priorDollarTotal) : null,
+      lybuntCount: rows.filter(function(r){ return r.status === "lybunt"; }).length,
+      sybuntCount: rows.filter(function(r){ return r.status === "sybunt"; }).length,
+      lastFyTotalRaised: rows.reduce(function(s, r){ return s + r.lastTotal; }, 0),
+      lastFyDonorCount: rows.filter(function(r){ return r.lastTotal > 0; }).length,
+      tiers: tiers
+    };
+  }
+
+  function renderPortfolioResults(analysis){
+    document.getElementById("port-summary-card").hidden = false;
+    document.getElementById("port-tier-card").hidden = false;
+    document.getElementById("port-donors-card").hidden = false;
+
+    var lastLabel = fyLabel(analysis.lastFyKey, analysis.fyStartMonth);
+    var currentLabel = fyLabel(analysis.currentFyKey, analysis.fyStartMonth);
+    var priorLabel = fyLabel(analysis.priorFyKey, analysis.fyStartMonth);
+
+    document.getElementById("port-summary-note").textContent =
+      analysis.rows.length + " donor" + (analysis.rows.length === 1 ? "" : "s") + " in this file, " +
+      lastLabel + " (most recent complete fiscal year) compared against " + currentLabel + " to date.";
+
+    var retentionDonorHtml = analysis.donorRetentionRate == null ? "&mdash;" : Math.round(analysis.donorRetentionRate * 100) + "%";
+    var retentionDollarHtml = analysis.dollarRetentionRate == null ? "&mdash;" : Math.round(analysis.dollarRetentionRate * 100) + "%";
+
+    document.getElementById("port-summary-stats").innerHTML = [
+      ["Donors, " + lastLabel, analysis.lastFyDonorCount],
+      ["Raised, " + lastLabel, fmtMoneyShort(analysis.lastFyTotalRaised)],
+      ["Donor retention, " + priorLabel + " → " + lastLabel, retentionDonorHtml],
+      ["Dollar retention, " + priorLabel + " → " + lastLabel, retentionDollarHtml],
+      ["LYBUNT (gave " + lastLabel + ", not yet " + currentLabel + ")", analysis.lybuntCount],
+      ["SYBUNT (lapsed before " + lastLabel + ")", analysis.sybuntCount]
+    ].map(function(pair){
+      return '<div class="stat-card"><span class="num mono">' + pair[1] + '</span><span class="cap">' + esc(pair[0]) + '</span></div>';
+    }).join("");
+
+    document.getElementById("port-tier-note").textContent = "Individual, Major Gift, and Leadership Gift, by total giving in " + lastLabel + ".";
+    document.getElementById("port-tier-stats").innerHTML = ["individual", "major", "leadership"].map(function(t){
+      var stat = analysis.tiers[t];
+      return '<div class="stat-card"><span class="num mono">' + stat.count + '</span><span class="cap">' + PORTFOLIO_TIER_LABELS[t] + ' &middot; ' + fmtMoneyShort(stat.total) + '</span></div>';
+    }).join("");
+
+    var sorted = analysis.rows.slice().sort(function(a, b){ return b.lastTotal - a.lastTotal || b.currentTotal - a.currentTotal; });
+    var body = document.getElementById("port-donor-rows");
+    if(sorted.length === 0){
+      body.innerHTML = '<tr><td colspan="6" class="empty-note">No gift rows parsed. Check the CSV format.</td></tr>';
+      return;
+    }
+    body.innerHTML = sorted.map(function(r){
+      var tierPill = r.tier ? ('<span class="donor-tier-pill tier-' + r.tier + '">' + PORTFOLIO_TIER_LABELS[r.tier] + '</span>') : '<span class="dim">&mdash;</span>';
+      var statusPill = '<span class="donor-status-pill status-' + r.status + '">' + PORTFOLIO_STATUS_LABELS[r.status] + '</span>' + (r.isNew ? '<span class="donor-new-badge">New</span>' : '');
+      return '<tr>' +
+        '<td>' + esc(r.donor) + '</td>' +
+        '<td>' + tierPill + '</td>' +
+        '<td>' + statusPill + '</td>' +
+        '<td class="mono">' + fmtMoneyShort(r.lastTotal) + '</td>' +
+        '<td class="mono">' + fmtMoneyShort(r.currentTotal) + '</td>' +
+        '<td class="dim">' + fmtDate(r.lastGiftDate) + '</td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  function csvEscape(v){
+    var s = String(v == null ? "" : v);
+    return /[",\n]/.test(s) ? ('"' + s.replace(/"/g, '""') + '"') : s;
+  }
+  function exportPortfolioCsv(analysis, clientLabel){
+    var header = ["Donor", "Tier", "Status", "New This Year", "Last FY Total", "This FY To Date", "Last Gift Date"];
+    var lines = [header.join(",")];
+    analysis.rows.slice().sort(function(a, b){ return b.lastTotal - a.lastTotal; }).forEach(function(r){
+      var cells = [
+        r.donor, r.tier ? PORTFOLIO_TIER_LABELS[r.tier] : "", PORTFOLIO_STATUS_LABELS[r.status], r.isNew ? "Yes" : "",
+        r.lastTotal.toFixed(2), r.currentTotal.toFixed(2), r.lastGiftDate
+      ];
+      lines.push(cells.map(csvEscape).join(","));
+    });
+    var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+    var safeLabel = (clientLabel || "portfolio").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "portfolio";
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = safeLabel + "-portfolio-analysis.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  var portAsOfInput = document.getElementById("port-as-of");
+  if(portAsOfInput && !portAsOfInput.value) portAsOfInput.value = todayStr();
+
+  var portCsvFile = document.getElementById("port-csv-file");
+  if(portCsvFile) portCsvFile.addEventListener("change", function(e){
+    var file = e.target.files && e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){ document.getElementById("port-csv-input").value = String(reader.result || ""); };
+    reader.readAsText(file);
+  });
+
+  var portParseBtn = document.getElementById("port-parse-btn");
+  if(portParseBtn) portParseBtn.addEventListener("click", function(){
+    var statusEl = document.getElementById("port-status-msg");
+    var text = document.getElementById("port-csv-input").value;
+    if(!text.trim()){ statusEl.textContent = "Paste or upload gift data first."; return; }
+    var parsed = parsePortfolioCsv(text);
+    if(parsed.gifts.length === 0){ statusEl.textContent = "Could not parse any gift rows. Check the CSV format (donor name, gift date, amount)."; return; }
+    var asOf = document.getElementById("port-as-of").value || todayStr();
+    var fyStartMonth = Number(document.getElementById("port-fy-start").value || 1);
+    var majorFloor = Number(document.getElementById("port-major-floor").value || 1000);
+    var leadershipFloor = Number(document.getElementById("port-leadership-floor").value || 10000);
+    var analysis = analyzePortfolio(parsed.gifts, { asOf: asOf, fyStartMonth: fyStartMonth, majorFloor: majorFloor, leadershipFloor: leadershipFloor });
+    portfolioAnalysis = analysis;
+    renderPortfolioResults(analysis);
+    document.getElementById("port-export-btn").disabled = false;
+    statusEl.textContent = parsed.errors > 0
+      ? ("Analyzed " + parsed.gifts.length + " gift rows (" + parsed.errors + " row" + (parsed.errors === 1 ? "" : "s") + " skipped, couldn't parse).")
+      : ("Analyzed " + parsed.gifts.length + " gift rows.");
+  });
+
+  var portExportBtn = document.getElementById("port-export-btn");
+  if(portExportBtn) portExportBtn.addEventListener("click", function(){
+    if(!portfolioAnalysis) return;
+    exportPortfolioCsv(portfolioAnalysis, document.getElementById("port-client-label").value.trim());
+  });
+
   // ---------- Practice Trends (own-data analytics: conversion, deal size, prospect velocity) ----------
   // Unlike the forecast cards above (a linear projection from recent weeks),
   // these three charts show what actually happened, month by month, pulled

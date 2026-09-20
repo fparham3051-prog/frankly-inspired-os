@@ -55,6 +55,8 @@
     <button type="button" class="rail-btn" data-view="forecasting">Forecasting</button>
     <button type="button" class="rail-btn" data-view="finance">Finance</button>
     <button type="button" class="rail-btn" data-view="delivery">Delivery</button>
+    <div class="rail-label">Client Tools</div>
+    <button type="button" class="rail-btn" data-view="portfolio">Portfolio Analysis</button>
     <div class="rail-label">Direction</div>
     <button type="button" class="rail-btn" data-view="vision">Vision</button>
     <button type="button" class="rail-btn" data-view="issues">Issues List</button>
@@ -681,6 +683,65 @@
           <thead><tr><th>Engagement</th><th>Date</th><th>Minutes</th><th>Note</th><th></th></tr></thead>
           <tbody id="time-entry-rows"><tr><td colspan="5" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
+      </div>
+    </section>
+
+    <!-- ================= PORTFOLIO ANALYSIS ================= -->
+    <section class="view" data-view="portfolio" hidden>
+      <div class="view-head"><h2>Portfolio Analysis</h2><span class="tag">LYBUNT, SYBUNT, retention, and gift tiers</span></div>
+      <p class="view-intro">A working tool for a client's own gift history, not a stored record: paste or upload one client's donor and gift data, get tier segmentation, lapsed-donor flags, and retention back. Nothing here is saved &mdash; the data lives in this browser tab only, and is gone the moment you leave or refresh this page.</p>
+
+      <div class="fw-card" data-panel="01 · Load gift data">
+        <h3>Load Gift Data</h3>
+        <p style="margin-top:-2px;">One row per gift: donor name, gift date, gift amount. A header row is fine, it's detected automatically. Export this from whatever the client uses (Bloomerang, DonorPerfect, Raiser's Edge, a spreadsheet) as a CSV and paste or upload it below.</p>
+        <div class="form-grid">
+          <div class="field"><label for="port-client-label">Client / organization (for the export label only)</label><input id="port-client-label" placeholder="optional"></div>
+          <div class="field"><label for="port-as-of">Analyze as of</label><input id="port-as-of" type="date"></div>
+          <div class="field"><label for="port-fy-start">Fiscal year starts</label>
+            <select id="port-fy-start">
+              <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+              <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+              <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+              <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+            </select>
+          </div>
+          <div class="field"><label for="port-major-floor">Major Gift floor ($)</label><input id="port-major-floor" type="number" min="0" step="1" value="1000"></div>
+          <div class="field"><label for="port-leadership-floor">Leadership Gift floor ($)</label><input id="port-leadership-floor" type="number" min="0" step="1" value="10000"></div>
+          <div class="field"><label for="port-csv-file">Or upload a CSV file</label><input id="port-csv-file" type="file" accept=".csv,text/csv"></div>
+          <div class="field wide"><label for="port-csv-input">Gift data (CSV: donor name, gift date, amount)</label>
+            <textarea id="port-csv-input" class="csv-input" rows="8" placeholder="Donor Name, Gift Date, Amount&#10;Jordan Ellis, 2025-03-14, 500&#10;River Bend Family Foundation, 2025-06-01, 25000"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn" id="port-parse-btn">Analyze portfolio</button>
+          <button type="button" class="btn" id="port-export-btn" disabled>Download segmented CSV</button>
+          <span class="save-status" id="port-status-msg"></span>
+        </div>
+      </div>
+
+      <div class="fw-card" data-panel="02 · Portfolio summary" id="port-summary-card" hidden>
+        <h3>Portfolio Summary</h3>
+        <p style="margin-top:-2px;" id="port-summary-note"></p>
+        <div class="stat-grid" id="port-summary-stats"></div>
+      </div>
+
+      <div class="fw-card" data-panel="03 · Gift tiers" id="port-tier-card" hidden>
+        <h3>Gift Tiers</h3>
+        <p style="margin-top:-2px;" id="port-tier-note">Individual, Major Gift, and Leadership Gift, by total giving in the most recent complete fiscal year.</p>
+        <div class="stat-grid" id="port-tier-stats"></div>
+      </div>
+
+      <div class="fw-card" data-panel="04 · Donor list" id="port-donors-card" hidden>
+        <h3>Donor List</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Donor</th><th>Tier</th><th>Status</th><th>Last FY</th><th>This FY, to date</th><th>Last gift</th></tr></thead>
+          <tbody id="port-donor-rows"></tbody>
+        </table></div>
+      </div>
+
+      <div class="example-box" id="port-howbuilt">
+        <span class="eb-label">How this is built</span>
+        <p class="extra">LYBUNT is a donor who gave in the last complete fiscal year but not yet this year. SYBUNT is a donor who gave in an earlier fiscal year but not last year or this year. Retention rate compares the last two complete fiscal years only, donor count and dollars both, since the current year is still in progress and would understate it. Tier is based on a donor's total giving in the last complete fiscal year, not a single gift. Nothing typed or uploaded here is sent anywhere or saved &mdash; the moment you close or refresh this page, it's gone.</p>
       </div>
     </section>
 

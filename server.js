@@ -166,7 +166,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -175,7 +175,10 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM digest ORDER BY id ASC"),
       pool.query("SELECT * FROM gifts WHERE archived_at IS NULL ORDER BY announced_at DESC NULLS LAST, logged_at DESC"),
       pool.query("SELECT * FROM vision WHERE id = 'main'"),
-      pool.query("SELECT * FROM org_ein_links")
+      pool.query("SELECT * FROM org_ein_links"),
+      pool.query("SELECT * FROM invoices WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
+      pool.query("SELECT * FROM engagement_modules WHERE archived_at IS NULL ORDER BY created_at ASC"),
+      pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -186,7 +189,10 @@ app.get("/api/state", requireAuth, async (req, res) => {
       digest: digest.rows.map(rowToDigest),
       gifts: gifts.rows.map(rowToGift),
       vision: visionRes.rows[0] ? rowToVision(visionRes.rows[0]) : null,
-      orgLinks: orgLinks.rows.map(rowToOrgLink)
+      orgLinks: orgLinks.rows.map(rowToOrgLink),
+      invoices: invoices.rows.map(rowToInvoice),
+      engagementModules: engagementModules.rows.map(rowToEngagementModule),
+      timeEntries: timeEntries.rows.map(rowToTimeEntry)
     });
   } catch (err) {
     console.error(err);
@@ -198,7 +204,7 @@ function rowToPipeline(r) {
   return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function rowToScorecard(r) {
-  return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, createdAt: r.created_at };
+  return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at };
 }
 function rowToIssue(r) {
   return { id: r.id, title: r.title, detail: r.detail, status: r.status, createdAt: r.created_at, resolvedAt: r.resolved_at };
@@ -220,6 +226,15 @@ function rowToVision(r) {
 }
 function rowToOrgLink(r) {
   return { org: r.org_name, ein: r.ein, matchedName: r.matched_name, matchedCity: r.matched_city, matchedState: r.matched_state, linkedAt: r.linked_at };
+}
+function rowToInvoice(r) {
+  return { id: r.id, pipelineId: r.pipeline_id, offering: r.offering, amount: r.amount === null ? 0 : Number(r.amount), issuedDate: r.issued_date, dueDate: r.due_date, paidDate: r.paid_date, status: r.status, notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+function rowToEngagementModule(r) {
+  return { id: r.id, pipelineId: r.pipeline_id, moduleName: r.module_name, status: r.status, sessionDate: r.session_date, deliverableLink: r.deliverable_link, notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+function rowToTimeEntry(r) {
+  return { id: r.id, pipelineId: r.pipeline_id, entryDate: r.entry_date, minutes: r.minutes === null ? 0 : Number(r.minutes), note: r.note, createdAt: r.created_at };
 }
 
 function newId() {
@@ -276,9 +291,9 @@ app.post("/api/scorecard", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO scorecard (id, week_of, calls, leads, active, won, lost, referrals, notes, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [id, b.weekOf || "", Number(b.calls || 0), Number(b.leads || 0), Number(b.active || 0), Number(b.won || 0), Number(b.lost || 0), Number(b.referrals || 0), b.notes || "", now]
+    `INSERT INTO scorecard (id, week_of, calls, leads, active, won, lost, referrals, notes, revenue_booked, revenue_collected, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [id, b.weekOf || "", Number(b.calls || 0), Number(b.leads || 0), Number(b.active || 0), Number(b.won || 0), Number(b.lost || 0), Number(b.referrals || 0), b.notes || "", Number(b.revenueBooked || 0), Number(b.revenueCollected || 0), now]
   );
   res.json({ id });
 });
@@ -387,6 +402,117 @@ app.put("/api/vision", requireAuth, async (req, res) => {
      ON CONFLICT (id) DO UPDATE SET values_text=$1, focus=$2, ten_year=$3, marketing=$4, three_year=$5, one_year=$6, updated_at=$7`,
     [b.values || "", b.focus || "", b.tenYear || "", b.marketing || "", b.threeYear || "", b.oneYear || "", now]
   );
+  res.json({ ok: true });
+});
+
+// ---------- finance: invoices ----------
+// Every invoice belongs to a real Pipeline row - see the schema.sql comment
+// above this table for why. A pipelineId that doesn't exist yet fails the
+// foreign key at the database level rather than silently creating an
+// orphan invoice, so that check is left to Postgres instead of duplicated
+// here.
+app.post("/api/invoices", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  if (!b.pipelineId) return res.status(400).json({ error: "pipelineId required" });
+  const id = newId();
+  const now = new Date().toISOString();
+  try {
+    await pool.query(
+      `INSERT INTO invoices (id, pipeline_id, offering, amount, issued_date, due_date, paid_date, status, notes, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
+      [id, b.pipelineId, b.offering || "", Number(b.amount || 0), b.issuedDate || "", b.dueDate || "", b.paidDate || "", b.status || "draft", b.notes || "", now]
+    );
+    res.json({ id });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: "could not save invoice, check the pipeline record still exists" });
+  }
+});
+app.patch("/api/invoices/:id", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const fields = [];
+  const values = [];
+  let i = 1;
+  const map = { offering: "offering", amount: "amount", issuedDate: "issued_date", dueDate: "due_date", paidDate: "paid_date", status: "status", notes: "notes" };
+  for (const key of Object.keys(map)) {
+    if (Object.prototype.hasOwnProperty.call(b, key)) {
+      fields.push(`${map[key]} = $${i++}`);
+      values.push(key === "amount" ? Number(b[key] || 0) : b[key]);
+    }
+  }
+  fields.push(`updated_at = $${i++}`);
+  values.push(new Date().toISOString());
+  values.push(req.params.id);
+  if (fields.length === 1) return res.json({ ok: true });
+  await pool.query(`UPDATE invoices SET ${fields.join(", ")} WHERE id = $${i}`, values);
+  res.json({ ok: true });
+});
+app.delete("/api/invoices/:id", requireAuth, async (req, res) => {
+  await archiveRow("invoices", req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------- delivery: engagement modules ----------
+app.post("/api/engagement-modules", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  if (!b.pipelineId) return res.status(400).json({ error: "pipelineId required" });
+  const id = newId();
+  const now = new Date().toISOString();
+  try {
+    await pool.query(
+      `INSERT INTO engagement_modules (id, pipeline_id, module_name, status, session_date, deliverable_link, notes, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+      [id, b.pipelineId, b.moduleName || "", b.status || "not-started", b.sessionDate || "", b.deliverableLink || "", b.notes || "", now]
+    );
+    res.json({ id });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: "could not save module, check the pipeline record still exists" });
+  }
+});
+app.patch("/api/engagement-modules/:id", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const fields = [];
+  const values = [];
+  let i = 1;
+  const map = { moduleName: "module_name", status: "status", sessionDate: "session_date", deliverableLink: "deliverable_link", notes: "notes" };
+  for (const key of Object.keys(map)) {
+    if (Object.prototype.hasOwnProperty.call(b, key)) {
+      fields.push(`${map[key]} = $${i++}`);
+      values.push(b[key]);
+    }
+  }
+  fields.push(`updated_at = $${i++}`);
+  values.push(new Date().toISOString());
+  values.push(req.params.id);
+  if (fields.length === 1) return res.json({ ok: true });
+  await pool.query(`UPDATE engagement_modules SET ${fields.join(", ")} WHERE id = $${i}`, values);
+  res.json({ ok: true });
+});
+app.delete("/api/engagement-modules/:id", requireAuth, async (req, res) => {
+  await archiveRow("engagement_modules", req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------- delivery: time entries (a manual log, not a stopwatch) ----------
+app.post("/api/time-entries", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  if (!b.pipelineId) return res.status(400).json({ error: "pipelineId required" });
+  const id = newId();
+  const now = new Date().toISOString();
+  try {
+    await pool.query(
+      `INSERT INTO time_entries (id, pipeline_id, entry_date, minutes, note, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, b.pipelineId, b.entryDate || now.slice(0, 10), Number(b.minutes || 0), b.note || "", now]
+    );
+    res.json({ id });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: "could not save time entry, check the pipeline record still exists" });
+  }
+});
+app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
+  await archiveRow("time_entries", req.params.id);
   res.json({ ok: true });
 });
 
@@ -902,7 +1028,7 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
 // whenever the database itself has to move (free-tier Postgres hosts expire
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
-const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts"];
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries"];
 app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   try {
     const out = {};

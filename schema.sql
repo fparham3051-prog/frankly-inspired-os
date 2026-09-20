@@ -194,3 +194,75 @@ CREATE TABLE IF NOT EXISTS automation_runs (
   ran_at TEXT,
   logged_at TEXT
 );
+
+-- ---------- Finance and Delivery: the two gaps the September 2026 ----------
+-- architecture audit named, closed the way the Command Center concept memo
+-- specced: each new table is a child of the same spine (pipeline_id), never
+-- a parallel system with its own client list. A client only ever gets
+-- invoices, modules, or time entries once a real Pipeline row exists for
+-- them - promote a prospect (or add one directly) before logging any of
+-- these three.
+
+-- invoices: real revenue tracking. offering matches the four things Frankly
+-- Inspired actually sells (see OFFERING_LABELS in app.js): InstitutionalOS
+-- Diagnostic, Advisory and Implementation Retainer, Project Based
+-- Engagement, 1:1 Executive Coaching. status is only ever draft, sent, or
+-- paid - deliberately no stored "overdue" status, since that would need
+-- something to keep it in sync every day it stays unpaid. Overdue is
+-- computed client-side instead (status='sent' and due_date has passed),
+-- the same derived-not-stored pattern isOverduePipeline() already uses for
+-- Pipeline next-step dates.
+CREATE TABLE IF NOT EXISTS invoices (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT NOT NULL REFERENCES pipeline(id),
+  offering TEXT DEFAULT '',
+  amount NUMERIC DEFAULT 0,
+  issued_date TEXT DEFAULT '',
+  due_date TEXT DEFAULT '',
+  paid_date TEXT DEFAULT '',
+  status TEXT DEFAULT 'draft',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+
+-- engagement_modules: delivery tracking for the five-pillar curriculum
+-- (Governing Foundation, Build Before the Ask, Fundraising Fluency, Zero to
+-- Portfolio, Funding Pathway Finder - document 9's Runbook and document
+-- 11's Workbook, made structural). module_name is free text with those
+-- five offered as quick-fill suggestions in the UI, not a fixed enum -
+-- a Project Based Engagement's scope won't always match the five pillars
+-- exactly, and this table shouldn't block on that.
+CREATE TABLE IF NOT EXISTS engagement_modules (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT NOT NULL REFERENCES pipeline(id),
+  module_name TEXT DEFAULT '',
+  status TEXT DEFAULT 'not-started',
+  session_date TEXT DEFAULT '',
+  deliverable_link TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+
+-- time_entries: a manual log, not a stopwatch - matching how the rest of
+-- FIOS works (everything entered directly on the page).
+CREATE TABLE IF NOT EXISTS time_entries (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT NOT NULL REFERENCES pipeline(id),
+  entry_date TEXT DEFAULT '',
+  minutes INTEGER DEFAULT 0,
+  note TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);
+
+-- revenue_booked / revenue_collected: the two new Scorecard measurables the
+-- concept memo calls for, so money shows up in the same weekly rhythm calls
+-- made and new leads already do. Both optional, 0 by default, same
+-- convention as deal_value above - nothing here is estimated on Franklin's
+-- behalf, it only reflects what he logs.
+ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS revenue_booked NUMERIC DEFAULT 0;
+ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS revenue_collected NUMERIC DEFAULT 0;

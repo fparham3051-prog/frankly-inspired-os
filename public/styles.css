@@ -125,8 +125,9 @@ img{max-width:100%;}
 
   .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:6px 0 30px;}
   .stat-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:var(--shadow);}
-  .stat-card .num{font-family:'Fraunces',serif;font-size:1.9rem;font-weight:500;color:var(--accent-strong);line-height:1;}
-  .stat-card .cap{font-size:0.78rem;color:var(--ink-soft);margin-top:6px;}
+  .stat-card .num{display:block;font-family:'Fraunces',serif;font-size:1.9rem;font-weight:500;color:var(--accent-strong);line-height:1;}
+  .stat-card .cap{display:block;font-size:0.78rem;color:var(--ink-soft);margin-top:6px;}
+  .stat-card .chart-delta{display:inline-block;margin:4px 0 0;}
 
   .fw-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:clamp(18px,3vw,26px);margin-bottom:20px;}
   .fw-card h3{font-size:1.1rem;margin-bottom:8px;}
@@ -369,6 +370,34 @@ img{max-width:100%;}
   .th-org-name{font-family:'Public Sans', sans-serif;font-size:0.92rem;color:var(--ink);}
   .th-org-span{font-family:'IBM Plex Mono', monospace;font-size:0.74rem;color:var(--ink-soft);margin-bottom:6px;}
   .pill.good{border-color:color-mix(in srgb, var(--good) 45%, var(--line));color:var(--good);}
+
+  /* National Giving Trends: Giving USA benchmark, 2000-2025 */
+  .nt-subhead{font-family:'IBM Plex Mono', monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent-2);font-weight:600;margin:22px 0 8px;}
+  .fw-card .nt-subhead:first-of-type{margin-top:16px;}
+  .nt-hint{font-size:0.82rem;color:var(--ink-soft);margin:0 0 12px;}
+  .nt-chart{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:10px;padding:14px 12px 4px;}
+  .nt-chart svg{display:block;width:100%;height:auto;overflow:visible;}
+  .nt-area{fill:color-mix(in srgb, var(--accent-2) 14%, transparent);stroke:none;}
+  .nt-pt{fill:var(--accent-2);cursor:pointer;}
+  .nt-pt:hover{fill:var(--accent-strong);}
+  .nt-xlabel{font-family:'IBM Plex Mono', monospace;font-size:8px;fill:var(--ink-soft);}
+  .nt-note{font-size:0.74rem;color:var(--ink-soft);margin:8px 2px 0;}
+  .nt-cat-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:14px;}
+  .nt-cat-tile{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:10px;padding:12px 14px 8px;}
+  .nt-cat-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:2px;}
+  .nt-cat-name{font-family:'Public Sans', sans-serif;font-size:0.86rem;color:var(--ink);font-weight:600;}
+  .nt-cat-value{font-family:'IBM Plex Mono', monospace;font-size:1.05rem;font-variant-numeric:tabular-nums;color:var(--ink);margin-bottom:6px;}
+  .nt-cat-year{font-family:'Public Sans', sans-serif;font-size:0.68rem;color:var(--ink-soft);font-weight:400;}
+  .nt-cat-tile svg{display:block;width:100%;height:auto;}
+  .nt-analysis p{margin:0 0 12px;line-height:1.55;}
+  .nt-analysis p:last-child{margin-bottom:0;}
+  .nt-source{font-size:0.76rem;color:var(--ink-soft);}
+  @media (max-width:600px){
+    .nt-cat-grid{grid-template-columns:1fr 1fr;}
+  }
+  @media (max-width:420px){
+    .nt-cat-grid{grid-template-columns:1fr;}
+  }
 
   /* The same 990 disclosure, reused inside the Prospecting table: a
      full-width row under the prospect's own row, so the chart gets real

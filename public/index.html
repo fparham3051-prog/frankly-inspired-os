@@ -40,6 +40,8 @@
 
 <div class="wrap layout">
   <nav class="rail" aria-label="Section navigation" id="app-nav">
+    <div class="rail-label">Command Center</div>
+    <button type="button" class="rail-btn" data-view="command-center">Command Center</button>
     <div class="rail-label">Landing</div>
     <button type="button" class="rail-btn is-active" data-view="landscape">Giving Landscape</button>
     <div class="rail-label">Morning</div>
@@ -69,6 +71,61 @@
     <p class="load-note" id="load-note">Connecting to your data...</p>
     <div class="chart-tooltip" id="chart-tooltip" hidden></div>
 
+    <!-- ================= COMMAND CENTER ================= -->
+    <section class="view" data-view="command-center" hidden>
+      <div class="view-head"><h2>Command Center</h2><span class="tag">everything, one glance</span></div>
+      <p class="view-intro">One synthesized view across Pipeline, Priorities, Automation, and the practice's own trend lines, rebuilt fresh every time this loads. Nothing is entered here directly, it is a different lens on the same records kept in Pipeline, Priorities, Scorecard, and Forecasting.</p>
+
+      <div class="fw-card" data-panel="01 · Engagements in motion">
+        <h3>Engagements in Motion</h3>
+        <p style="margin-top:-2px;">The five active pipeline records with the nearest next step, each against where it sits in the stage sequence.</p>
+        <ul class="action-list" id="cc-engagements-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
+      </div>
+
+      <div class="fw-card" data-panel="02 · Pipeline snapshot">
+        <h3>Pipeline Snapshot</h3>
+        <p style="margin-top:-2px;">Every open and closed record, by stage, right now.</p>
+        <div class="stat-grid" id="cc-stage-stats"></div>
+      </div>
+
+      <div class="fw-card" data-panel="03 · Priorities this quarter">
+        <h3>Priorities This Quarter</h3>
+        <p style="margin-top:-2px;" id="cc-rocks-summary">Loading...</p>
+        <ul class="action-list" id="cc-rocks-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
+      </div>
+
+      <div class="fw-card" data-panel="04 · Automation health">
+        <h3>Automation Health</h3>
+        <p style="margin-top:-2px;">The last known run of each scheduled job behind this app.</p>
+        <div id="cc-automation-health-list"><p class="empty-note" style="border:none;">Loading...</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="05 · Practice trends">
+        <h3>Practice Trends</h3>
+        <p style="margin-top:-2px;">This month's headline number for each trend Forecasting tracks in full. <a href="#" id="cc-trends-link">Open the full charts &rarr;</a></p>
+        <div class="stat-grid" id="cc-trend-tiles"></div>
+      </div>
+
+      <div class="fw-card" data-panel="06 · Field Intelligence, pinned">
+        <h3>Field Intelligence, Pinned</h3>
+        <p style="margin-top:-2px;">The most recent items logged, across every category. <a href="#" id="cc-fieldintel-link">Open the full digest &rarr;</a></p>
+        <div id="cc-fieldintel-list"></div>
+      </div>
+
+      <div class="fw-card" data-panel="07 · Finance & Delivery">
+        <h3>Finance &amp; Delivery</h3>
+        <p style="margin-top:-2px;">The two modules this Command Center does not cover yet, on purpose.</p>
+        <div class="example-box">
+          <span class="eb-label">Finance &mdash; not yet built</span>
+          <p class="extra">There is no invoicing or accounts-receivable tracking in this app. The honest engineering path is a single <code>invoices</code> table keyed to a pipeline record (offering, amount, dates, status), surfaced here once it exists. Nothing is estimated or invented in its place.</p>
+        </div>
+        <div class="example-box" style="margin-top:12px;">
+          <span class="eb-label">Delivery &mdash; not yet built</span>
+          <p class="extra">There is no session-by-session delivery tracking for an engaged client. The path is an <code>engagement_modules</code> table (module name, status, session date, deliverable link) plus lightweight time entries, also keyed to a pipeline record. Say the word and this is the next build.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ================= GIVING LANDSCAPE (landing page) ================= -->
     <section class="view" data-view="landscape">
       <div class="view-head"><h2>Giving Landscape</h2><span class="tag">the market, live</span></div>
@@ -81,17 +138,26 @@
         <div class="stat-card"><span class="num mono" id="gl-stat-state-count">0</span><span class="cap">states with a gift logged</span></div>
       </div>
 
-      <div class="fw-card" data-panel="01 · National reference">
+      <div class="toolbar landscape-tabs" id="gl-tabs" role="tablist" aria-label="Giving Landscape sections">
+        <button type="button" class="filter-btn is-active" data-lg-tab="national" role="tab" aria-selected="true">National reference</button>
+        <button type="button" class="filter-btn" data-lg-tab="ticker" role="tab" aria-selected="false">Gift ticker</button>
+        <button type="button" class="filter-btn" data-lg-tab="state" role="tab" aria-selected="false">By state</button>
+        <button type="button" class="filter-btn" data-lg-tab="orgtracker" role="tab" aria-selected="false">Org tracker</button>
+        <button type="button" class="filter-btn" data-lg-tab="horizon" role="tab" aria-selected="false">Time horizon</button>
+        <button type="button" class="filter-btn" data-lg-tab="trends" role="tab" aria-selected="false">National trends</button>
+      </div>
+
+      <div class="fw-card" data-panel="01 · National reference" data-lg-tab="national">
         <h3>Where the Philanthropic Dollar Goes, Nationally</h3>
         <p>Giving USA's nine recipient categories for 2025, the most recent year reported. Religion remains the largest single category; education, public-society benefit, and environment/animals organizations grew the fastest year over year.</p>
         <div class="giving-bars" id="gl-national-bars"></div>
         <div class="example-box">
           <span class="eb-label">On these figures</span>
-          <p class="extra">Giving USA reports each category as a share of total giving, rounded to the nearest percentage point (they add to 101% for that reason, a normal rounding artifact, not an error). The dollar figures above are that share applied to the confirmed 2025 total of $617.20 billion, since several secondary summaries of the report quote category dollar figures that do not reconcile with each other or with the total. Source: Giving USA 2026, the Giving USA Foundation and the Indiana University Lilly Family School of Philanthropy.</p>
+          <p class="extra">These are Giving USA's own published per-category dollar figures for 2025, not a percentage share applied back to the total. Giving USA compiles its recipient-category estimates from different underlying data than its source-side total, so the categories above do not sum exactly to the confirmed 2025 total of $617.20 billion &mdash; a known feature of how the two sides are modeled, not an error here. Gifts to individuals is a real category (Giving USA notes it, mostly in-kind gifts of medication) but no 2025 dollar figure has been published for it, so it is left off these bars. Source: Giving USA 2026, the Giving USA Foundation and the Indiana University Lilly Family School of Philanthropy. See National Giving Trends below for the same categories back to 2000.</p>
         </div>
       </div>
 
-      <div class="fw-card" data-panel="02 · Gift ticker">
+      <div class="fw-card" data-panel="02 · Gift ticker" data-lg-tab="ticker" hidden>
         <div class="digest-toolbar">
           <h3 style="margin:0;">The Weekly Gift Ticker</h3>
           <span class="pill gold" id="gl-ticker-refreshed">No gifts logged yet</span>
@@ -132,7 +198,7 @@
         </form>
       </div>
 
-      <div class="fw-card" data-panel="03 · By state">
+      <div class="fw-card" data-panel="03 · By state" data-lg-tab="state" hidden>
         <h3>By State</h3>
         <p>Click a state for the aggregate a director in that state would ask about: how many gifts, how much, and the most recent one. Shading tracks total dollars logged, from lightest (none yet) to deepest (the most).</p>
         <div class="us-map-wrap" id="gl-us-map-wrap"><p class="empty-note">Loading map&hellip;</p></div>
@@ -148,7 +214,7 @@
         </table></div>
       </div>
 
-      <div class="fw-card" data-panel="04 · Organization tracker">
+      <div class="fw-card" data-panel="04 · Organization tracker" data-lg-tab="orgtracker" hidden>
         <div class="digest-toolbar">
           <h3 style="margin:0;">Organizational Growth Tracker</h3>
           <span class="pill gold" id="gl-orgtracker-refreshed">No positions open yet</span>
@@ -160,7 +226,7 @@
         <div id="gl-org-tracker"><p class="empty-note">Nothing to track yet. Log a gift above to open the first position.</p></div>
       </div>
 
-      <div class="fw-card" data-panel="05 · Time horizon">
+      <div class="fw-card" data-panel="05 · Time horizon" data-lg-tab="horizon" hidden>
         <h3>Time Horizon</h3>
         <p>The same three-horizon read we'd use to open a diagnostic engagement, applied to what this tracker actually has on hand: gifts logged here for the near term and the multi-year trend, and real 990 filing history for the long-run structural read once an org is confirmed below.</p>
 
@@ -176,6 +242,24 @@
           <div class="th-block-head"><span class="th-block-tag">Structural</span><span class="th-block-sub">Multi-year 990 history, confirmed orgs only</span></div>
           <div id="th-structural"></div>
         </div>
+      </div>
+
+      <div class="fw-card" data-panel="06 · National trends, 2000-2025" data-lg-tab="trends" hidden>
+        <h3>National Giving Trends</h3>
+        <p>The sector-wide benchmark behind the ticker above: what total US charitable giving and each recipient category actually did, year by year, back to 2000. Read the gift ticker against this rather than in isolation &mdash; a category climbing here is a tailwind, one flattening or falling is a headwind worth naming in a client conversation.</p>
+
+        <div class="nt-subhead">Total giving, 2000&ndash;2025 (current dollars)</div>
+        <div id="nt-total-chart"></div>
+
+        <div class="nt-subhead">By category, 2009&ndash;2025</div>
+        <p class="nt-hint">Category-level detail is complete from 2009 forward, matching every category this app's gift form uses. Each tile's percentage is the change from its first year shown to its latest.</p>
+        <div id="nt-cat-grid"></div>
+
+        <div class="nt-subhead">Analysis</div>
+        <div id="nt-analysis"></div>
+
+        <div class="nt-subhead">Raw data</div>
+        <div id="nt-table"></div>
       </div>
     </section>
 
@@ -287,6 +371,12 @@
         <ul class="action-list" id="dashboard-open-issues"><li class="empty-note" style="border:none;">Loading...</li></ul>
       </div>
 
+      <div class="fw-card" data-panel="03 · Automation health">
+        <h3>Automation health</h3>
+        <p style="margin-top:-2px;">The last known run of each scheduled job behind this app: the weekly gift ticker, the daily lead import, the weekly Field Intelligence refresh, the weekly calendar briefing, and the weekly pipeline review nudge. A job reports in only if it can reach this app and gets far enough to say so &mdash; "Never reported" means either it hasn't run since this was added, or its last run never made it to that closing step.</p>
+        <div id="automation-health-list"><p class="empty-note" style="border:none;">Loading...</p></div>
+      </div>
+
       <div class="example-box good">
         <span class="eb-label">On the login question</span>
         <p class="extra">This site sits behind a single shared password, entered once per device, so it can be opened from any browser or phone without going through Claude or any other account. The password can be changed at any time. If an associate ever joins and needs their own access instead of the shared one, that is a real login system to add later, not something this version needs yet.</p>
@@ -326,6 +416,7 @@
             </div>
             <div class="field"><label for="pl-next">Next step</label><input id="pl-next" placeholder="send proposal, follow up call"></div>
             <div class="field"><label for="pl-next-date">Next step date</label><input id="pl-next-date" type="date"></div>
+            <div class="field"><label for="pl-deal-value">Deal value ($, once signed)</label><input id="pl-deal-value" type="number" min="0" step="100" placeholder="optional"></div>
             <div class="field wide"><label for="pl-notes">Notes</label><textarea id="pl-notes"></textarea></div>
           </div>
           <div class="form-actions">
@@ -450,6 +541,14 @@
       <div class="example-box">
         <span class="eb-label">What this is, and is not</span>
         <p class="extra">This is plain least squares regression run on the practice's own numbers, the same math behind a trendline in a spreadsheet, dressed up with a variance band. It is enough to answer "am I trending up or down" for one practice's own pipeline. A client-facing fundraising forecast, donor retention curves, gift capacity modeling, campaign readiness scoring, is a materially bigger build with its own data requirements, and per Before Scale's validation gate that is only worth building once real client demand asks for it, not speculatively.</p>
+      </div>
+
+      <div class="fw-card" data-panel="02 · Practice trends">
+        <h3>Practice Trends</h3>
+        <p>What actually happened, not a projection: pipeline conversion rate, average deal size, and prospect velocity, each grouped by the month it happened. The same as-originally-logged discipline used for the National Giving Trends benchmark on Giving Landscape, pointed at this practice's own numbers instead.</p>
+        <div class="chart-grid" id="practice-trends-charts">
+          <p class="empty-note">Loading&hellip;</p>
+        </div>
       </div>
     </section>
 

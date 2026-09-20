@@ -69,6 +69,23 @@ ALTER TABLE issues ADD COLUMN IF NOT EXISTS archived_at TEXT;
 ALTER TABLE rocks ADD COLUMN IF NOT EXISTS archived_at TEXT;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS archived_at TEXT;
 
+-- archived_reason: which of the two things that set archived_at on a
+-- prospect actually happened - 'promoted' when POST
+-- /api/prospects/:id/promote turned it into a pipeline record, '' (the
+-- default) for an ordinary manual Remove. Without this, archived_at alone
+-- can't tell a real promotion from a plain deletion, and the Forecasting
+-- view's prospect-velocity trend (time from logged to promoted) needs that
+-- distinction to stay honest.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS archived_reason TEXT DEFAULT '';
+
+-- deal_value: the dollar value of an engagement once it's real - a signed
+-- coaching retainer, a consulting project fee, an InstitutionalOS
+-- Assessment fee. Optional and 0 by default, like the gift case-study
+-- fields below: nothing here is estimated on Franklin's behalf, it only
+-- feeds the Forecasting view's deal-size trend once he fills it in for a
+-- Graduated record.
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS deal_value NUMERIC DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS digest (
   id TEXT PRIMARY KEY,
   category TEXT,
@@ -157,4 +174,23 @@ CREATE TABLE IF NOT EXISTS org_financials (
   ein TEXT PRIMARY KEY,
   data TEXT NOT NULL,
   fetched_at TEXT
+);
+-- automation_runs: an append-only log of what each scheduled job reported
+-- about its own last run (status, a short message, how many items it
+-- wrote), written by the job itself in the closing step of its prompt via
+-- POST /api/admin/automation-runs. Backs the Automation Health panel on
+-- the Dashboard: GET /api/automation-status reads the latest row per
+-- job_key and compares it against each job's expected cadence, so a job
+-- that silently stopped firing (not just one that failed loudly) is
+-- visible too. job_key is a short fixed slug per automation (see
+-- JOB_REGISTRY in server.js), not a foreign key to anything else here.
+CREATE TABLE IF NOT EXISTS automation_runs (
+  id TEXT PRIMARY KEY,
+  job_key TEXT NOT NULL,
+  job_label TEXT DEFAULT '',
+  status TEXT DEFAULT '',
+  message TEXT DEFAULT '',
+  item_count INTEGER,
+  ran_at TEXT,
+  logged_at TEXT
 );

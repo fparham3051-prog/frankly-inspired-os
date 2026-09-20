@@ -78,25 +78,79 @@
   // renderOrgTracker() rebuilding the tracker's HTML on every data refresh.
   var orgHealthUi = {};
 
-  // Giving USA 2026 report's nine recipient-subsector categories for 2025 giving
-  // (the most recent year reported). Percentages are Giving USA's own rounded
-  // category shares; dollar amounts here are that share applied to the
-  // confirmed $617.20B total rather than any single secondary source's dollar
-  // column, several of which quote figures that don't reconcile with each
-  // other or with the total. Growth figures are only shown where a source
-  // explicitly stated one; the rest show no figure rather than a guess.
+  // Giving USA 2026 report's recipient-subsector categories for 2025 giving
+  // (the most recent year reported), as Giving USA itself published them:
+  // real per-category dollar figures from the report (not a percentage share
+  // multiplied back onto the total). Giving USA's recipient-category
+  // estimates are compiled from different underlying data than its
+  // source-side total, so the nine categories below do not sum exactly to
+  // the $617.20B total giving figure - that gap is a documented feature of
+  // how Giving USA models the two sides, not an error here. "growth" is the
+  // inflation-adjusted year-over-year change, matching the "real" label
+  // used on these bars. Gifts to individuals is tracked as a category
+  // elsewhere in this app (the gift-logging form) but Giving USA has not
+  // published a 2025 dollar figure for it, so it's left out of this year's
+  // bars rather than guessed; see NATIONAL_GIVING_HISTORY below for the
+  // years it was published.
+  // Source: Giving USA 2026, the Giving USA Foundation and the Indiana
+  // University Lilly Family School of Philanthropy.
   var GIVING_USA_CATEGORIES = [
-    { key: "religion", label: "Religion", pct: 23, amountB: 141.96, growth: -0.2 },
-    { key: "human-services", label: "Human Services", pct: 15, amountB: 92.58, growth: null },
-    { key: "education", label: "Education", pct: 14, amountB: 86.41, growth: 11.7 },
-    { key: "foundations", label: "Gifts to Foundations", pct: 12, amountB: 74.06, growth: -16.2 },
-    { key: "public-society-benefit", label: "Public-Society Benefit", pct: 11, amountB: 67.89, growth: 11.6 },
-    { key: "health", label: "Health", pct: 9, amountB: 55.55, growth: null },
-    { key: "international-affairs", label: "International Affairs", pct: 5, amountB: 30.86, growth: null },
-    { key: "arts-culture", label: "Arts, Culture & Humanities", pct: 4, amountB: 24.69, growth: null },
-    { key: "environment-animals", label: "Environment & Animals", pct: 4, amountB: 24.69, growth: 11.0 },
-    { key: "individuals", label: "Gifts to Individuals", pct: 4, amountB: 24.69, growth: null }
+    { key: "religion", label: "Religion", pct: 25, amountB: 151.58, growth: -0.2 },
+    { key: "human-services", label: "Human Services", pct: 16, amountB: 99.50, growth: 2.6 },
+    { key: "education", label: "Education", pct: 15, amountB: 92.01, growth: 8.9 },
+    { key: "foundations", label: "Gifts to Foundations", pct: 13, amountB: 79.05, growth: -18.3 },
+    { key: "public-society-benefit", label: "Public-Society Benefit", pct: 12, amountB: 72.06, growth: 8.7 },
+    { key: "health", label: "Health", pct: 10, amountB: 61.43, growth: 3.3 },
+    { key: "international-affairs", label: "International Affairs", pct: 5, amountB: 33.02, growth: 1.4 },
+    { key: "arts-culture", label: "Arts, Culture & Humanities", pct: 4, amountB: 27.31, growth: 4.7 },
+    { key: "environment-animals", label: "Environment & Animals", pct: 4, amountB: 24.57, growth: 8.2 },
+    { key: "individuals", label: "Gifts to Individuals", pct: null, amountB: null, growth: null }
   ];
+
+  // ---------- National Giving Trends (Giving USA history, 2000-2025) ----------
+  // A benchmark layer, separate from Franklin's own gift ticker: real,
+  // published Giving USA total-giving and recipient-category figures, so
+  // his own logged gifts can be read against the national trend rather than
+  // in isolation. Every number here is as originally reported in that
+  // year's Giving USA release (Giving USA revises prior years in each new
+  // edition; using each year's own vintage keeps this series internally
+  // consistent rather than a mix of original and later-revised figures).
+  // Category-level detail is complete back to 2009, matching every
+  // category actually usable in the gift-logging form; totals-only go back
+  // to 2000, with four years (2001, 2002, 2003, 2005) left out rather than
+  // guessed, because no freely published Giving USA figure for those years
+  // could be confirmed. "Gifts to Individuals" is included only for the
+  // years Giving USA published a dollar figure for it (2009-2021); it has
+  // not published one for 2022-2025.
+  // Source throughout: Giving USA (the Giving USA Foundation and the
+  // Indiana University Lilly Family School of Philanthropy), giving USA
+  // annual press releases, 2000-2026 editions.
+  var NATIONAL_TOTAL_GIVING_BY_YEAR = {
+    2000: 203.45, 2004: 250, 2006: 295, 2007: 306.4, 2008: 315.08, 2009: 303.75,
+    2010: 290.89, 2011: 298.42, 2012: 316.23, 2013: 335.17, 2014: 358.38, 2015: 373.25,
+    2016: 390.05, 2017: 410.02, 2018: 427.71, 2019: 449.64, 2020: 471.44, 2021: 484.85,
+    2022: 499.33, 2023: 557.16, 2024: 592.50, 2025: 617.20
+  };
+  var NATIONAL_CATEGORY_GIVING_BY_YEAR = {
+    2009: { religion: 100.95, education: 40.01, foundations: 31, "human-services": 27.08, health: 22.46, "public-society-benefit": 22.77, "arts-culture": 12.34, "international-affairs": 8.89, "environment-animals": 6.15, individuals: 3.5 },
+    2010: { religion: 100.63, education: 41.67, foundations: 33.00, "human-services": 26.49, "public-society-benefit": 24.24, health: 22.83, "international-affairs": 15.77, "arts-culture": 13.28, "environment-animals": 6.66, individuals: 4.20 },
+    2011: { religion: 95.88, education: 38.87, "human-services": 35.39, foundations: 25.83, health: 24.75, "international-affairs": 22.68, "public-society-benefit": 21.37, "arts-culture": 13.12, "environment-animals": 7.81, individuals: 3.75 },
+    2012: { religion: 101.54, education: 41.33, "human-services": 40.40, foundations: 30.58, health: 28.12, "international-affairs": 19.11, "public-society-benefit": 21.63, "arts-culture": 14.44, "environment-animals": 8.30, individuals: 3.96 },
+    2013: { religion: 105.53, education: 52.07, "human-services": 41.51, health: 31.86, foundations: 35.74, "public-society-benefit": 23.89, "arts-culture": 16.66, "international-affairs": 14.93, "environment-animals": 9.72, individuals: 3.7 },
+    2014: { religion: 114.90, education: 54.62, "human-services": 42.10, foundations: 41.62, health: 30.37, "public-society-benefit": 26.29, "arts-culture": 17.23, "international-affairs": 15.10, "environment-animals": 10.50, individuals: 6.42 },
+    2015: { religion: 119.30, education: 57.48, "human-services": 45.21, foundations: 42.26, health: 29.81, "public-society-benefit": 26.95, "arts-culture": 17.07, "international-affairs": 15.75, "environment-animals": 10.68, individuals: 6.56 },
+    2016: { religion: 122.94, education: 59.77, "human-services": 46.80, foundations: 40.56, health: 33.14, "public-society-benefit": 29.89, "international-affairs": 22.03, "arts-culture": 18.21, "environment-animals": 11.05, individuals: 7.12 },
+    2017: { religion: 127.37, education: 58.90, "human-services": 50.06, foundations: 45.89, health: 38.27, "public-society-benefit": 29.59, "international-affairs": 22.97, "arts-culture": 19.51, "environment-animals": 11.83, individuals: 7.87 },
+    2018: { religion: 124.52, education: 58.72, "human-services": 51.54, foundations: 50.29, health: 40.78, "public-society-benefit": 31.21, "international-affairs": 22.88, "arts-culture": 19.49, "environment-animals": 12.70, individuals: 9.06 },
+    2019: { religion: 128.17, education: 64.11, "human-services": 55.99, foundations: 53.51, health: 41.46, "public-society-benefit": 37.16, "international-affairs": 28.89, "arts-culture": 21.64, "environment-animals": 14.16, individuals: 10.11 },
+    2020: { religion: 131.08, education: 71.34, "human-services": 65.14, foundations: 58.17, health: 42.12, "public-society-benefit": 48.00, "international-affairs": 25.89, "arts-culture": 19.47, "environment-animals": 16.14, individuals: 16.22 },
+    2021: { religion: 135.78, education: 70.79, "human-services": 65.33, foundations: 64.26, health: 40.58, "public-society-benefit": 55.85, "international-affairs": 27.44, "arts-culture": 23.50, "environment-animals": 16.32, individuals: 11.74 },
+    2022: { religion: 143.57, education: 70.07, "human-services": 71.98, foundations: 56.84, health: 51.08, "public-society-benefit": 46.86, "international-affairs": 33.71, "arts-culture": 24.67, "environment-animals": 16.10 },
+    2023: { religion: 145.81, education: 87.69, "human-services": 88.84, foundations: 80.03, health: 56.58, "public-society-benefit": 62.81, "international-affairs": 29.94, "arts-culture": 25.26, "environment-animals": 21.20 },
+    2024: { religion: 146.54, education: 88.32, "human-services": 91.15, foundations: 71.92, health: 60.51, "public-society-benefit": 66.84, "international-affairs": 35.54, "arts-culture": 25.13, "environment-animals": 21.57 },
+    2025: { religion: 151.58, education: 92.01, "human-services": 99.50, foundations: 79.05, health: 61.43, "public-society-benefit": 72.06, "international-affairs": 33.02, "arts-culture": 27.31, "environment-animals": 24.57 }
+  };
+  var NATIONAL_TREND_CATEGORY_ORDER = ["religion", "human-services", "education", "foundations", "public-society-benefit", "health", "international-affairs", "arts-culture", "environment-animals", "individuals"];
   var GIFT_CATEGORY_LABELS = { "other": "Other / unspecified" };
   GIVING_USA_CATEGORIES.forEach(function(c){ GIFT_CATEGORY_LABELS[c.key] = c.label; });
 
@@ -294,6 +348,130 @@
     }
   }
 
+  // ---------- command center (a synthesized rollup, distinct from the plainer Dashboard) ----------
+  // Five stages an open engagement actually moves through before it's a win;
+  // Referred Out and Lost are real closed outcomes but don't belong on a
+  // "how far along" bar, so they're excluded here even though they're still
+  // counted in the stage snapshot below.
+  var CC_STAGE_PROGRESS_ORDER = ["lead", "discovery", "assessment", "engaged", "graduated"];
+
+  function renderCcEngagements(){
+    var el = document.getElementById("cc-engagements-list");
+    if(!el) return;
+    var list = state.pipeline
+      .filter(function(p){ return p.nextStepDate && !CLOSED_STAGES[p.stage]; })
+      .sort(function(a,b){ return (a.nextStepDate || "").localeCompare(b.nextStepDate || ""); })
+      .slice(0, 5);
+    if(list.length === 0){
+      el.innerHTML = '<li class="empty-note" style="border:none;">Nothing scheduled yet. Add a next step and a date to any pipeline record.</li>';
+      return;
+    }
+    el.innerHTML = list.map(function(p){
+      var overdue = isOverduePipeline(p);
+      var stepIdx = CC_STAGE_PROGRESS_ORDER.indexOf(p.stage);
+      var stageLabel = STAGE_LABELS[p.stage] || p.stage;
+      var progress = stepIdx >= 0 ? '<span class="pill">' + esc(stageLabel) + ' &middot; step ' + (stepIdx + 1) + ' of ' + CC_STAGE_PROGRESS_ORDER.length + '</span>' : '<span class="pill">' + esc(stageLabel) + '</span>';
+      var deal = Number(p.dealValue) > 0 ? (' &middot; ' + fmtMoneyShort(Number(p.dealValue))) : '';
+      return '<li' + (overdue ? ' class="row-overdue"' : '') + '>' +
+        '<span>' + dotHtml(pipelineHealth(p)) + '<span class="who">' + esc(p.name || "Untitled") + (p.org ? (' <span class="dim">(' + esc(p.org) + ')</span>') : '') + '</span> &middot; ' + esc(p.nextStep || "next step not set") + deal + '<br>' + progress + '</span>' +
+        '<span class="when">' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span>' +
+        '</li>';
+    }).join("");
+  }
+
+  function renderCcStageStats(){
+    var el = document.getElementById("cc-stage-stats");
+    if(!el) return;
+    var order = ["lead", "discovery", "assessment", "engaged", "graduated", "referred", "lost"];
+    el.innerHTML = order.map(function(stage){
+      var count = state.pipeline.filter(function(p){ return p.stage === stage; }).length;
+      return '<div class="stat-card"><span class="num mono">' + count + '</span><span class="cap">' + esc(STAGE_LABELS[stage] || stage) + '</span></div>';
+    }).join("");
+  }
+
+  function renderCcRocks(){
+    var summaryEl = document.getElementById("cc-rocks-summary");
+    var listEl = document.getElementById("cc-rocks-list");
+    if(!listEl) return;
+    var rocks = state.rocks;
+    var onTrack = rocks.filter(function(r){ return r.status === "on-track"; }).length;
+    var offTrack = rocks.filter(function(r){ return r.status === "off-track"; }).length;
+    var done = rocks.filter(function(r){ return r.status === "done"; }).length;
+    summaryEl.textContent = rocks.length === 0
+      ? "No priorities logged for this quarter yet."
+      : (onTrack + " on track, " + offTrack + " off track, " + done + " done, out of " + rocks.length + " logged this quarter.");
+
+    var order = { "off-track": 0, "on-track": 1, "done": 2 };
+    var sorted = rocks.slice().sort(function(a,b){
+      var byStatus = (order[a.status] == null ? 3 : order[a.status]) - (order[b.status] == null ? 3 : order[b.status]);
+      if(byStatus !== 0) return byStatus;
+      return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+    });
+    if(sorted.length === 0){
+      listEl.innerHTML = '<li class="empty-note" style="border:none;">Nothing logged yet &mdash; add one on the Priorities view.</li>';
+      return;
+    }
+    listEl.innerHTML = sorted.map(function(r){
+      var dot = r.status === "off-track" ? "warn" : (r.status === "done" ? "good" : "neutral");
+      var statusLabel = r.status === "off-track" ? "Off Track" : (r.status === "done" ? "Done" : "On Track");
+      return '<li><span>' + dotHtml(dot) + '<span class="who">' + esc(r.title || "Untitled") + '</span> &middot; ' + esc(statusLabel) + '</span><span class="when">' + (r.dueDate ? fmtDate(r.dueDate) : "no due date") + '</span></li>';
+    }).join("");
+  }
+
+  function renderCcTrendTiles(){
+    var el = document.getElementById("cc-trend-tiles");
+    if(!el) return;
+    if(!practiceTrends){
+      el.innerHTML = '<p class="empty-note">Loading&hellip;</p>';
+      return;
+    }
+    var s = practiceTrendSeries();
+    el.innerHTML = [s.conversion, s.dealSize, s.velocity].map(function(m){
+      if(m.points.length === 0){
+        return '<div class="stat-card"><span class="num mono">&mdash;</span><span class="cap">' + esc(m.title) + '</span></div>';
+      }
+      var sorted = m.points.slice().sort(function(a,b){ return monthIndex(a.month) - monthIndex(b.month); });
+      var last = sorted[sorted.length - 1];
+      var prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+      var deltaHtml = "";
+      if(prev){
+        var delta = last.value - prev.value;
+        var cls = delta > 0 ? "up" : (delta < 0 ? "down" : "");
+        deltaHtml = '<span class="chart-delta ' + cls + '">' + (delta === 0 ? "flat" : (delta > 0 ? "+" + m.fmt(delta) : "" + m.fmt(delta))) + '</span>';
+      }
+      return '<div class="stat-card"><span class="num mono">' + esc(m.fmt(last.value)) + '</span>' + deltaHtml + '<span class="cap">' + esc(m.title) + ' &middot; ' + esc(monthLabel(last.month)) + '</span></div>';
+    }).join("");
+  }
+
+  function renderCcFieldIntel(){
+    var el = document.getElementById("cc-fieldintel-list");
+    if(!el) return;
+    var items = state.digest.slice().sort(function(a,b){ return (b.loggedAt || "").localeCompare(a.loggedAt || ""); }).slice(0, 3);
+    if(items.length === 0){
+      el.innerHTML = '<p class="empty-note">Nothing logged yet, the first weekly research pass will populate this.</p>';
+      return;
+    }
+    el.innerHTML = items.map(function(d){
+      return '<div class="digest-card">' +
+        '<h4>' + esc(d.headline || "Untitled") + '</h4>' +
+        '<p>' + esc(d.summary || "") + '</p>' +
+        '<div class="digest-meta"><span class="pill">' + esc(DIGEST_CATEGORY_LABELS[d.category] || d.category || "") + '</span><span>' + esc(d.source || "") + '</span>' + (d.url ? ' &middot; <a href="' + esc(d.url) + '" target="_blank" rel="noopener">Read more</a>' : '') + '</div>' +
+        '</div>';
+    }).join("");
+  }
+
+  function renderCommandCenter(){
+    renderCcEngagements();
+    renderCcStageStats();
+    renderCcRocks();
+    renderCcTrendTiles();
+    renderCcFieldIntel();
+  }
+  var ccTrendsLink = document.getElementById("cc-trends-link");
+  if(ccTrendsLink) ccTrendsLink.addEventListener("click", function(e){ e.preventDefault(); goToView("forecasting"); });
+  var ccFieldIntelLink = document.getElementById("cc-fieldintel-link");
+  if(ccFieldIntelLink) ccFieldIntelLink.addEventListener("click", function(e){ e.preventDefault(); goToView("fieldintel"); });
+
   // ---------- dashboard stat tiles (clickable, jump to the relevant view) ----------
   function goToView(view){
     var btn = document.querySelector('#app-nav .rail-btn[data-view="' + view + '"]');
@@ -416,6 +594,7 @@
       stage: document.getElementById("pl-stage").value,
       nextStep: document.getElementById("pl-next").value.trim(),
       nextStepDate: document.getElementById("pl-next-date").value,
+      dealValue: Number(document.getElementById("pl-deal-value").value || 0),
       notes: document.getElementById("pl-notes").value.trim()
     };
     apiFetch("/api/pipeline", { method: "POST", body: data }).then(function(){
@@ -681,6 +860,202 @@
     container.querySelectorAll(".fc-pt").forEach(function(pt){
       pt.addEventListener("mousemove", function(e){ showChartTooltip(e, pt.getAttribute("data-date") + ": " + pt.getAttribute("data-value")); });
       pt.addEventListener("mouseleave", hideChartTooltip);
+    });
+  }
+
+  // ---------- Practice Trends (own-data analytics: conversion, deal size, prospect velocity) ----------
+  // Unlike the forecast cards above (a linear projection from recent weeks),
+  // these three charts show what actually happened, month by month, pulled
+  // from Franklin's own pipeline and prospecting records - the same
+  // as-originally-logged discipline used for the National Giving Trends
+  // benchmark on the Giving Landscape page. A month with no closed pipeline
+  // record, no tracked deal value, or no prospect promotion simply isn't
+  // plotted - nothing here is interpolated or estimated to fill a gap.
+  // Loaded once at boot (like the org structural summary) rather than on
+  // every refreshAndRender, since it's a server-aggregated read, not part
+  // of the core /api/state payload.
+  var practiceTrends = null;
+
+  function loadPracticeTrends(){
+    return apiFetch("/api/analytics/practice-trends").then(function(data){
+      practiceTrends = data;
+      renderPracticeTrends();
+    }).catch(function(){
+      practiceTrends = { conversion: [], dealSize: [], velocity: [] };
+      renderPracticeTrends();
+    });
+  }
+
+  function monthLabel(m){
+    var parts = String(m).split("-");
+    if(parts.length !== 2) return esc(m);
+    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  }
+  function monthIndex(m){
+    var parts = String(m).split("-");
+    return Number(parts[0]) * 12 + (Number(parts[1]) - 1);
+  }
+
+  // A leaner cousin of buildForecastCard above: an actuals-only line (no
+  // regression, no projection), with a dashed segment across any gap month
+  // rather than implying continuous data the series doesn't have - the same
+  // honesty device nationalTotalChartHtml uses for Giving USA's missing years.
+  function buildTrendLineCard(title, points, fmt, emptyNote, sourceNote){
+    if(!points || points.length === 0){
+      return '<div class="chart-card"><h4>' + esc(title) + '</h4><p class="empty-note" style="border:none;padding-left:0;">' + esc(emptyNote) + '</p>' +
+        (sourceNote ? '<p class="nt-source" style="margin-top:8px;">' + esc(sourceNote) + '</p>' : '') + '</div>';
+    }
+    var sorted = points.slice().sort(function(a,b){ return monthIndex(a.month) - monthIndex(b.month); });
+    var last = sorted[sorted.length - 1];
+    var prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+    if(sorted.length === 1){
+      return '<div class="chart-card"><h4>' + esc(title) + '</h4><span class="chart-now">' + esc(fmt(last.value)) + '</span>' +
+        '<p class="empty-note" style="border:none;padding-left:0;margin-top:8px;">Only ' + esc(monthLabel(last.month)) + ' logged so far' + (last.meta ? (' (' + esc(last.meta) + ')') : '') + '. This fills in as more months are logged.</p>' +
+        (sourceNote ? '<p class="nt-source" style="margin-top:8px;">' + esc(sourceNote) + '</p>' : '') +
+        '</div>';
+    }
+    var w = 260, h = 110, padL = 8, padR = 8, padT = 10, padB = 10;
+    var n = sorted.length;
+    var values = sorted.map(function(p){ return p.value; });
+    var minY = Math.min.apply(null, values.concat([0]));
+    var maxY = Math.max.apply(null, values);
+    if(minY === maxY){ minY -= 1; maxY += 1; }
+    var padY = (maxY - minY) * 0.15;
+    minY -= padY; maxY += padY;
+    if(values.every(function(v){ return v >= 0; })) minY = Math.max(minY, 0);
+    var xScale = function(i){ return n === 1 ? (w/2) : (padL + (i/(n-1)) * (w - padL - padR)); };
+    var yScale = function(v){ return padT + (1 - (v-minY)/(maxY-minY)) * (h - padT - padB); };
+    var solidSegs = [], dashedSegs = [];
+    for(var i = 1; i < n; i++){
+      var seg = "M" + xScale(i-1).toFixed(1) + "," + yScale(sorted[i-1].value).toFixed(1) + " L" + xScale(i).toFixed(1) + "," + yScale(sorted[i].value).toFixed(1);
+      if(monthIndex(sorted[i].month) - monthIndex(sorted[i-1].month) === 1) solidSegs.push(seg); else dashedSegs.push(seg);
+    }
+    var markers = sorted.map(function(p,i){
+      var tipValue = fmt(p.value) + (p.meta ? (" · " + p.meta) : "");
+      return '<circle class="fc-pt" cx="' + xScale(i).toFixed(1) + '" cy="' + yScale(p.value).toFixed(1) + '" r="3" fill="var(--accent-strong)" data-date="' + esc(monthLabel(p.month)) + '" data-value="' + esc(tipValue) + '"></circle>';
+    }).join("");
+    var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(title) + ' by month">' +
+      solidSegs.map(function(s){ return '<path d="' + s + '" fill="none" stroke="var(--accent-strong)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>'; }).join("") +
+      dashedSegs.map(function(s){ return '<path d="' + s + '" fill="none" stroke="var(--accent-strong)" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"></path>'; }).join("") +
+      markers + '</svg>';
+    var deltaHtml = "";
+    if(prev){
+      var delta = last.value - prev.value;
+      var deltaClass = delta > 0 ? "up" : (delta < 0 ? "down" : "");
+      deltaHtml = '<span class="chart-delta ' + deltaClass + '">' + (delta === 0 ? "flat" : (delta > 0 ? "+" + fmt(delta) : "" + fmt(delta))) + ' vs ' + esc(monthLabel(prev.month)) + '</span>';
+    }
+    return '<div class="chart-card">' +
+      '<h4>' + esc(title) + '</h4>' +
+      '<span class="chart-now">' + esc(fmt(last.value)) + '</span>' + deltaHtml +
+      svg +
+      '<div class="chart-proj">' + esc(monthLabel(last.month)) + (last.meta ? (' &middot; ' + esc(last.meta)) : '') + '</div>' +
+      (sourceNote ? '<p class="nt-source" style="margin-top:6px;">' + esc(sourceNote) + '</p>' : '') +
+      '</div>';
+  }
+
+  // Shared by the full Forecasting charts and the Command Center's headline
+  // tiles, so both read the exact same three series off practiceTrends
+  // rather than each having its own copy of what counts as a valid month.
+  function practiceTrendSeries(){
+    return {
+      conversion: {
+        title: "Pipeline conversion rate", fmt: function(v){ return Math.round(v*100) + "%"; },
+        points: practiceTrends.conversion.filter(function(c){ return c.rate !== null; }).map(function(c){
+          return { month: c.month, value: c.rate, meta: c.won + " won of " + c.closed + " closed" };
+        }),
+        emptyNote: "No pipeline record has reached Graduated, Lost, or Referred Out yet, so there is no closed month to show. This fills in as records move to a closed stage.",
+        sourceNote: "Share of closed pipeline records (Graduated, Lost, or Referred Out) that graduated, grouped by the month each record was last moved into a closed stage."
+      },
+      dealSize: {
+        title: "Average deal size", fmt: function(v){ return fmtMoneyShort(v); },
+        points: practiceTrends.dealSize.map(function(d){
+          return { month: d.month, value: d.avgValue, meta: d.count + (d.count === 1 ? " deal" : " deals") };
+        }),
+        emptyNote: "No Graduated pipeline record has a deal value logged yet. Fill in “Deal value” on a Pipeline record once an engagement is signed, and it shows up here.",
+        sourceNote: "Average logged deal value among Graduated pipeline records, by the month each graduated. Records with no deal value logged are left out, never counted as zero."
+      },
+      velocity: {
+        title: "Prospect velocity", fmt: function(v){ return v.toFixed(1) + " days"; },
+        points: practiceTrends.velocity.filter(function(v){ return v.avgDays !== null; }).map(function(v){
+          return { month: v.month, value: v.avgDays, meta: v.count + (v.count === 1 ? " prospect" : " prospects") };
+        }),
+        emptyNote: "No prospect has been promoted to the Pipeline yet. This tracks how long a prospect sits in Prospecting before being promoted.",
+        sourceNote: "Average days from when a prospect was first logged to when it was promoted to the Pipeline, grouped by the month of promotion."
+      }
+    };
+  }
+
+  function renderPracticeTrends(){
+    var container = document.getElementById("practice-trends-charts");
+    if(container){
+      if(!practiceTrends){
+        container.innerHTML = '<p class="empty-note">Loading&hellip;</p>';
+      } else {
+        var s = practiceTrendSeries();
+        var cards = [s.conversion, s.dealSize, s.velocity].map(function(m){
+          return buildTrendLineCard(m.title, m.points, m.fmt, m.emptyNote, m.sourceNote);
+        });
+        container.innerHTML = cards.join("");
+        container.querySelectorAll(".fc-pt").forEach(function(pt){
+          pt.addEventListener("mousemove", function(e){ showChartTooltip(e, pt.getAttribute("data-date") + ": " + pt.getAttribute("data-value")); });
+          pt.addEventListener("mouseleave", hideChartTooltip);
+        });
+      }
+    }
+    // Command Center's headline tiles read the same practiceTrends data -
+    // rendered here too so they refresh the moment the fetch resolves,
+    // the same way the full charts above do, not just on the next full
+    // renderAll() pass.
+    renderCcTrendTiles();
+  }
+
+  // ---------- automation health (Dashboard: status of the five scheduled jobs) ----------
+  var automationStatus = null;
+
+  function loadAutomationStatus(){
+    return apiFetch("/api/automation-status").then(function(data){
+      automationStatus = data.jobs || [];
+      renderAutomationHealth();
+    }).catch(function(){
+      automationStatus = [];
+      renderAutomationHealth();
+    });
+  }
+
+  // Renders into every element id given - the same automation status feeds
+  // both the Dashboard's original panel and the Command Center's copy, and
+  // this way there is exactly one place that turns automationStatus into
+  // markup for either of them to stay in sync with.
+  function renderAutomationHealth(){
+    var ids = ["automation-health-list", "cc-automation-health-list"];
+    var html;
+    if(automationStatus === null){
+      html = '<p class="empty-note" style="border:none;">Loading&hellip;</p>';
+    } else if(automationStatus.length === 0){
+      html = '<p class="empty-note" style="border:none;">No automations registered yet.</p>';
+    } else {
+      html = automationStatus.map(function(j){
+        var dot;
+        if(j.staleness === "never") dot = "neutral";
+        else if(j.staleness === "stale") dot = "warn";
+        else dot = (j.lastStatus === "ok") ? "good" : "warn";
+        var when = j.lastRanAt ? fmtDate(String(j.lastRanAt).slice(0,10)) : "Never reported";
+        var detail;
+        if(j.lastRanAt){
+          detail = (j.lastStatus || "unknown status");
+          if(j.lastItemCount !== null && j.lastItemCount !== undefined) detail += ", " + j.lastItemCount + (j.lastItemCount === 1 ? " item" : " items");
+          if(j.lastMessage) detail += " — " + j.lastMessage;
+          if(j.staleness === "stale") detail += " (overdue, expected every " + j.expectedCadence + ")";
+        } else {
+          detail = "expected every " + j.expectedCadence;
+        }
+        return '<div class="session-recap-line">' + dotHtml(dot) + '<span><strong>' + esc(j.label) + '</strong> &middot; ' + esc(when) + ' &middot; ' + esc(detail) + '</span></div>';
+      }).join("");
+    }
+    ids.forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.innerHTML = html;
     });
   }
 
@@ -1219,6 +1594,29 @@
     loadUsMapData();
     bindOrgHealthEvents();
 
+    // Sub-navigation across the six Giving Landscape panels - purely a
+    // display switch, every panel still renders on every refresh so its
+    // data is current the moment it's opened. Charts use viewBox-based SVG
+    // sized off their own data, not the container's on-screen width, so
+    // being hidden while their numbers update never leaves them stale or
+    // mis-sized when a tab is opened later.
+    var glTabs = document.getElementById("gl-tabs");
+    if(glTabs){
+      glTabs.addEventListener("click", function(e){
+        var btn = e.target.closest("[data-lg-tab]");
+        if(!btn) return;
+        var target = btn.getAttribute("data-lg-tab");
+        glTabs.querySelectorAll("[data-lg-tab]").forEach(function(b){
+          var active = b === btn;
+          b.classList.toggle("is-active", active);
+          b.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        document.querySelectorAll('.view[data-view="landscape"] .fw-card[data-lg-tab]').forEach(function(card){
+          card.hidden = (card.getAttribute("data-lg-tab") !== target);
+        });
+      });
+    }
+
     document.getElementById("gl-ticker-list").addEventListener("click", function(e){
       var delBtn = e.target.closest(".gift-delete");
       if(delBtn){
@@ -1268,9 +1666,10 @@
 
   function renderNationalBars(){
     var container = document.getElementById("gl-national-bars");
-    var max = Math.max.apply(null, GIVING_USA_CATEGORIES.map(function(c){ return c.amountB; }));
-    var sorted = GIVING_USA_CATEGORIES.slice().sort(function(a,b){ return b.amountB - a.amountB; });
-    container.innerHTML = sorted.map(function(c){
+    var withData = GIVING_USA_CATEGORIES.filter(function(c){ return c.amountB !== null; });
+    var max = Math.max.apply(null, withData.map(function(c){ return c.amountB; }));
+    var sorted = withData.slice().sort(function(a,b){ return b.amountB - a.amountB; });
+    var rows = sorted.map(function(c){
       var pctWidth = Math.max(3, (c.amountB/max)*100);
       var growthHtml = c.growth === null ? "" : ('<span class="gb-growth ' + (c.growth >= 0 ? "up" : "down") + '">' + (c.growth >= 0 ? "+" : "") + c.growth.toFixed(1) + '% real</span>');
       return '<div class="gb-row">' +
@@ -1279,6 +1678,9 @@
         '<span class="gb-value">$' + c.amountB.toFixed(1) + 'B &middot; ' + c.pct + '%' + growthHtml + '</span>' +
         '</div>';
     }).join("");
+    var skipped = GIVING_USA_CATEGORIES.filter(function(c){ return c.amountB === null; });
+    var skippedNote = skipped.length ? '<p class="nt-hint" style="margin-top:10px;">Giving USA has not published a 2025 dollar figure for ' + skipped.map(function(c){ return c.label.toLowerCase(); }).join(", ") + ', so it is left off these bars.</p>' : "";
+    container.innerHTML = rows + skippedNote;
   }
 
   function renderGiftStats(){
@@ -1896,6 +2298,7 @@
   function renderGivingLandscape(){
     renderGiftStats();
     renderNationalBars();
+    renderNationalTrends();
     renderGiftTicker();
     renderStateGrid();
     renderOrgTracker();
@@ -2106,11 +2509,161 @@
     structuralEl.innerHTML = timeHorizonStructuralHtml();
   }
 
+  // ---------- National Giving Trends (Giving USA benchmark, 2000-2025) ----------
+  // Static reference data (NATIONAL_TOTAL_GIVING_BY_YEAR /
+  // NATIONAL_CATEGORY_GIVING_BY_YEAR above), separate from anything in
+  // `state` - this is what the sector as a whole did, for reading Franklin's
+  // own gift ticker against.
+  var NATIONAL_CATEGORY_LABELS = {
+    religion: "Religion", "human-services": "Human Services", education: "Education",
+    foundations: "Gifts to Foundations", "public-society-benefit": "Public-Society Benefit",
+    health: "Health", "international-affairs": "International Affairs",
+    "arts-culture": "Arts, Culture & Humanities", "environment-animals": "Environment & Animals",
+    individuals: "Gifts to Individuals"
+  };
+
+  function nationalTotalChartHtml(){
+    var years = Object.keys(NATIONAL_TOTAL_GIVING_BY_YEAR).map(Number).sort(function(a,b){ return a-b; });
+    var n = years.length;
+    var w = Math.max(560, n * 30), h = 180, padL = 12, padR = 12, padT = 14, padB = 26;
+    var maxY = Math.max.apply(null, years.map(function(y){ return NATIONAL_TOTAL_GIVING_BY_YEAR[y]; })) * 1.08;
+    var xScale = function(i){ return n === 1 ? (w/2) : (padL + (i/(n-1)) * (w - padL - padR)); };
+    var yScale = function(v){ return padT + (1 - v/maxY) * (h - padT - padB); };
+    // Solid segments connect consecutive years; a gap year (2001-2003, 2005)
+    // gets a dashed segment instead, so the chart never implies real data
+    // for a year it doesn't have.
+    var linePath = years.map(function(y,i){ return (i===0?"M":"L") + xScale(i).toFixed(1) + "," + yScale(NATIONAL_TOTAL_GIVING_BY_YEAR[y]).toFixed(1); }).join(" ");
+    var solidSegs = [], dashedSegs = [];
+    for(var si = 1; si < n; si++){
+      var seg = "M" + xScale(si-1).toFixed(1) + "," + yScale(NATIONAL_TOTAL_GIVING_BY_YEAR[years[si-1]]).toFixed(1) +
+        " L" + xScale(si).toFixed(1) + "," + yScale(NATIONAL_TOTAL_GIVING_BY_YEAR[years[si]]).toFixed(1);
+      if(years[si] - years[si-1] === 1) solidSegs.push(seg); else dashedSegs.push(seg);
+    }
+    var lastX = xScale(n-1).toFixed(1), baseY = (h-padB).toFixed(1);
+    var areaPath = linePath + " L" + lastX + "," + baseY + " L" + xScale(0).toFixed(1) + "," + baseY + " Z";
+    var markers = years.map(function(y,i){
+      var v = NATIONAL_TOTAL_GIVING_BY_YEAR[y];
+      var tip = y + ": $" + v.toFixed(1) + "B total US charitable giving (current dollars)";
+      return '<circle class="nt-pt" cx="' + xScale(i).toFixed(1) + '" cy="' + yScale(v).toFixed(1) + '" r="2.8" data-tip="' + esc(tip) + '"></circle>';
+    }).join("");
+    var xLabels = years.map(function(y,i){
+      if(i !== 0 && i !== n-1 && y % 5 !== 0) return "";
+      return '<text class="nt-xlabel" x="' + xScale(i).toFixed(1) + '" y="' + (h-8) + '" text-anchor="middle">' + y + '</text>';
+    }).join("");
+    var allYears = [];
+    for(var y2 = years[0]; y2 <= years[n-1]; y2++) allYears.push(y2);
+    var missing = allYears.filter(function(y){ return NATIONAL_TOTAL_GIVING_BY_YEAR[y] === undefined; });
+    var missingNote = missing.length ? ('<p class="nt-note">Not shown: ' + missing.join(", ") + ' &mdash; no freely published Giving USA total could be confirmed for ' + (missing.length === 1 ? "that year" : "those years") + '.</p>') : "";
+    var solidPath = solidSegs.map(function(s){ return '<path d="' + s + '" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>'; }).join("");
+    var dashedPath = dashedSegs.map(function(s){ return '<path d="' + s + '" fill="none" stroke="var(--accent-2)" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 3"></path>'; }).join("");
+    return '<div class="nt-chart"><svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Total US charitable giving by year, 2000 to 2025, current dollars">' +
+      '<path class="nt-area" d="' + areaPath + '"></path>' +
+      solidPath + dashedPath +
+      markers + xLabels +
+      '</svg></div>' + missingNote;
+  }
+
+  function nationalCategorySparkline(catKey){
+    var years = Object.keys(NATIONAL_CATEGORY_GIVING_BY_YEAR).map(Number).sort(function(a,b){ return a-b; })
+      .filter(function(y){ return NATIONAL_CATEGORY_GIVING_BY_YEAR[y][catKey] !== undefined; });
+    if(years.length === 0) return { html: "", first: null, last: null, years: [] };
+    var w = 220, h = 56, pad = 6;
+    var n = years.length;
+    var vals = years.map(function(y){ return NATIONAL_CATEGORY_GIVING_BY_YEAR[y][catKey]; });
+    var minY = Math.min.apply(null, vals.concat([0]));
+    var maxY = Math.max.apply(null, vals);
+    if(minY === maxY) maxY = minY + 1;
+    var xScale = function(i){ return n === 1 ? (w/2) : (pad + (i/(n-1)) * (w - pad*2)); };
+    var yScale = function(v){ return pad + (1 - (v-minY)/(maxY-minY)) * (h - pad*2); };
+    var linePath = years.map(function(y,i){ return (i===0?"M":"L") + xScale(i).toFixed(1) + "," + yScale(vals[i]).toFixed(1); }).join(" ");
+    var areaPath = linePath + " L" + xScale(n-1).toFixed(1) + "," + (h-pad).toFixed(1) + " L" + xScale(0).toFixed(1) + "," + (h-pad).toFixed(1) + " Z";
+    var markers = years.map(function(y,i){
+      var tip = y + ": $" + vals[i].toFixed(1) + "B";
+      var isLast = i === n-1;
+      return '<circle class="ot-pt' + (isLast ? ' ot-pt-last' : '') + '" cx="' + xScale(i).toFixed(1) + '" cy="' + yScale(vals[i]).toFixed(1) + '" r="' + (isLast ? 2.6 : 1.5) + '" data-tip="' + esc(tip) + '"></circle>';
+    }).join("");
+    var html = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(NATIONAL_CATEGORY_LABELS[catKey]) + ' giving trend">' +
+      '<path class="ot-spark-area" d="' + areaPath + '"></path>' +
+      '<path class="ot-spark-line" d="' + linePath + '"></path>' +
+      markers + '</svg>';
+    return { html: html, first: { year: years[0], value: vals[0] }, last: { year: years[n-1], value: vals[n-1] }, years: years };
+  }
+
+  function nationalCategoryGridHtml(){
+    return '<div class="nt-cat-grid">' + NATIONAL_TREND_CATEGORY_ORDER.map(function(key){
+      var spark = nationalCategorySparkline(key);
+      if(!spark.first) return "";
+      var changePct = spark.first.value > 0 ? ((spark.last.value - spark.first.value) / spark.first.value) * 100 : null;
+      var changeHtml = changePct === null ? "" : ('<span class="gb-growth ' + (changePct >= 0 ? "up" : "down") + '">' + (changePct >= 0 ? "+" : "") + Math.round(changePct) + '% since ' + spark.first.year + '</span>');
+      return '<div class="nt-cat-tile">' +
+        '<div class="nt-cat-head"><span class="nt-cat-name">' + esc(NATIONAL_CATEGORY_LABELS[key]) + '</span>' + changeHtml + '</div>' +
+        '<div class="nt-cat-value">$' + spark.last.value.toFixed(1) + 'B <span class="nt-cat-year">in ' + spark.last.year + '</span></div>' +
+        spark.html +
+        '</div>';
+    }).join("") + '</div>';
+  }
+
+  function nationalTrendsTableHtml(){
+    var years = Object.keys(NATIONAL_TOTAL_GIVING_BY_YEAR).map(Number).sort(function(a,b){ return b-a; });
+    var head = '<th>Year</th>' + NATIONAL_TREND_CATEGORY_ORDER.map(function(k){ return '<th>' + esc(NATIONAL_CATEGORY_LABELS[k]) + '</th>'; }).join("") + '<th>Total</th>';
+    var rows = years.map(function(y){
+      var cats = NATIONAL_CATEGORY_GIVING_BY_YEAR[y];
+      var cells = NATIONAL_TREND_CATEGORY_ORDER.map(function(k){
+        var v = cats ? cats[k] : undefined;
+        return '<td>' + (v === undefined ? '<span class="dim">&mdash;</span>' : '$' + v.toFixed(1) + 'B') + '</td>';
+      }).join("");
+      return '<tr><td><strong>' + y + '</strong></td>' + cells + '<td>$' + NATIONAL_TOTAL_GIVING_BY_YEAR[y].toFixed(1) + 'B</td></tr>';
+    }).join("");
+    return '<div class="table-wrap"><table><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function nationalTrendsAnalysisHtml(){
+    var y0 = 2000, yN = 2025;
+    var v0 = NATIONAL_TOTAL_GIVING_BY_YEAR[y0], vN = NATIONAL_TOTAL_GIVING_BY_YEAR[yN];
+    var totalGrowthX = (vN / v0).toFixed(1);
+    var peak08 = NATIONAL_TOTAL_GIVING_BY_YEAR[2008], trough09 = NATIONAL_TOTAL_GIVING_BY_YEAR[2009], trough10 = NATIONAL_TOTAL_GIVING_BY_YEAR[2010];
+    var y2020 = NATIONAL_TOTAL_GIVING_BY_YEAR[2020];
+    function catShare(year, key){
+      var cats = NATIONAL_CATEGORY_GIVING_BY_YEAR[year];
+      if(!cats) return null;
+      var sum = 0;
+      Object.keys(cats).forEach(function(k){ sum += cats[k]; });
+      return cats[key] !== undefined ? (cats[key]/sum)*100 : null;
+    }
+    var relShare09 = catShare(2009, "religion"), relShare25 = catShare(2025, "religion");
+    var hsShare09 = catShare(2009, "human-services"), hsShare25 = catShare(2025, "human-services");
+    var psbShare09 = catShare(2009, "public-society-benefit"), psbShare25 = catShare(2025, "public-society-benefit");
+    return '<div class="nt-analysis">' +
+      '<p>Total US charitable giving grew from roughly $' + v0.toFixed(0) + 'B in 2000 to $' + vN.toFixed(0) + 'B in 2025, current dollars, about ' + totalGrowthX + 'x. Growth was not steady: giving fell from about $' + peak08.toFixed(0) + 'B in 2008 to $' + trough09.toFixed(0) + 'B in 2009 and stayed near $' + trough10.toFixed(0) + 'B through 2010 before resuming its climb, tracking the 2008&ndash;2009 recession. The 2020 pandemic year did not repeat that pattern: total giving grew to $' + y2020.toFixed(0) + 'B, driven in part by a jump in human services and public-society benefit giving that year.</p>' +
+      (relShare09 && relShare25 ? '<p>The mix has shifted more than the total. Religion made up about ' + Math.round(relShare09) + '% of the tracked category giving above in 2009 and about ' + Math.round(relShare25) + '% in 2025, even as its own dollar total kept growing. Human services (about ' + Math.round(hsShare09) + '% in 2009, ' + Math.round(hsShare25) + '% in 2025) and public-society benefit (about ' + Math.round(psbShare09) + '% to ' + Math.round(psbShare25) + '%) picked up the share religion gave up, a broadening pattern several sector commentators have pointed to over this period, though a fuller explanation would need more than these two data points.</p>' : '') +
+      '<p class="nt-source">Source: Giving USA (the Giving USA Foundation and the Indiana University Lilly Family School of Philanthropy), annual press releases, 2000&ndash;2026 editions. Figures are as each year was originally reported; Giving USA revises prior years in later editions, so a current-vintage figure for an older year may differ slightly from what is shown here.</p>' +
+      '</div>';
+  }
+
+  function renderNationalTrends(){
+    var totalEl = document.getElementById("nt-total-chart");
+    var gridEl = document.getElementById("nt-cat-grid");
+    var tableEl = document.getElementById("nt-table");
+    var analysisEl = document.getElementById("nt-analysis");
+    if(!totalEl) return; // panel not on this page yet
+    totalEl.innerHTML = nationalTotalChartHtml();
+    gridEl.innerHTML = nationalCategoryGridHtml();
+    tableEl.innerHTML = nationalTrendsTableHtml();
+    analysisEl.innerHTML = nationalTrendsAnalysisHtml();
+    [totalEl, gridEl].forEach(function(el){
+      el.querySelectorAll("[data-tip]").forEach(function(pt){
+        pt.addEventListener("mousemove", function(e){ showChartTooltip(e, pt.getAttribute("data-tip")); });
+        pt.addEventListener("mouseleave", hideChartTooltip);
+      });
+    });
+  }
+
   // ---------- bootstrap ----------
   function renderAll(){
     renderGivingLandscape();
     renderBriefing();
     renderSessionPanel();
+    renderCommandCenter();
     renderDashboard();
     renderPipeline();
     renderProspecting();
@@ -2122,6 +2675,8 @@
     renderFieldIntel();
     renderPlaybookLibrary();
     renderTimeHorizon();
+    renderPracticeTrends();
+    renderAutomationHealth();
   }
 
   function onApiUnavailable(){
@@ -2139,6 +2694,8 @@
     document.getElementById("load-note").hidden = true;
     renderAll();
     loadOrgStructuralSummary();
+    loadPracticeTrends();
+    loadAutomationStatus();
   }).catch(function(){
     onApiUnavailable();
   });

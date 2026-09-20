@@ -67,17 +67,37 @@ function requireAuth(req, res, next) {
   return res.status(401).json({ error: "not authenticated" });
 }
 
-function requireAdminToken(req, res, next) {
-  const provided = req.get("X-Admin-Token") || "";
-  if (timingSafeStringEqual(provided, ADMIN_API_TOKEN)) return next();
-  // Also accept the same signed session cookie the rest of the app uses, so the
-  // backup/restore endpoints can be driven from an already-logged-in browser
-  // session during a database migration without anyone having to type the
-  // admin token anywhere. Automated callers (the lead-import scheduled task,
-  // the weekly digest job) keep using the header token as before.
-  const sessionToken = req.cookies[COOKIE_NAME];
-  if (verify(sessionToken)) return next();
-  return res.status(401).json({ error: "invalid admin token" });
+// Per-automation scoped tokens, layered on top of the one shared
+// ADMIN_API_TOKEN rather than replacing it. Every one of these env vars is
+// optional and empty by default - until Franklin actually sets one on
+// Render, its scope simply has no scoped token and only the master token
+// (or a logged-in session) opens it, exactly like before this existed. The
+// master token keeps working everywhere on purpose: it's the backward
+// compatible fallback for every automation prompt that hasn't been swapped
+// to its own scoped token yet, and it's what Franklin uses himself for a
+// manual/emergency call from a terminal.
+const ADMIN_SCOPE_TOKENS = {
+  gifts: process.env.ADMIN_TOKEN_GIFTS || "",
+  prospects: process.env.ADMIN_TOKEN_PROSPECTS || "",
+  digest: process.env.ADMIN_TOKEN_DIGEST || "",
+  backup: process.env.ADMIN_TOKEN_BACKUP || "",
+  restore: process.env.ADMIN_TOKEN_RESTORE || "",
+  status: process.env.ADMIN_TOKEN_STATUS || ""
+};
+function requireAdminScope(scope) {
+  return function (req, res, next) {
+    const provided = req.get("X-Admin-Token") || "";
+    if (timingSafeStringEqual(provided, ADMIN_API_TOKEN)) return next();
+    const scoped = ADMIN_SCOPE_TOKENS[scope];
+    if (scoped && timingSafeStringEqual(provided, scoped)) return next();
+    // Also accept the same signed session cookie the rest of the app uses, so the
+    // backup/restore endpoints can be driven from an already-logged-in browser
+    // session during a database migration without anyone having to type the
+    // admin token anywhere.
+    const sessionToken = req.cookies[COOKIE_NAME];
+    if (verify(sessionToken)) return next();
+    return res.status(401).json({ error: "invalid admin token" });
+  };
 }
 
 // ---------- login rate limiting ----------
@@ -175,7 +195,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
 });
 
 function rowToPipeline(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function rowToScorecard(r) {
   return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, createdAt: r.created_at };
@@ -220,9 +240,9 @@ app.post("/api/pipeline", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
-    [id, b.name || "", b.org || "", b.source || "", b.track || "undecided", b.stage || "lead", b.nextStep || "", b.nextStepDate || "", b.notes || "", now]
+    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, deal_value, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
+    [id, b.name || "", b.org || "", b.source || "", b.track || "undecided", b.stage || "lead", b.nextStep || "", b.nextStepDate || "", b.notes || "", Number(b.dealValue || 0), now]
   );
   res.json({ id });
 });
@@ -231,7 +251,7 @@ app.patch("/api/pipeline/:id", requireAuth, async (req, res) => {
   const fields = [];
   const values = [];
   let i = 1;
-  const map = { stage: "stage", nextStep: "next_step", nextStepDate: "next_step_date", notes: "notes", name: "name", org: "org", source: "source", track: "track" };
+  const map = { stage: "stage", nextStep: "next_step", nextStepDate: "next_step_date", notes: "notes", name: "name", org: "org", source: "source", track: "track", dealValue: "deal_value" };
   for (const key of Object.keys(map)) {
     if (Object.prototype.hasOwnProperty.call(b, key)) {
       fields.push(`${map[key]} = $${i++}`);
@@ -348,7 +368,12 @@ app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
      VALUES ($1,$2,$3,$4,'undecided','lead','First outreach','',$5,$6,$6)`,
     [id, p.name || "", p.org || "", "Prospecting: " + (p.source || ""), p.notes || "", now]
   );
-  await archiveRow("prospects", req.params.id);
+  // A dedicated update rather than the shared archiveRow() helper, so this
+  // archival is tagged 'promoted' - distinct from an ordinary manual Remove
+  // (which leaves archived_reason at its default ''). The prospect-velocity
+  // trend on Forecasting depends on that distinction to know which archived
+  // prospects actually became pipeline records, and when.
+  await pool.query("UPDATE prospects SET archived_at = $1, archived_reason = 'promoted' WHERE id = $2", [now, req.params.id]);
   res.json({ ok: true, pipelineId: id });
 });
 
@@ -369,7 +394,7 @@ app.put("/api/vision", requireAuth, async (req, res) => {
 // Upserts prospects by source_ref (e.g. a Gmail message id) so re-scanning the same
 // emails never creates duplicates. Rows with no source_ref (added by hand in the UI)
 // are unaffected, since Postgres treats every NULL as distinct for uniqueness.
-app.post("/api/admin/prospects", requireAdminToken, async (req, res) => {
+app.post("/api/admin/prospects", requireAdminScope("prospects"), async (req, res) => {
   const items = (req.body && req.body.items) || [];
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "items array required" });
@@ -392,7 +417,7 @@ app.post("/api/admin/prospects", requireAdminToken, async (req, res) => {
 });
 
 // ---------- digest (read via /api/state; admin-only write for the weekly refresh) ----------
-app.post("/api/admin/digest", requireAdminToken, async (req, res) => {
+app.post("/api/admin/digest", requireAdminScope("digest"), async (req, res) => {
   const items = (req.body && req.body.items) || [];
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "items array required" });
@@ -455,7 +480,7 @@ app.post("/api/gifts/:id/public", requireAuth, async (req, res) => {
 // to log newly announced major gifts alongside that week's digest refresh.
 // Upserts by id, same pattern as /api/admin/digest, so re-running the same
 // week's pass is always safe.
-app.post("/api/admin/gifts", requireAdminToken, async (req, res) => {
+app.post("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
   const items = (req.body && req.body.items) || [];
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "items array required" });
@@ -480,6 +505,132 @@ app.post("/api/admin/gifts", requireAdminToken, async (req, res) => {
     res.status(500).json({ error: "failed to update gifts" });
   } finally {
     client.release();
+  }
+});
+
+// ---------- automation health (admin-only write; read via /api/automation-status) ----------
+// Every scheduled job behind this app closes its run with one small POST
+// here reporting what happened - not proof it worked (a job that never
+// gets this far, because it crashed or was never fired, just stays
+// "never reported" or goes stale), but enough to catch the biggest gap a
+// silent, unattended job can have: nobody finding out it broke until
+// something downstream looks wrong. Append-only by design - each run adds
+// a row rather than overwriting the last one, so a history exists if it's
+// ever needed, and GET /api/automation-status below only reads the latest
+// per job.
+app.post("/api/admin/automation-runs", requireAdminScope("status"), async (req, res) => {
+  const b = req.body || {};
+  if (!b.jobKey || !b.status) {
+    return res.status(400).json({ error: "jobKey and status required" });
+  }
+  const id = newId();
+  const now = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO automation_runs (id, job_key, job_label, status, message, item_count, ran_at, logged_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [id, b.jobKey, b.jobLabel || "", b.status, b.message || "", (b.itemCount === undefined || b.itemCount === null || b.itemCount === "") ? null : Number(b.itemCount), b.ranAt || now, now]
+  );
+  res.json({ ok: true, id });
+});
+
+// The fixed list of automations this app expects to hear from, and roughly
+// how often - used only to flag staleness (a job that hasn't reported in
+// well past its own cadence), never to require every job to exist. A job
+// removed from Claude's scheduled tasks still shows here as staler and
+// staler over time rather than silently vanishing from the health view.
+const JOB_REGISTRY = [
+  { key: "gift-ticker", label: "Weekly Gift Ticker refresh", cadenceHours: 7 * 24 + 24 },
+  { key: "lead-import", label: "Website + Calendly + assessment lead import", cadenceHours: 24 + 6 },
+  { key: "field-intel", label: "Weekly Field Intelligence refresh", cadenceHours: 7 * 24 + 24 },
+  { key: "calendar-briefing", label: "Weekly calendar prep briefing", cadenceHours: 7 * 24 + 24 },
+  { key: "pipeline-review", label: "Weekly pipeline review", cadenceHours: 7 * 24 + 24 }
+];
+
+app.get("/api/automation-status", requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (job_key) job_key, job_label, status, message, item_count, ran_at
+       FROM automation_runs ORDER BY job_key, ran_at DESC`
+    );
+    const byKey = {};
+    rows.forEach((r) => { byKey[r.job_key] = r; });
+    const now = Date.now();
+    const jobs = JOB_REGISTRY.map((j) => {
+      const last = byKey[j.key];
+      let staleness = "never";
+      if (last && last.ran_at) {
+        const ageHours = (now - new Date(last.ran_at).getTime()) / 3600000;
+        staleness = Number.isFinite(ageHours) && ageHours <= j.cadenceHours ? "ok" : "stale";
+      }
+      return {
+        key: j.key,
+        label: j.label,
+        expectedCadence: j.cadenceHours % 24 === 0 ? (j.cadenceHours / 24) + "d" : Math.round(j.cadenceHours / 24) + "d (approx.)",
+        lastStatus: last ? last.status : null,
+        lastMessage: last ? last.message : null,
+        lastItemCount: last && last.item_count !== null && last.item_count !== undefined ? Number(last.item_count) : null,
+        lastRanAt: last ? last.ran_at : null,
+        staleness
+      };
+    });
+    res.json({ jobs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "failed to load automation status" });
+  }
+});
+
+// ---------- practice trend analytics (Franklin's own pipeline & prospecting data) ----------
+// The same as-it-actually-happened discipline as the National Giving Trends
+// benchmark on the Giving Landscape page, applied to Franklin's own sales
+// data instead of a national one. Each series is grouped by the month the
+// underlying event actually happened (a record closing, a prospect getting
+// promoted) and a month with nothing real to report is simply absent from
+// the series, never interpolated or shown as zero. Nothing here is a
+// projection - see the linear-regression forecast cards above for that;
+// this is what actually happened.
+app.get("/api/analytics/practice-trends", requireAuth, async (req, res) => {
+  try {
+    const [conversionRes, dealRes, velocityRes] = await Promise.all([
+      pool.query(`
+        SELECT substr(updated_at,1,7) AS month,
+          COUNT(*) FILTER (WHERE stage='graduated') AS won,
+          COUNT(*) FILTER (WHERE stage='lost') AS lost,
+          COUNT(*) FILTER (WHERE stage='referred') AS referred
+        FROM pipeline
+        WHERE archived_at IS NULL AND stage IN ('graduated','lost','referred')
+          AND updated_at IS NOT NULL AND updated_at <> ''
+        GROUP BY 1 ORDER BY 1
+      `),
+      pool.query(`
+        SELECT substr(updated_at,1,7) AS month,
+          COUNT(*) AS count, AVG(deal_value) AS avg_value, SUM(deal_value) AS total_value
+        FROM pipeline
+        WHERE archived_at IS NULL AND stage='graduated' AND deal_value > 0
+          AND updated_at IS NOT NULL AND updated_at <> ''
+        GROUP BY 1 ORDER BY 1
+      `),
+      pool.query(`
+        SELECT substr(archived_at,1,7) AS month,
+          COUNT(*) AS count,
+          AVG(EXTRACT(EPOCH FROM (archived_at::timestamptz - created_at::timestamptz)) / 86400) AS avg_days
+        FROM prospects
+        WHERE archived_reason = 'promoted' AND archived_at IS NOT NULL AND created_at IS NOT NULL AND created_at <> ''
+        GROUP BY 1 ORDER BY 1
+      `)
+    ]);
+    res.json({
+      conversion: conversionRes.rows.map((r) => {
+        const won = Number(r.won), lost = Number(r.lost), referred = Number(r.referred);
+        const closed = won + lost + referred;
+        return { month: r.month, won, lost, referred, closed, rate: closed > 0 ? won / closed : null };
+      }),
+      dealSize: dealRes.rows.map((r) => ({ month: r.month, count: Number(r.count), avgValue: Number(r.avg_value) || 0, totalValue: Number(r.total_value) || 0 })),
+      velocity: velocityRes.rows.map((r) => ({ month: r.month, count: Number(r.count), avgDays: r.avg_days === null ? null : Number(r.avg_days) }))
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "failed to load practice trends" });
   }
 });
 
@@ -752,7 +903,7 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
 const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts"];
-app.get("/api/admin/backup", requireAdminToken, async (req, res) => {
+app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   try {
     const out = {};
     for (const table of BACKUP_TABLES) {
@@ -775,7 +926,7 @@ app.get("/api/admin/backup", requireAdminToken, async (req, res) => {
   }
 });
 
-app.post("/api/admin/restore", requireAdminToken, async (req, res) => {
+app.post("/api/admin/restore", requireAdminScope("restore"), async (req, res) => {
   const body = req.body || {};
   const client = await pool.connect();
   const counts = {};

@@ -53,6 +53,8 @@
     <button type="button" class="rail-btn" data-view="prospecting">Prospecting</button>
     <button type="button" class="rail-btn" data-view="scorecard">Scorecard</button>
     <button type="button" class="rail-btn" data-view="forecasting">Forecasting</button>
+    <button type="button" class="rail-btn" data-view="finance">Finance</button>
+    <button type="button" class="rail-btn" data-view="delivery">Delivery</button>
     <div class="rail-label">Direction</div>
     <button type="button" class="rail-btn" data-view="vision">Vision</button>
     <button type="button" class="rail-btn" data-view="issues">Issues List</button>
@@ -114,15 +116,10 @@
 
       <div class="fw-card" data-panel="07 · Finance & Delivery">
         <h3>Finance &amp; Delivery</h3>
-        <p style="margin-top:-2px;">The two modules this Command Center does not cover yet, on purpose.</p>
-        <div class="example-box">
-          <span class="eb-label">Finance &mdash; not yet built</span>
-          <p class="extra">There is no invoicing or accounts-receivable tracking in this app. The honest engineering path is a single <code>invoices</code> table keyed to a pipeline record (offering, amount, dates, status), surfaced here once it exists. Nothing is estimated or invented in its place.</p>
-        </div>
-        <div class="example-box" style="margin-top:12px;">
-          <span class="eb-label">Delivery &mdash; not yet built</span>
-          <p class="extra">There is no session-by-session delivery tracking for an engaged client. The path is an <code>engagement_modules</code> table (module name, status, session date, deliverable link) plus lightweight time entries, also keyed to a pipeline record. Say the word and this is the next build.</p>
-        </div>
+        <p style="margin-top:-2px;">Invoicing, accounts receivable, and engagement delivery, tracked against the same pipeline records as everything else on this page. <a href="#" id="cc-finance-link">Open Finance &rarr;</a> &middot; <a href="#" id="cc-delivery-link">Open Delivery &rarr;</a></p>
+        <div class="stat-grid" id="cc-finance-stats"></div>
+        <p style="margin-top:14px;" id="cc-delivery-summary">Loading...</p>
+        <ul class="action-list" id="cc-delivery-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
       </div>
     </section>
 
@@ -512,6 +509,8 @@
             <div class="field"><label for="sc-won">Engagements won</label><input id="sc-won" type="number" min="0" step="1" value="0"></div>
             <div class="field"><label for="sc-lost">Opportunities lost</label><input id="sc-lost" type="number" min="0" step="1" value="0"></div>
             <div class="field"><label for="sc-referrals">Referrals received</label><input id="sc-referrals" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-revenue-booked">Revenue booked</label><input id="sc-revenue-booked" type="number" min="0" step="1" value="0"></div>
+            <div class="field"><label for="sc-revenue-collected">Revenue collected</label><input id="sc-revenue-collected" type="number" min="0" step="1" value="0"></div>
             <div class="field wide"><label for="sc-notes">Notes</label><textarea id="sc-notes"></textarea></div>
           </div>
           <div class="form-actions">
@@ -521,8 +520,8 @@
         </form>
 
         <div class="table-wrap"><table>
-          <thead><tr><th>Week of</th><th>Calls</th><th>New leads</th><th>Active</th><th>Won</th><th>Lost</th><th>Referrals</th><th>Close rate</th><th></th></tr></thead>
-          <tbody id="scorecard-rows"><tr><td colspan="9" class="empty-note">Loading...</td></tr></tbody>
+          <thead><tr><th>Week of</th><th>Calls</th><th>New leads</th><th>Active</th><th>Won</th><th>Lost</th><th>Referrals</th><th>Close rate</th><th>Booked</th><th>Collected</th><th></th></tr></thead>
+          <tbody id="scorecard-rows"><tr><td colspan="11" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -549,6 +548,139 @@
         <div class="chart-grid" id="practice-trends-charts">
           <p class="empty-note">Loading&hellip;</p>
         </div>
+      </div>
+    </section>
+
+    <!-- ================= FINANCE ================= -->
+    <section class="view" data-view="finance" hidden>
+      <div class="view-head"><h2>Finance</h2><span class="tag">revenue and AR</span></div>
+      <p class="view-intro">Invoices for real, signed engagements &mdash; every one tied to a Pipeline record, never a separate client list. Log an invoice once work is signed, mark it sent, then mark it paid when the money lands.</p>
+
+      <div class="fw-card" data-panel="01 · Log an invoice">
+        <form class="entry-form" id="invoice-form">
+          <div class="form-title">Log an invoice</div>
+          <div class="form-grid">
+            <div class="field"><label for="inv-pipeline">Engagement</label>
+              <select id="inv-pipeline" required></select>
+            </div>
+            <div class="field"><label for="inv-offering">Offering</label>
+              <select id="inv-offering">
+                <option value="institutionalos-diagnostic">InstitutionalOS Diagnostic</option>
+                <option value="retainer">Advisory and Implementation Retainer</option>
+                <option value="project">Project Based Engagement</option>
+                <option value="coaching">1:1 Executive Coaching</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field"><label for="inv-amount">Amount ($)</label><input id="inv-amount" type="number" min="0" step="1" required></div>
+            <div class="field"><label for="inv-status">Status</label>
+              <select id="inv-status">
+                <option value="draft">Draft</option>
+                <option value="sent">Sent</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
+            <div class="field"><label for="inv-issued">Issued date</label><input id="inv-issued" type="date"></div>
+            <div class="field"><label for="inv-due">Due date</label><input id="inv-due" type="date"></div>
+            <div class="field wide"><label for="inv-notes">Notes</label><textarea id="inv-notes"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="inv-submit">Log invoice</button>
+            <span class="save-status" id="inv-status-msg"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="fw-card" data-panel="02 · Accounts receivable">
+        <h3>Accounts Receivable</h3>
+        <p style="margin-top:-2px;">Every sent, unpaid invoice, aged from its due date.</p>
+        <div class="stat-grid" id="fin-ar-aging"></div>
+      </div>
+
+      <div class="fw-card" data-panel="03 · Revenue this quarter">
+        <h3>Revenue This Quarter</h3>
+        <p style="margin-top:-2px;">From invoices marked paid this quarter, and this quarter's Scorecard entries for revenue booked.</p>
+        <div class="stat-grid" id="fin-revenue-stats"></div>
+      </div>
+
+      <div class="fw-card" data-panel="04 · All invoices">
+        <h3>All Invoices</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Engagement</th><th>Offering</th><th>Amount</th><th>Status</th><th>Due</th><th></th></tr></thead>
+          <tbody id="invoice-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= DELIVERY ================= -->
+    <section class="view" data-view="delivery" hidden>
+      <div class="view-head"><h2>Delivery</h2><span class="tag">the five pillars, tracked</span></div>
+      <p class="view-intro">Session-by-session delivery for every active engagement, matching the five pillars The InstitutionalOS Runbook already sequences: Governing Foundation, Build Before the Ask, Fundraising Fluency, Zero to Portfolio, Funding Pathway Finder. Every module and time entry is tied to a Pipeline record.</p>
+
+      <div class="fw-card" data-panel="01 · Log a module">
+        <form class="entry-form" id="module-form">
+          <div class="form-title">Log a module</div>
+          <div class="form-grid">
+            <div class="field"><label for="dm-pipeline">Engagement</label>
+              <select id="dm-pipeline" required></select>
+            </div>
+            <div class="field"><label for="dm-name">Module name</label>
+              <input id="dm-name" list="dm-name-suggestions" placeholder="pick a pillar or type your own" required>
+              <datalist id="dm-name-suggestions"></datalist>
+            </div>
+            <div class="field"><label for="dm-status">Status</label>
+              <select id="dm-status">
+                <option value="not-started">Not Started</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="complete">Complete</option>
+              </select>
+            </div>
+            <div class="field"><label for="dm-date">Session date</label><input id="dm-date" type="date"></div>
+            <div class="field"><label for="dm-link">Deliverable link</label><input id="dm-link" type="url" placeholder="optional"></div>
+            <div class="field wide"><label for="dm-notes">Notes</label><textarea id="dm-notes"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="dm-submit">Log module</button>
+            <span class="save-status" id="dm-status-msg"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="fw-card" data-panel="02 · Engagement progress">
+        <h3>Engagement Progress</h3>
+        <p style="margin-top:-2px;">Every engagement with at least one module logged, modules complete out of modules planned.</p>
+        <div id="delivery-progress-list"><p class="empty-note">Nothing logged yet.</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="03 · All modules">
+        <h3>All Modules</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Engagement</th><th>Module</th><th>Status</th><th>Session date</th><th>Deliverable</th><th></th></tr></thead>
+          <tbody id="module-rows"><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
+
+      <div class="fw-card" data-panel="04 · Time log">
+        <h3>Time Log</h3>
+        <p style="margin-top:-2px;">A manual log, not a stopwatch &mdash; entered the same way everything else in this app is.</p>
+        <form class="entry-form" id="time-form">
+          <div class="form-grid">
+            <div class="field"><label for="te-pipeline">Engagement</label>
+              <select id="te-pipeline" required></select>
+            </div>
+            <div class="field"><label for="te-date">Date</label><input id="te-date" type="date"></div>
+            <div class="field"><label for="te-minutes">Minutes</label><input id="te-minutes" type="number" min="0" step="5" required></div>
+            <div class="field wide"><label for="te-note">Note</label><input id="te-note" placeholder="optional"></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn secondary" id="te-submit">Log time</button>
+            <span class="save-status" id="te-status-msg"></span>
+          </div>
+        </form>
+        <div class="table-wrap" style="margin-top:16px;"><table>
+          <thead><tr><th>Engagement</th><th>Date</th><th>Minutes</th><th>Note</th><th></th></tr></thead>
+          <tbody id="time-entry-rows"><tr><td colspan="5" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
       </div>
     </section>
 

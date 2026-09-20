@@ -32,6 +32,34 @@
   var TRACK_LABELS = {undecided:"Undecided", coaching:"Coaching", consulting:"Project Consulting", institutionalos:"InstitutionalOS Assessment"};
   var CLOSED_STAGES = {graduated:1, referred:1, lost:1};
 
+  // The four things Frankly Inspired actually sells, matching the pipeline
+  // "track" vocabulary as closely as an invoice's offering type reasonably
+  // can (an invoice is more specific than a track: a "consulting" track
+  // pipeline record could later be billed as either a Retainer or a single
+  // Project Based Engagement).
+  var OFFERING_LABELS = { "institutionalos-diagnostic": "InstitutionalOS Diagnostic", "retainer": "Advisory and Implementation Retainer", "project": "Project Based Engagement", "coaching": "1:1 Executive Coaching", "other": "Other" };
+  // Deliberately just three real, stored states - no stored "overdue", see
+  // the schema.sql comment on the invoices table for why.
+  var INVOICE_STATUS_LABELS = { draft: "Draft", sent: "Sent", paid: "Paid" };
+  // The five pillars document 9's Runbook already sequences an engagement
+  // through - offered as quick-fill suggestions on the module name field,
+  // never a hard enum (see the engagement_modules schema comment).
+  var MODULE_NAME_SUGGESTIONS = ["Governing Foundation", "Build Before the Ask", "Fundraising Fluency", "Zero to Portfolio", "Funding Pathway Finder"];
+  var MODULE_STATUS_LABELS = { "not-started": "Not Started", "scheduled": "Scheduled", "complete": "Complete" };
+
+  // An invoice is overdue when it's been sent (not still a draft, not
+  // already paid), has a due date, and that date has passed - the same
+  // derived-not-stored pattern as isOverduePipeline() above.
+  function isOverdueInvoice(inv){
+    return !!(inv.status === "sent" && inv.dueDate && inv.dueDate < todayStr());
+  }
+  function invoiceHealth(inv){
+    if(inv.status === "paid") return "good";
+    if(isOverdueInvoice(inv)) return "warn";
+    if(inv.status === "draft") return "neutral";
+    return "attn"; // sent, not yet due
+  }
+
   // A small status-health dot, generalizing the overdue highlighting into a
   // glance indicator used on Pipeline rows, Prospecting rows, and the
   // Dashboard next-actions list. Returns "" for records that don't need one
@@ -58,7 +86,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -257,9 +285,39 @@
       : (activeProspects.length + " prospect" + (activeProspects.length === 1 ? "" : "s") + " in the Prospecting list waiting on research or outreach.");
     lines.push(prospectsSentence);
 
+    var overdueInvoices = state.invoices.filter(function(inv){ return isOverdueInvoice(inv); });
+    var financeSentence = overdueInvoices.length === 0
+      ? "No overdue invoices."
+      : (overdueInvoices.length + " overdue invoice" + (overdueInvoices.length === 1 ? "" : "s") + ", " +
+         fmtMoneyShort(overdueInvoices.reduce(function(sum, inv){ return sum + (Number(inv.amount) || 0); }, 0)) + " outstanding.");
+    lines.push(financeSentence);
+
+    // Today's one focus draws from a single pool: an off-track Rock and an
+    // overdue invoice compete on equal footing, both scored by how many days
+    // past their own due date they are, rather than a Rock always winning by
+    // default. A Rock flagged off-track with no due date yet (or not yet
+    // overdue) still scores 0, so it's still picked when nothing is more
+    // overdue - the same fallback the briefing always had.
+    function daysPastDue(dateStr){
+      if(!dateStr) return 0;
+      var d = Math.round((new Date(todayStr()) - new Date(dateStr)) / 86400000);
+      return d > 0 ? d : 0;
+    }
+    var focusCandidates = [];
+    offTrackRocks.forEach(function(r){
+      focusCandidates.push({ urgency: daysPastDue(r.dueDate), text: "Get “" + esc(r.title || "the off track priority") + "” back on track." });
+    });
+    overdueInvoices.forEach(function(inv){
+      focusCandidates.push({
+        urgency: daysPastDue(inv.dueDate),
+        text: "Follow up on the overdue invoice for " + esc(pipelineLabelById(inv.pipelineId)) + ", " + fmtMoneyShort(Number(inv.amount) || 0) + " past due."
+      });
+    });
+    focusCandidates.sort(function(a, b){ return b.urgency - a.urgency; });
+
     var focus = null;
-    if(offTrackRocks.length > 0){
-      focus = "Get “" + esc(offTrackRocks[0].title || "the off track priority") + "” back on track.";
+    if(focusCandidates.length > 0){
+      focus = focusCandidates[0].text;
     } else if(dueSoon.length > 0){
       focus = esc(dueSoon[0].nextStep || "Follow up") + " with " + esc(dueSoon[0].name || "the next contact") + ", due " + fmtDate(dueSoon[0].nextStepDate) + ".";
     } else if(openIssues.length > 0){
@@ -372,8 +430,12 @@
       var stageLabel = STAGE_LABELS[p.stage] || p.stage;
       var progress = stepIdx >= 0 ? '<span class="pill">' + esc(stageLabel) + ' &middot; step ' + (stepIdx + 1) + ' of ' + CC_STAGE_PROGRESS_ORDER.length + '</span>' : '<span class="pill">' + esc(stageLabel) + '</span>';
       var deal = Number(p.dealValue) > 0 ? (' &middot; ' + fmtMoneyShort(Number(p.dealValue))) : '';
+      var mods = state.engagementModules.filter(function(m){ return m.pipelineId === p.id; });
+      var modulesPill = mods.length > 0
+        ? ' <span class="pill gold">' + mods.filter(function(m){ return m.status === "complete"; }).length + ' of ' + mods.length + ' modules</span>'
+        : '';
       return '<li' + (overdue ? ' class="row-overdue"' : '') + '>' +
-        '<span>' + dotHtml(pipelineHealth(p)) + '<span class="who">' + esc(p.name || "Untitled") + (p.org ? (' <span class="dim">(' + esc(p.org) + ')</span>') : '') + '</span> &middot; ' + esc(p.nextStep || "next step not set") + deal + '<br>' + progress + '</span>' +
+        '<span>' + dotHtml(pipelineHealth(p)) + '<span class="who">' + esc(p.name || "Untitled") + (p.org ? (' <span class="dim">(' + esc(p.org) + ')</span>') : '') + '</span> &middot; ' + esc(p.nextStep || "next step not set") + deal + '<br>' + progress + modulesPill + '</span>' +
         '<span class="when">' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span>' +
         '</li>';
     }).join("");
@@ -460,17 +522,73 @@
     }).join("");
   }
 
+  // Finance & Delivery used to be a "not yet built" callout on this panel -
+  // now that both modules are real (see Finance and Delivery views), this
+  // is a summary of the same invoices and engagement_modules records, not
+  // a separate calculation.
+  function renderCcFinanceDelivery(){
+    var statsEl = document.getElementById("cc-finance-stats");
+    var summaryEl = document.getElementById("cc-delivery-summary");
+    var listEl = document.getElementById("cc-delivery-list");
+    if(!statsEl || !listEl) return;
+
+    var openInvoices = state.invoices.filter(function(inv){ return inv.status === "sent"; });
+    var overdueInvoices = openInvoices.filter(function(inv){ return isOverdueInvoice(inv); });
+    var openTotal = openInvoices.reduce(function(sum, inv){ return sum + (Number(inv.amount) || 0); }, 0);
+    var overdueTotal = overdueInvoices.reduce(function(sum, inv){ return sum + (Number(inv.amount) || 0); }, 0);
+    var bounds = currentQuarterBounds();
+    var collected = state.invoices
+      .filter(function(inv){ return inv.status === "paid" && inv.paidDate && inv.paidDate >= bounds[0] && inv.paidDate < bounds[1]; })
+      .reduce(function(sum, inv){ return sum + (Number(inv.amount) || 0); }, 0);
+    statsEl.innerHTML = [
+      ["Outstanding (sent, unpaid)", fmtMoneyShort(openTotal)],
+      ["Overdue", fmtMoneyShort(overdueTotal) + (overdueInvoices.length ? " (" + overdueInvoices.length + ")" : "")],
+      ["Collected, " + currentQuarterLabel(), fmtMoneyShort(collected)]
+    ].map(function(pair){
+      return '<div class="stat-card"><span class="num mono">' + pair[1] + '</span><span class="cap">' + esc(pair[0]) + '</span></div>';
+    }).join("");
+
+    var byPipeline = {};
+    state.engagementModules.forEach(function(m){
+      (byPipeline[m.pipelineId] = byPipeline[m.pipelineId] || []).push(m);
+    });
+    var pipelineIds = Object.keys(byPipeline);
+    if(summaryEl){
+      summaryEl.textContent = pipelineIds.length === 0
+        ? "No delivery modules logged yet."
+        : (pipelineIds.length + " engagement" + (pipelineIds.length === 1 ? "" : "s") + " with modules in progress.");
+    }
+    if(pipelineIds.length === 0){
+      listEl.innerHTML = '<li class="empty-note" style="border:none;">Log modules for an active engagement on the Delivery view.</li>';
+      return;
+    }
+    var withProgress = pipelineIds.map(function(pid){
+      var mods = byPipeline[pid];
+      var complete = mods.filter(function(m){ return m.status === "complete"; }).length;
+      return { pid: pid, complete: complete, total: mods.length, pct: complete / mods.length };
+    }).sort(function(a, b){ return a.pct - b.pct; }).slice(0, 5);
+    listEl.innerHTML = withProgress.map(function(row){
+      return '<li><span><span class="who">' + esc(pipelineLabelById(row.pid)) + '</span></span>' +
+        '<span class="when"><span class="pill gold">' + row.complete + ' of ' + row.total + ' modules</span></span></li>';
+    }).join("");
+  }
+
   function renderCommandCenter(){
     renderCcEngagements();
     renderCcStageStats();
     renderCcRocks();
     renderCcTrendTiles();
     renderCcFieldIntel();
+    renderCcFinanceDelivery();
   }
   var ccTrendsLink = document.getElementById("cc-trends-link");
   if(ccTrendsLink) ccTrendsLink.addEventListener("click", function(e){ e.preventDefault(); goToView("forecasting"); });
   var ccFieldIntelLink = document.getElementById("cc-fieldintel-link");
   if(ccFieldIntelLink) ccFieldIntelLink.addEventListener("click", function(e){ e.preventDefault(); goToView("fieldintel"); });
+  var ccFinanceLink = document.getElementById("cc-finance-link");
+  if(ccFinanceLink) ccFinanceLink.addEventListener("click", function(e){ e.preventDefault(); goToView("finance"); });
+  var ccDeliveryLink = document.getElementById("cc-delivery-link");
+  if(ccDeliveryLink) ccDeliveryLink.addEventListener("click", function(e){ e.preventDefault(); goToView("delivery"); });
 
   // ---------- dashboard stat tiles (clickable, jump to the relevant view) ----------
   function goToView(view){
@@ -522,6 +640,9 @@
       state.gifts = data.gifts || [];
       state.vision = data.vision || null;
       state.orgLinks = data.orgLinks || [];
+      state.invoices = data.invoices || [];
+      state.engagementModules = data.engagementModules || [];
+      state.timeEntries = data.timeEntries || [];
       state.ready = true;
     });
   }
@@ -701,7 +822,7 @@
     var rows = state.scorecard;
     var body = document.getElementById("scorecard-rows");
     if(rows.length === 0){
-      body.innerHTML = '<tr><td colspan="9" class="empty-note">No weeks logged yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="11" class="empty-note">No weeks logged yet.</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function(s){
@@ -717,6 +838,8 @@
         '<td>' + esc(s.lost || 0) + '</td>' +
         '<td>' + esc(s.referrals || 0) + '</td>' +
         '<td>' + closeRate + '</td>' +
+        '<td class="mono">' + fmtMoneyShort(Number(s.revenueBooked) || 0) + '</td>' +
+        '<td class="mono">' + fmtMoneyShort(Number(s.revenueCollected) || 0) + '</td>' +
         '<td><button type="button" class="btn danger sc-delete">Remove</button></td>' +
         '</tr>';
     }).join("");
@@ -743,6 +866,8 @@
       won: Number(document.getElementById("sc-won").value || 0),
       lost: Number(document.getElementById("sc-lost").value || 0),
       referrals: Number(document.getElementById("sc-referrals").value || 0),
+      revenueBooked: Number(document.getElementById("sc-revenue-booked").value || 0),
+      revenueCollected: Number(document.getElementById("sc-revenue-collected").value || 0),
       notes: document.getElementById("sc-notes").value.trim()
     };
     apiFetch("/api/scorecard", { method: "POST", body: data }).then(function(){
@@ -862,6 +987,301 @@
       pt.addEventListener("mouseleave", hideChartTooltip);
     });
   }
+
+  // ---------- Finance & Delivery: shared "pick an engagement" helpers ----------
+  // Every invoice, module, and time entry belongs to a real Pipeline row
+  // (see the schema.sql comment on the invoices table), so all three forms
+  // share the same dropdown of engagements rather than each building their
+  // own copy of "which pipeline record is this for".
+  function pipelineOptionLabel(p){
+    return (p.name || "Untitled") + (p.org ? " (" + p.org + ")" : "");
+  }
+  function populatePipelineSelect(selectEl){
+    if(!selectEl) return;
+    var current = selectEl.value;
+    var sorted = state.pipeline.slice().sort(function(a,b){ return pipelineOptionLabel(a).localeCompare(pipelineOptionLabel(b)); });
+    if(sorted.length === 0){
+      selectEl.innerHTML = '<option value="">Add a Pipeline record first</option>';
+      return;
+    }
+    selectEl.innerHTML = sorted.map(function(p){
+      var closedTag = CLOSED_STAGES[p.stage] ? (" — " + STAGE_LABELS[p.stage]) : "";
+      return '<option value="' + esc(p.id) + '">' + esc(pipelineOptionLabel(p) + closedTag) + '</option>';
+    }).join("");
+    if(current && sorted.some(function(p){ return p.id === current; })) selectEl.value = current;
+  }
+  function pipelineLabelById(id){
+    var p = state.pipeline.filter(function(x){ return x.id === id; })[0];
+    return p ? pipelineOptionLabel(p) : "Deleted engagement";
+  }
+  function currentQuarterBounds(){
+    var d = new Date();
+    var startMonth = Math.floor(d.getMonth()/3) * 3;
+    var start = new Date(d.getFullYear(), startMonth, 1);
+    var end = new Date(d.getFullYear(), startMonth + 3, 1);
+    return [start.toISOString().slice(0,10), end.toISOString().slice(0,10)];
+  }
+
+  // ---------- Finance (invoices, AR aging, revenue) ----------
+  function renderFinance(){
+    populatePipelineSelect(document.getElementById("inv-pipeline"));
+    renderInvoiceRows();
+    renderArAging();
+    renderRevenueStats();
+  }
+  function renderInvoiceRows(){
+    var body = document.getElementById("invoice-rows");
+    if(!body) return;
+    var rows = state.invoices.slice().sort(function(a,b){ return (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); });
+    if(rows.length === 0){
+      body.innerHTML = '<tr><td colspan="6" class="empty-note">No invoices logged yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(inv){
+      var overdue = isOverdueInvoice(inv);
+      var opts = Object.keys(INVOICE_STATUS_LABELS).map(function(k){
+        return '<option value="' + k + '"' + (inv.status === k ? " selected" : "") + '>' + INVOICE_STATUS_LABELS[k] + '</option>';
+      }).join("");
+      return '<tr data-id="' + esc(inv.id) + '"' + (overdue ? ' class="row-overdue"' : '') + '>' +
+        '<td>' + dotHtml(invoiceHealth(inv)) + esc(pipelineLabelById(inv.pipelineId)) + '</td>' +
+        '<td class="dim">' + esc(OFFERING_LABELS[inv.offering] || inv.offering || "") + '</td>' +
+        '<td class="mono">' + fmtMoneyExact(inv.amount) + '</td>' +
+        '<td><select class="inline-select inv-status-select">' + opts + '</select>' + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</td>' +
+        '<td class="dim">' + (inv.dueDate ? fmtDate(inv.dueDate) : "no due date") + '</td>' +
+        '<td><button type="button" class="btn danger inv-delete">Remove</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+  function renderArAging(){
+    var el = document.getElementById("fin-ar-aging");
+    if(!el) return;
+    var open = state.invoices.filter(function(inv){ return inv.status === "sent"; });
+    var today = todayStr();
+    var buckets = { current: 0, d30: 0, d60: 0, d60plus: 0 };
+    open.forEach(function(inv){
+      var amt = Number(inv.amount) || 0;
+      if(!inv.dueDate || inv.dueDate >= today){ buckets.current += amt; return; }
+      var days = Math.round((new Date(today) - new Date(inv.dueDate)) / 86400000);
+      if(days <= 30) buckets.d30 += amt;
+      else if(days <= 60) buckets.d60 += amt;
+      else buckets.d60plus += amt;
+    });
+    el.innerHTML = [
+      ["Current", buckets.current], ["1–30 days overdue", buckets.d30],
+      ["31–60 days overdue", buckets.d60], ["60+ days overdue", buckets.d60plus]
+    ].map(function(pair){
+      return '<div class="stat-card"><span class="num mono">' + fmtMoneyShort(pair[1]) + '</span><span class="cap">' + esc(pair[0]) + '</span></div>';
+    }).join("");
+  }
+  function renderRevenueStats(){
+    var el = document.getElementById("fin-revenue-stats");
+    if(!el) return;
+    var bounds = currentQuarterBounds();
+    var qLabel = currentQuarterLabel();
+    var collected = state.invoices
+      .filter(function(inv){ return inv.status === "paid" && inv.paidDate && inv.paidDate >= bounds[0] && inv.paidDate < bounds[1]; })
+      .reduce(function(sum, inv){ return sum + (Number(inv.amount) || 0); }, 0);
+    var weeksThisQuarter = state.scorecard.filter(function(s){ return s.weekOf && s.weekOf >= bounds[0] && s.weekOf < bounds[1]; });
+    var booked = weeksThisQuarter.reduce(function(sum, s){ return sum + (Number(s.revenueBooked) || 0); }, 0);
+    var scorecardCollected = weeksThisQuarter.reduce(function(sum, s){ return sum + (Number(s.revenueCollected) || 0); }, 0);
+    el.innerHTML = [
+      ["Collected from paid invoices, " + qLabel, fmtMoneyShort(collected)],
+      ["Scorecard: revenue booked, " + qLabel, fmtMoneyShort(booked)],
+      ["Scorecard: revenue collected, " + qLabel, fmtMoneyShort(scorecardCollected)]
+    ].map(function(pair){
+      return '<div class="stat-card"><span class="num mono">' + pair[1] + '</span><span class="cap">' + esc(pair[0]) + '</span></div>';
+    }).join("");
+  }
+  document.getElementById("invoice-rows").addEventListener("change", function(e){
+    if(!e.target.classList.contains("inv-status-select")) return;
+    var id = e.target.closest("tr").getAttribute("data-id");
+    var newStatus = e.target.value;
+    var body = { status: newStatus };
+    if(newStatus === "paid"){
+      var inv = state.invoices.filter(function(i){ return i.id === id; })[0];
+      if(inv && !inv.paidDate) body.paidDate = todayStr();
+    }
+    apiFetch("/api/invoices/" + id, { method: "PATCH", body: body })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("invoice-rows").addEventListener("click", function(e){
+    var btn = e.target.closest(".inv-delete");
+    if(!btn) return;
+    var id = btn.closest("tr").getAttribute("data-id");
+    if(!confirm("Remove this invoice?")) return;
+    apiFetch("/api/invoices/" + id, { method: "DELETE" })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("invoice-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("inv-status-msg");
+    var pipelineId = document.getElementById("inv-pipeline").value;
+    if(!pipelineId){ statusEl.textContent = "Add a Pipeline record first."; return; }
+    var data = {
+      pipelineId: pipelineId,
+      offering: document.getElementById("inv-offering").value,
+      amount: Number(document.getElementById("inv-amount").value || 0),
+      status: document.getElementById("inv-status").value,
+      issuedDate: document.getElementById("inv-issued").value,
+      dueDate: document.getElementById("inv-due").value,
+      notes: document.getElementById("inv-notes").value.trim()
+    };
+    apiFetch("/api/invoices", { method: "POST", body: data }).then(function(){
+      document.getElementById("invoice-form").reset();
+      statusEl.textContent = "Logged.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+
+  // ---------- Delivery (engagement modules, progress, time log) ----------
+  function renderDelivery(){
+    populatePipelineSelect(document.getElementById("dm-pipeline"));
+    populatePipelineSelect(document.getElementById("te-pipeline"));
+    var dl = document.getElementById("dm-name-suggestions");
+    if(dl && !dl.childElementCount){
+      dl.innerHTML = MODULE_NAME_SUGGESTIONS.map(function(n){ return '<option value="' + esc(n) + '">'; }).join("");
+    }
+    renderModuleRows();
+    renderDeliveryProgress();
+    renderTimeEntryRows();
+  }
+  function renderModuleRows(){
+    var body = document.getElementById("module-rows");
+    if(!body) return;
+    var rows = state.engagementModules.slice().sort(function(a,b){ return (a.createdAt || "").localeCompare(b.createdAt || ""); });
+    if(rows.length === 0){
+      body.innerHTML = '<tr><td colspan="6" class="empty-note">No modules logged yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(m){
+      var opts = Object.keys(MODULE_STATUS_LABELS).map(function(k){
+        return '<option value="' + k + '"' + (m.status === k ? " selected" : "") + '>' + MODULE_STATUS_LABELS[k] + '</option>';
+      }).join("");
+      return '<tr data-id="' + esc(m.id) + '">' +
+        '<td>' + esc(pipelineLabelById(m.pipelineId)) + '</td>' +
+        '<td><strong>' + esc(m.moduleName || "Untitled") + '</strong></td>' +
+        '<td><select class="inline-select mod-status-select">' + opts + '</select></td>' +
+        '<td class="dim">' + (m.sessionDate ? fmtDate(m.sessionDate) : "not scheduled") + '</td>' +
+        '<td>' + (m.deliverableLink ? ('<a href="' + esc(m.deliverableLink) + '" target="_blank" rel="noopener">Open</a>') : '<span class="dim">none</span>') + '</td>' +
+        '<td><button type="button" class="btn danger mod-delete">Remove</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+  // Progress is only shown for an engagement that has at least one module
+  // logged - a plain count of "0 of 0" for every other Pipeline record
+  // would be noise, not information. Total is however many modules have
+  // actually been logged for that engagement, not a hardcoded five, since
+  // a Project Based Engagement won't always use the full five-pillar set.
+  function renderDeliveryProgress(){
+    var el = document.getElementById("delivery-progress-list");
+    if(!el) return;
+    var byPipeline = {};
+    state.engagementModules.forEach(function(m){
+      (byPipeline[m.pipelineId] = byPipeline[m.pipelineId] || []).push(m);
+    });
+    var pipelineIds = Object.keys(byPipeline);
+    if(pipelineIds.length === 0){
+      el.innerHTML = '<p class="empty-note">Nothing logged yet.</p>';
+      return;
+    }
+    el.innerHTML = pipelineIds.map(function(pid){
+      var mods = byPipeline[pid];
+      var complete = mods.filter(function(m){ return m.status === "complete"; }).length;
+      var pct = Math.round((complete / mods.length) * 100);
+      var nextSession = mods.filter(function(m){ return m.status !== "complete" && m.sessionDate; })
+        .sort(function(a,b){ return a.sessionDate.localeCompare(b.sessionDate); })[0];
+      return '<div class="dv-progress-card">' +
+        '<div class="dv-progress-head"><span class="who">' + esc(pipelineLabelById(pid)) + '</span><span class="count">' + complete + ' of ' + mods.length + ' modules complete</span></div>' +
+        '<div class="dv-progress-track"><div class="dv-progress-fill" style="width:' + pct + '%"></div></div>' +
+        (nextSession ? ('<div class="dv-progress-next">Next: ' + esc(nextSession.moduleName || "untitled module") + ', ' + fmtDate(nextSession.sessionDate) + '</div>') : '') +
+        '</div>';
+    }).join("");
+  }
+  function renderTimeEntryRows(){
+    var body = document.getElementById("time-entry-rows");
+    if(!body) return;
+    var rows = state.timeEntries.slice().sort(function(a,b){ return (b.entryDate || "").localeCompare(a.entryDate || ""); });
+    if(rows.length === 0){
+      body.innerHTML = '<tr><td colspan="5" class="empty-note">No time logged yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(t){
+      return '<tr data-id="' + esc(t.id) + '">' +
+        '<td>' + esc(pipelineLabelById(t.pipelineId)) + '</td>' +
+        '<td class="dim">' + (t.entryDate ? fmtDate(t.entryDate) : "") + '</td>' +
+        '<td class="mono">' + esc(t.minutes || 0) + '</td>' +
+        '<td class="dim">' + esc(t.note || "") + '</td>' +
+        '<td><button type="button" class="btn danger te-delete">Remove</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+  document.getElementById("module-rows").addEventListener("change", function(e){
+    if(!e.target.classList.contains("mod-status-select")) return;
+    var id = e.target.closest("tr").getAttribute("data-id");
+    apiFetch("/api/engagement-modules/" + id, { method: "PATCH", body: { status: e.target.value } })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("module-rows").addEventListener("click", function(e){
+    var btn = e.target.closest(".mod-delete");
+    if(!btn) return;
+    var id = btn.closest("tr").getAttribute("data-id");
+    if(!confirm("Remove this module?")) return;
+    apiFetch("/api/engagement-modules/" + id, { method: "DELETE" })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("module-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("dm-status-msg");
+    var pipelineId = document.getElementById("dm-pipeline").value;
+    if(!pipelineId){ statusEl.textContent = "Add a Pipeline record first."; return; }
+    var data = {
+      pipelineId: pipelineId,
+      moduleName: document.getElementById("dm-name").value.trim(),
+      status: document.getElementById("dm-status").value,
+      sessionDate: document.getElementById("dm-date").value,
+      deliverableLink: document.getElementById("dm-link").value.trim(),
+      notes: document.getElementById("dm-notes").value.trim()
+    };
+    if(!data.moduleName) return;
+    apiFetch("/api/engagement-modules", { method: "POST", body: data }).then(function(){
+      document.getElementById("module-form").reset();
+      statusEl.textContent = "Logged.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+  document.getElementById("time-entry-rows").addEventListener("click", function(e){
+    var btn = e.target.closest(".te-delete");
+    if(!btn) return;
+    var id = btn.closest("tr").getAttribute("data-id");
+    if(!confirm("Remove this time entry?")) return;
+    apiFetch("/api/time-entries/" + id, { method: "DELETE" })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("time-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("te-status-msg");
+    var pipelineId = document.getElementById("te-pipeline").value;
+    if(!pipelineId){ statusEl.textContent = "Add a Pipeline record first."; return; }
+    var data = {
+      pipelineId: pipelineId,
+      entryDate: document.getElementById("te-date").value || todayStr(),
+      minutes: Number(document.getElementById("te-minutes").value || 0),
+      note: document.getElementById("te-note").value.trim()
+    };
+    apiFetch("/api/time-entries", { method: "POST", body: data }).then(function(){
+      document.getElementById("time-form").reset();
+      statusEl.textContent = "Logged.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
 
   // ---------- Practice Trends (own-data analytics: conversion, deal size, prospect velocity) ----------
   // Unlike the forecast cards above (a linear projection from recent weeks),
@@ -2669,6 +3089,8 @@
     renderProspecting();
     renderScorecard();
     renderForecasting();
+    renderFinance();
+    renderDelivery();
     renderVision();
     renderIssues();
     renderRocks();

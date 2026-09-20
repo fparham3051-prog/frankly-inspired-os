@@ -274,6 +274,16 @@ img{max-width:100%;}
   .gb-fill{height:100%;border-radius:100px;background:var(--accent-2);}
   .gb-value{font-family:'IBM Plex Mono', monospace;font-size:0.78rem;color:var(--ink-soft);white-space:nowrap;text-align:right;}
   .gb-growth{display:inline-block;margin-left:8px;font-size:0.68rem;}
+
+  /* ---------- Delivery (engagement progress bars) ---------- */
+  .dv-progress-card{padding:12px 0;border-bottom:1px solid var(--line-soft);}
+  .dv-progress-card:last-child{border-bottom:none;}
+  .dv-progress-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px;}
+  .dv-progress-head .who{font-weight:600;}
+  .dv-progress-head .count{font-family:'IBM Plex Mono', monospace;font-size:0.8rem;color:var(--ink-soft);white-space:nowrap;}
+  .dv-progress-track{background:var(--surface-2);border-radius:100px;height:10px;overflow:hidden;}
+  .dv-progress-fill{height:100%;border-radius:100px;background:var(--good);}
+  .dv-progress-next{font-size:0.78rem;color:var(--ink-soft);margin-top:6px;}
   .gb-growth.up{color:var(--good);}
   .gb-growth.down{color:var(--warn);}
 

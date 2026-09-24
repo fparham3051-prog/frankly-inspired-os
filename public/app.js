@@ -46,6 +46,23 @@
   // never a hard enum (see the engagement_modules schema comment).
   var MODULE_NAME_SUGGESTIONS = ["Governing Foundation", "Build Before the Ask", "Fundraising Fluency", "Zero to Portfolio", "Funding Pathway Finder"];
   var MODULE_STATUS_LABELS = { "not-started": "Not Started", "scheduled": "Scheduled", "complete": "Complete" };
+  // The client-safe edition of each pillar (documents 10, 12-15 in the
+  // fundraising series), so a logged Delivery module can link straight to
+  // the actual document instead of just naming it. Matched against
+  // MODULE_NAME_SUGGESTIONS's exact five strings, never a partial or fuzzy
+  // match - module_name stays free text (a Project Based Engagement's scope
+  // won't always match a pillar exactly), so a custom name simply gets no
+  // link rather than a guessed one.
+  var MODULE_DOC_URLS = {
+    "Governing Foundation": "https://claude.ai/code/artifact/c96f2946-a928-47b3-b49e-cfbc554c523d",
+    "Build Before the Ask": "https://claude.ai/code/artifact/ae21622f-3a7f-42ba-a2e6-a828b3689197",
+    "Fundraising Fluency": "https://claude.ai/code/artifact/057b68e9-111e-48b7-a0e7-44f2298f2209",
+    "Zero to Portfolio": "https://claude.ai/code/artifact/99638d09-1324-4f56-a745-268d9d6a9d58",
+    "Funding Pathway Finder": "https://claude.ai/code/artifact/85faf60e-ee5c-4f8c-b7d6-d16879100fe1"
+  };
+  function moduleDocUrl(name){
+    return MODULE_DOC_URLS[name] || null;
+  }
 
   // An invoice is overdue when it's been sent (not still a draft, not
   // already paid), has a due date, and that date has passed - the same
@@ -112,7 +129,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], coachingSessions:[], ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -625,6 +642,8 @@
   if(ccFinanceLink) ccFinanceLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "finance"); });
   var ccDeliveryLink = document.getElementById("cc-delivery-link");
   if(ccDeliveryLink) ccDeliveryLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "delivery"); });
+  var ccCoachingLink = document.getElementById("cc-coaching-link");
+  if(ccCoachingLink) ccCoachingLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "coaching"); });
   document.getElementById("stat-tile-active").addEventListener("click", function(){ goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "pipeline"); });
   document.getElementById("stat-tile-rocks").addEventListener("click", function(){ goToView("direction"); goToTab("dir-tabs", "data-dir-tab", "priorities"); });
   document.getElementById("stat-tile-weeks").addEventListener("click", function(){ goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "scorecard"); });
@@ -674,6 +693,7 @@
       state.invoices = data.invoices || [];
       state.engagementModules = data.engagementModules || [];
       state.timeEntries = data.timeEntries || [];
+      state.coachingSessions = data.coachingSessions || [];
       state.ready = true;
     });
   }
@@ -1191,9 +1211,10 @@
       var opts = Object.keys(MODULE_STATUS_LABELS).map(function(k){
         return '<option value="' + k + '"' + (m.status === k ? " selected" : "") + '>' + MODULE_STATUS_LABELS[k] + '</option>';
       }).join("");
+      var docUrl = moduleDocUrl(m.moduleName);
       return '<tr data-id="' + esc(m.id) + '">' +
         '<td>' + esc(pipelineLabelById(m.pipelineId)) + '</td>' +
-        '<td><strong>' + esc(m.moduleName || "Untitled") + '</strong></td>' +
+        '<td><strong>' + esc(m.moduleName || "Untitled") + '</strong>' + (docUrl ? (' <a class="ics-link" href="' + docUrl + '" target="_blank" rel="noopener">Client guide &rarr;</a>') : '') + '</td>' +
         '<td><select class="inline-select mod-status-select">' + opts + '</select></td>' +
         '<td class="dim">' + (m.sessionDate ? fmtDate(m.sessionDate) : "not scheduled") + '</td>' +
         '<td>' + (m.deliverableLink ? ('<a href="' + esc(m.deliverableLink) + '" target="_blank" rel="noopener">Open</a>') : '<span class="dim">none</span>') + '</td>' +
@@ -1308,6 +1329,65 @@
     };
     apiFetch("/api/time-entries", { method: "POST", body: data }).then(function(){
       document.getElementById("time-form").reset();
+      statusEl.textContent = "Logged.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+
+  // ---------- Coaching (1:1 Executive Coaching session log) ----------
+  // The fourth real offering, and the one gap document 16's September 2026
+  // sync named directly: none of the other three offerings' logging tables
+  // fit it, since a session runs an ad hoc, leader-set agenda (document 19)
+  // rather than a fixed five-module sequence - so this is a flat log per
+  // engagement, same pipeline_id spine as Finance and Delivery, with no
+  // module-style quick-fill suggestions for topic, since there's no fixed
+  // menu to suggest from at the app layer either.
+  function renderCoaching(){
+    populatePipelineSelect(document.getElementById("coach-pipeline"));
+    renderCoachingRows();
+  }
+  function renderCoachingRows(){
+    var body = document.getElementById("coaching-rows");
+    if(!body) return;
+    var rows = state.coachingSessions.slice().sort(function(a,b){ return (b.sessionDate || "").localeCompare(a.sessionDate || ""); });
+    if(rows.length === 0){
+      body.innerHTML = '<tr><td colspan="5" class="empty-note">No coaching sessions logged yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(c){
+      return '<tr data-id="' + esc(c.id) + '">' +
+        '<td>' + esc(pipelineLabelById(c.pipelineId)) + '</td>' +
+        '<td class="dim">' + (c.sessionDate ? fmtDate(c.sessionDate) : "") + '</td>' +
+        '<td>' + esc(c.topic || "") + '</td>' +
+        '<td class="dim">' + esc(c.nextStep || "") + '</td>' +
+        '<td><button type="button" class="btn danger coach-delete">Remove</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+  document.getElementById("coaching-rows").addEventListener("click", function(e){
+    var btn = e.target.closest(".coach-delete");
+    if(!btn) return;
+    var id = btn.closest("tr").getAttribute("data-id");
+    if(!confirm("Remove this coaching session?")) return;
+    apiFetch("/api/coaching-sessions/" + id, { method: "DELETE" })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("coaching-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("coach-status-msg");
+    var pipelineId = document.getElementById("coach-pipeline").value;
+    if(!pipelineId){ statusEl.textContent = "Add a Pipeline record first."; return; }
+    var data = {
+      pipelineId: pipelineId,
+      sessionDate: document.getElementById("coach-date").value || todayStr(),
+      topic: document.getElementById("coach-topic").value.trim(),
+      notes: document.getElementById("coach-notes").value.trim(),
+      nextStep: document.getElementById("coach-next").value.trim()
+    };
+    apiFetch("/api/coaching-sessions", { method: "POST", body: data }).then(function(){
+      document.getElementById("coaching-form").reset();
       statusEl.textContent = "Logged.";
       setTimeout(function(){ statusEl.textContent = ""; }, 2200);
       return refreshAndRender();
@@ -3456,6 +3536,7 @@
     renderForecasting();
     renderFinance();
     renderDelivery();
+    renderCoaching();
     renderVision();
     renderIssues();
     renderRocks();

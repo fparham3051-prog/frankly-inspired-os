@@ -117,7 +117,7 @@
 
       <div class="fw-card" data-panel="07 · Finance & Delivery">
         <h3>Finance &amp; Delivery</h3>
-        <p style="margin-top:-2px;">Invoicing, accounts receivable, and engagement delivery, tracked against the same pipeline records as everything else on this page. <a href="#" id="cc-finance-link">Open Finance &rarr;</a> &middot; <a href="#" id="cc-delivery-link">Open Delivery &rarr;</a></p>
+        <p style="margin-top:-2px;">Invoicing, accounts receivable, engagement delivery, and coaching sessions, tracked against the same pipeline records as everything else on this page. <a href="#" id="cc-finance-link">Open Finance &rarr;</a> &middot; <a href="#" id="cc-delivery-link">Open Delivery &rarr;</a> &middot; <a href="#" id="cc-coaching-link">Open Coaching &rarr;</a></p>
         <div class="stat-grid" id="cc-finance-stats"></div>
         <p style="margin-top:14px;" id="cc-delivery-summary">Loading...</p>
         <ul class="action-list" id="cc-delivery-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
@@ -374,6 +374,7 @@
         <button type="button" class="filter-btn" data-rp-tab="trends" role="tab" aria-selected="false">Trends</button>
         <button type="button" class="filter-btn" data-rp-tab="finance" role="tab" aria-selected="false">Finance</button>
         <button type="button" class="filter-btn" data-rp-tab="delivery" role="tab" aria-selected="false">Delivery</button>
+        <button type="button" class="filter-btn" data-rp-tab="coaching" role="tab" aria-selected="false">Coaching</button>
       </div>
 
       <div class="fw-card" data-panel="01 · Pipeline records" data-rp-tab="pipeline">
@@ -650,6 +651,36 @@
         <div class="table-wrap" style="margin-top:16px;"><table>
           <thead><tr><th>Engagement</th><th>Date</th><th>Minutes</th><th>Note</th><th></th></tr></thead>
           <tbody id="time-entry-rows"><tr><td colspan="5" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
+
+      <!-- ---- Coaching tab ---- -->
+      <div class="fw-card" data-panel="14 · Log a coaching session" data-rp-tab="coaching" hidden>
+        <h3>Log a Coaching Session</h3>
+        <p style="margin-top:-2px;">1:1 Executive Coaching runs an ad hoc, leader-set agenda rather than a fixed module sequence, so this is a simple session log, tied to the same Pipeline record as everything else.</p>
+        <form class="entry-form" id="coaching-form">
+          <div class="form-title">Log a session</div>
+          <div class="form-grid">
+            <div class="field"><label for="coach-pipeline">Engagement</label>
+              <select id="coach-pipeline" required></select>
+            </div>
+            <div class="field"><label for="coach-date">Session date</label><input id="coach-date" type="date"></div>
+            <div class="field"><label for="coach-topic">Topic</label><input id="coach-topic" placeholder="what the leader brought to the call"></div>
+            <div class="field"><label for="coach-next">Next step</label><input id="coach-next" placeholder="optional"></div>
+            <div class="field wide"><label for="coach-notes">Notes</label><textarea id="coach-notes"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn" id="coach-submit">Log session</button>
+            <span class="save-status" id="coach-status-msg"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="fw-card" data-panel="15 · Coaching sessions" data-rp-tab="coaching" hidden>
+        <h3>Coaching Sessions</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Engagement</th><th>Date</th><th>Topic</th><th>Next step</th><th></th></tr></thead>
+          <tbody id="coaching-rows"><tr><td colspan="5" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
       </div>
     </section>

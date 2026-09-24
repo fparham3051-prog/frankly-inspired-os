@@ -153,6 +153,18 @@ ALTER TABLE gifts ADD COLUMN IF NOT EXISTS playbook TEXT DEFAULT '';
 -- same fact of the gift that was already publicly announced.
 ALTER TABLE gifts ADD COLUMN IF NOT EXISTS public_ok BOOLEAN DEFAULT false;
 
+-- higher_ed: an independent yes/no tag, layered on top of the Giving USA
+-- "education" category rather than splitting it into a new category key.
+-- Giving USA's own published education figure (and the year-by-year history
+-- in NATIONAL_CATEGORY_GIVING_BY_YEAR on the frontend) covers K-12, higher
+-- ed, and libraries together with no public higher-ed-only breakdown to
+-- benchmark against, so inventing a "higher-education" category key would
+-- silently break the national comparison bars for every category value this
+-- app has ever logged. This column instead lets a gift to a college or
+-- university be flagged and filtered for on its own, without touching the
+-- category taxonomy the national reference chart depends on.
+ALTER TABLE gifts ADD COLUMN IF NOT EXISTS higher_ed BOOLEAN DEFAULT false;
+
 -- Organizational 990 health: a gift's org is free text, so it's never
 -- auto-linked to a specific EIN by name alone (too many similarly-named
 -- nonprofits). org_ein_links is the one confirmed match per org name,

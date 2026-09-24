@@ -60,6 +60,32 @@
     return "attn"; // sent, not yet due
   }
 
+  // An issue that's still open (or being discussed) two weeks after it was
+  // logged is flagged stale, the same derived-not-stored pattern as an
+  // overdue invoice or pipeline record - never a status that needs its own
+  // daily syncing. A solved issue is never stale, whatever its age.
+  var ISSUE_STALE_DAYS = 14;
+  function issueAgeDays(i){
+    var logged = (i.createdAt || "").slice(0,10);
+    if(!logged) return null;
+    return Math.floor((new Date(todayStr()) - new Date(logged)) / 86400000);
+  }
+  function isStaleIssue(i){
+    if(i.status === "solved") return false;
+    var days = issueAgeDays(i);
+    return days !== null && days >= ISSUE_STALE_DAYS;
+  }
+
+  // A Priority left over from a quarter other than the current one, and not
+  // yet marked Done, is flagged the same way - a heuristic aid, not a
+  // guarantee, since "quarter" is a free-typed field here rather than a
+  // computed value.
+  function isStaleRock(r){
+    if(r.status === "done") return false;
+    var q = (r.quarter || "").trim();
+    return !!q && q !== currentQuarterLabel();
+  }
+
   // A small status-health dot, generalizing the overdue highlighting into a
   // glance indicator used on Pipeline rows, Prospecting rows, and the
   // Dashboard next-actions list. Returns "" for records that don't need one
@@ -591,13 +617,15 @@
   var ccFieldIntelLink = document.getElementById("cc-fieldintel-link");
   if(ccFieldIntelLink) ccFieldIntelLink.addEventListener("click", function(e){ e.preventDefault(); goToView("fieldintel"); });
   var ccIssuesLink = document.getElementById("cc-issues-link");
-  if(ccIssuesLink) ccIssuesLink.addEventListener("click", function(e){ e.preventDefault(); goToView("issues"); });
+  if(ccIssuesLink) ccIssuesLink.addEventListener("click", function(e){ e.preventDefault(); goToView("direction"); goToTab("dir-tabs", "data-dir-tab", "issues"); });
+  var ccRocksLink = document.getElementById("cc-rocks-link");
+  if(ccRocksLink) ccRocksLink.addEventListener("click", function(e){ e.preventDefault(); goToView("direction"); goToTab("dir-tabs", "data-dir-tab", "priorities"); });
   var ccFinanceLink = document.getElementById("cc-finance-link");
   if(ccFinanceLink) ccFinanceLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "finance"); });
   var ccDeliveryLink = document.getElementById("cc-delivery-link");
   if(ccDeliveryLink) ccDeliveryLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "delivery"); });
   document.getElementById("stat-tile-active").addEventListener("click", function(){ goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "pipeline"); });
-  document.getElementById("stat-tile-rocks").addEventListener("click", function(){ goToView("rocks"); });
+  document.getElementById("stat-tile-rocks").addEventListener("click", function(){ goToView("direction"); goToTab("dir-tabs", "data-dir-tab", "priorities"); });
   document.getElementById("stat-tile-weeks").addEventListener("click", function(){ goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "scorecard"); });
   document.getElementById("stat-tile-issues").addEventListener("click", function(){
     issueFilter = "open";
@@ -605,7 +633,8 @@
       b.classList.toggle("is-active", b.getAttribute("data-status") === "open");
     });
     renderIssues();
-    goToView("issues");
+    goToView("direction");
+    goToTab("dir-tabs", "data-dir-tab", "issues");
   });
 
   // ---------- api helpers ----------
@@ -1753,6 +1782,20 @@
     document.getElementById("v-marketing").value = v.marketing || "";
     document.getElementById("v-three").value = v.threeYear || "";
     document.getElementById("v-one").value = v.oneYear || "";
+    // Direction tab's read-only snapshot - the full six fields, unlike the
+    // Weekly Session's trimmed three-field "Vision check" (visionGlanceField
+    // is defined further down but this still works: function declarations
+    // are hoisted within this IIFE's scope).
+    var glanceEl = document.getElementById("direction-vision-glance");
+    if(glanceEl){
+      glanceEl.innerHTML =
+        visionGlanceField("Core values", v.values) +
+        visionGlanceField("Core focus, the niche and the purpose", v.focus) +
+        visionGlanceField("Ten year target", v.tenYear) +
+        visionGlanceField("Marketing strategy", v.marketing) +
+        visionGlanceField("Three year picture", v.threeYear) +
+        visionGlanceField("One year plan", v.oneYear);
+    }
   }
   document.getElementById("vision-save").addEventListener("click", function(){
     var statusEl = document.getElementById("vision-status");
@@ -1791,11 +1834,17 @@
       var opts = ["open","discussing","solved"].map(function(k){
         return '<option value="' + k + '"' + (i.status === k ? " selected" : "") + '>' + (k.charAt(0).toUpperCase()+k.slice(1)) + '</option>';
       }).join("");
-      return '<tr data-id="' + esc(i.id) + '">' +
+      var stale = isStaleIssue(i);
+      var days = issueAgeDays(i);
+      var ageText = "";
+      if(days !== null && i.status !== "solved"){
+        ageText = ' <span class="dim">&middot; ' + (days <= 0 ? "logged today" : (days === 1 ? "1 day open" : days + " days open")) + '</span>';
+      }
+      return '<tr data-id="' + esc(i.id) + '"' + (stale ? ' class="row-overdue"' : '') + '>' +
         '<td><strong>' + esc(i.title || "Untitled") + '</strong></td>' +
         '<td class="dim">' + esc(i.detail || "") + '</td>' +
-        '<td><select class="inline-select is-status-select">' + opts + '</select></td>' +
-        '<td class="dim">' + fmtDate((i.createdAt || "").slice(0,10)) + '</td>' +
+        '<td><select class="inline-select is-status-select">' + opts + '</select>' + (stale ? ' <span class="overdue-tag">Stale</span>' : '') + '</td>' +
+        '<td class="dim">' + fmtDate((i.createdAt || "").slice(0,10)) + ageText + '</td>' +
         '<td><button type="button" class="btn danger is-delete">Remove</button></td>' +
         '</tr>';
     }).join("");
@@ -1882,9 +1931,10 @@
         var label = k === "on-track" ? "On Track" : (k === "off-track" ? "Off Track" : "Done");
         return '<option value="' + k + '"' + (r.status === k ? " selected" : "") + '>' + label + '</option>';
       }).join("");
-      return '<tr data-id="' + esc(r.id) + '">' +
+      var stale = isStaleRock(r);
+      return '<tr data-id="' + esc(r.id) + '"' + (stale ? ' class="row-overdue"' : '') + '>' +
         '<td><strong>' + esc(r.title || "Untitled") + '</strong></td>' +
-        '<td class="dim">' + esc(r.quarter || "") + '</td>' +
+        '<td class="dim">' + esc(r.quarter || "") + (stale ? ' <span class="overdue-tag">Past quarter</span>' : '') + '</td>' +
         '<td><select class="inline-select rk-status-select">' + opts + '</select></td>' +
         '<td class="dim">' + fmtDate(r.dueDate) + (r.dueDate ? ' <a href="#" class="ics-link rk-ics" data-id="' + esc(r.id) + '">+ Calendar</a>' : '') + '</td>' +
         '<td class="dim">' + esc(r.notes || "") + '</td>' +
@@ -2328,6 +2378,7 @@
       });
     }
     wireTabToolbar("rp-tabs", "practice", "data-rp-tab", ".fw-card, .example-box");
+    wireTabToolbar("dir-tabs", "direction", "data-dir-tab", ".fw-card, .example-box");
 
     document.getElementById("gl-ticker-list").addEventListener("click", function(e){
       var delBtn = e.target.closest(".gift-delete");

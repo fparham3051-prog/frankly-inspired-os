@@ -166,7 +166,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, coachingSessions] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -178,7 +178,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM org_ein_links"),
       pool.query("SELECT * FROM invoices WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
       pool.query("SELECT * FROM engagement_modules WHERE archived_at IS NULL ORDER BY created_at ASC"),
-      pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC")
+      pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC"),
+      pool.query("SELECT * FROM coaching_sessions WHERE archived_at IS NULL ORDER BY session_date DESC")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -192,7 +193,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       orgLinks: orgLinks.rows.map(rowToOrgLink),
       invoices: invoices.rows.map(rowToInvoice),
       engagementModules: engagementModules.rows.map(rowToEngagementModule),
-      timeEntries: timeEntries.rows.map(rowToTimeEntry)
+      timeEntries: timeEntries.rows.map(rowToTimeEntry),
+      coachingSessions: coachingSessions.rows.map(rowToCoachingSession)
     });
   } catch (err) {
     console.error(err);
@@ -235,6 +237,9 @@ function rowToEngagementModule(r) {
 }
 function rowToTimeEntry(r) {
   return { id: r.id, pipelineId: r.pipeline_id, entryDate: r.entry_date, minutes: r.minutes === null ? 0 : Number(r.minutes), note: r.note, createdAt: r.created_at };
+}
+function rowToCoachingSession(r) {
+  return { id: r.id, pipelineId: r.pipeline_id, sessionDate: r.session_date, topic: r.topic, notes: r.notes, nextStep: r.next_step, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 
 function newId() {
@@ -513,6 +518,48 @@ app.post("/api/time-entries", requireAuth, async (req, res) => {
 });
 app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
   await archiveRow("time_entries", req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------- coaching: session log (the fourth real offering, no fixed module sequence) ----------
+app.post("/api/coaching-sessions", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  if (!b.pipelineId) return res.status(400).json({ error: "pipelineId required" });
+  const id = newId();
+  const now = new Date().toISOString();
+  try {
+    await pool.query(
+      `INSERT INTO coaching_sessions (id, pipeline_id, session_date, topic, notes, next_step, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
+      [id, b.pipelineId, b.sessionDate || now.slice(0, 10), b.topic || "", b.notes || "", b.nextStep || "", now]
+    );
+    res.json({ id });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: "could not save coaching session, check the pipeline record still exists" });
+  }
+});
+app.patch("/api/coaching-sessions/:id", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const fields = [];
+  const values = [];
+  let i = 1;
+  const map = { sessionDate: "session_date", topic: "topic", notes: "notes", nextStep: "next_step" };
+  for (const key of Object.keys(map)) {
+    if (Object.prototype.hasOwnProperty.call(b, key)) {
+      fields.push(`${map[key]} = $${i++}`);
+      values.push(b[key]);
+    }
+  }
+  fields.push(`updated_at = $${i++}`);
+  values.push(new Date().toISOString());
+  values.push(req.params.id);
+  if (fields.length === 1) return res.json({ ok: true });
+  await pool.query(`UPDATE coaching_sessions SET ${fields.join(", ")} WHERE id = $${i}`, values);
+  res.json({ ok: true });
+});
+app.delete("/api/coaching-sessions/:id", requireAuth, async (req, res) => {
+  await archiveRow("coaching_sessions", req.params.id);
   res.json({ ok: true });
 });
 
@@ -1028,7 +1075,7 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
 // whenever the database itself has to move (free-tier Postgres hosts expire
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
-const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries"];
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "coaching_sessions"];
 app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   try {
     const out = {};

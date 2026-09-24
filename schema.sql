@@ -278,3 +278,22 @@ CREATE TABLE IF NOT EXISTS time_entries (
 -- behalf, it only reflects what he logs.
 ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS revenue_booked NUMERIC DEFAULT 0;
 ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS revenue_collected NUMERIC DEFAULT 0;
+
+-- coaching_sessions: the one real logging gap the September 2026 series sync
+-- named (document 16) - 1:1 Executive Coaching, the fourth and newest of the
+-- practice's four real offerings, had no record anywhere in FIOS. A session
+-- is ad hoc, not a fixed five-module sequence (document 19 gives it a topic
+-- menu instead of a curriculum), so this stays a flat log per engagement
+-- rather than being forced into the engagement_modules shape. Same spine as
+-- everything else: a child of pipeline_id, never a parallel client list.
+CREATE TABLE IF NOT EXISTS coaching_sessions (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT NOT NULL REFERENCES pipeline(id),
+  session_date TEXT DEFAULT '',
+  topic TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  next_step TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);

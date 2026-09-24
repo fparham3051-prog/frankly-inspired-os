@@ -139,6 +139,7 @@
         <div class="stat-card"><span class="num mono" id="gl-stat-gift-count">0</span><span class="cap">major gifts logged this year</span></div>
         <div class="stat-card"><span class="num mono" id="gl-stat-gift-total">$0</span><span class="cap">tracked across those gifts</span></div>
         <div class="stat-card"><span class="num mono" id="gl-stat-state-count">0</span><span class="cap">states with a gift logged</span></div>
+        <div class="stat-card"><span class="num mono" id="gl-stat-highered-count">0</span><span class="cap">of those to higher education</span></div>
       </div>
 
       <div class="toolbar landscape-tabs" id="gl-tabs" role="tablist" aria-label="Giving Landscape sections">
@@ -170,6 +171,9 @@
         <div class="toolbar" id="gl-category-filters">
           <button type="button" class="filter-btn is-active" data-cat="all">All categories</button>
         </div>
+        <div class="toolbar" id="gl-highered-filter" style="margin-top:6px;">
+          <button type="button" class="filter-btn" id="gl-highered-toggle" aria-pressed="false">Higher ed only</button>
+        </div>
 
         <div id="gl-ticker-list"><p class="empty-note">Nothing logged yet. Add the first major gift below, or wait for this week's Field Intelligence pass.</p></div>
 
@@ -180,6 +184,7 @@
             <div class="field"><label for="gf-org">Recipient organization</label><input id="gf-org" required></div>
             <div class="field"><label for="gf-state">Recipient's state</label><select id="gf-state"></select></div>
             <div class="field"><label for="gf-category">Category</label><select id="gf-category"></select></div>
+            <div class="field" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding-top:18px;"><input type="checkbox" id="gf-higher-ed" style="width:16px;height:16px;"><label for="gf-higher-ed" style="text-transform:none;font-family:'Public Sans', sans-serif;font-size:0.85rem;letter-spacing:0;color:var(--ink);">Went to a college or university</label></div>
             <div class="field"><label for="gf-amount">Amount ($)</label><input id="gf-amount" type="number" min="0" step="1000"></div>
             <div class="field"><label for="gf-date">Announced</label><input id="gf-date" type="date"></div>
             <div class="field wide"><label for="gf-headline">Headline</label><input id="gf-headline" placeholder="short, one line"></div>
@@ -825,6 +830,9 @@
         <input type="search" class="search-input" id="pb-search" placeholder="Search org, donor, impact, trend signal, playbook...">
         <div class="toolbar" id="pb-category-filters" style="margin-top:12px;">
           <button type="button" class="filter-btn is-active" data-cat="all">All categories</button>
+        </div>
+        <div class="toolbar" id="pb-highered-filter" style="margin-top:6px;">
+          <button type="button" class="filter-btn" id="pb-highered-toggle" aria-pressed="false">Higher ed only</button>
         </div>
       </div>
 

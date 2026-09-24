@@ -122,6 +122,7 @@
   var pipelineFilter = "all";
   var issueFilter = "all";
   var giftCategoryFilter = "all";
+  var giftHigherEdOnly = false;
   var selectedGiftState = null;
   var apiReady = false;
   var usMapData = null;
@@ -2288,6 +2289,14 @@
       renderGiftTicker();
     });
 
+    var higherEdToggle = document.getElementById("gl-highered-toggle");
+    higherEdToggle.addEventListener("click", function(){
+      giftHigherEdOnly = !giftHigherEdOnly;
+      higherEdToggle.classList.toggle("is-active", giftHigherEdOnly);
+      higherEdToggle.setAttribute("aria-pressed", giftHigherEdOnly ? "true" : "false");
+      renderGiftTicker();
+    });
+
     var stateSel = document.getElementById("gf-state");
     stateSel.innerHTML = '<option value="">Not specified</option>' + US_REGIONS.map(function(r){
       return '<optgroup label="' + esc(r.name) + '">' + r.states.map(function(s){
@@ -2406,6 +2415,7 @@
         org: org,
         state: document.getElementById("gf-state").value,
         category: document.getElementById("gf-category").value,
+        higherEd: document.getElementById("gf-higher-ed").checked,
         amount: Number(document.getElementById("gf-amount").value || 0),
         announcedAt: document.getElementById("gf-date").value,
         headline: document.getElementById("gf-headline").value.trim(),
@@ -2454,6 +2464,7 @@
     var seen = {};
     gifts.forEach(function(g){ if(g.state) seen[g.state] = 1; });
     document.getElementById("gl-stat-state-count").textContent = Object.keys(seen).length;
+    document.getElementById("gl-stat-highered-count").textContent = gifts.filter(function(g){ return g.higherEd; }).length;
   }
 
   function renderGiftTicker(){
@@ -2468,6 +2479,7 @@
 
     var gifts = state.gifts.filter(function(g){
       if(giftCategoryFilter !== "all" && g.category !== giftCategoryFilter) return false;
+      if(giftHigherEdOnly && !g.higherEd) return false;
       if(selectedGiftState && g.state !== selectedGiftState) return false;
       return true;
     }).slice().sort(function(a,b){ return (b.announcedAt || b.loggedAt || "").localeCompare(a.announcedAt || a.loggedAt || ""); });
@@ -2484,7 +2496,7 @@
       return '<div class="gift-card" data-id="' + esc(g.id) + '">' +
         '<div class="gift-card-head"><h4>' + who + '</h4><span class="gift-amount">' + fmtMoneyExact(g.amount) + '</span></div>' +
         (g.headline || g.summary ? '<p>' + esc(g.headline || g.summary) + '</p>' : '') +
-        '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
+        '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span>' + (g.higherEd ? ' <span class="pill gold">Higher ed</span>' : '') + '<span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
         (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
         (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
         ' <button type="button" class="btn public-toggle' + (g.publicOk ? ' is-on' : '') + ' gift-public-toggle" data-public="' + (g.publicOk ? "1" : "0") + '" style="margin-left:8px;" title="Show this gift (just the gift, not our case-study notes) on the public Giving Landscape page.">' + (g.publicOk ? "On public page" : "Add to public page") + '</button>' +
@@ -3104,6 +3116,7 @@
   // exposed on the public Giving Landscape page.
   var playbookSearch = "";
   var playbookCategoryFilter = "all";
+  var playbookHigherEdOnly = false;
 
   function initPlaybookLibraryStatic(){
     var catBar = document.getElementById("pb-category-filters");
@@ -3116,6 +3129,13 @@
       if(!btn) return;
       playbookCategoryFilter = btn.getAttribute("data-cat");
       catBar.querySelectorAll(".filter-btn").forEach(function(b){ b.classList.toggle("is-active", b === btn); });
+      renderPlaybookLibrary();
+    });
+    var pbHigherEdToggle = document.getElementById("pb-highered-toggle");
+    pbHigherEdToggle.addEventListener("click", function(){
+      playbookHigherEdOnly = !playbookHigherEdOnly;
+      pbHigherEdToggle.classList.toggle("is-active", playbookHigherEdOnly);
+      pbHigherEdToggle.setAttribute("aria-pressed", playbookHigherEdOnly ? "true" : "false");
       renderPlaybookLibrary();
     });
     document.getElementById("pb-search").addEventListener("input", function(e){
@@ -3131,7 +3151,7 @@
     return '<div class="gift-card">' +
       '<div class="gift-card-head"><h4>' + who + '</h4><span class="gift-amount">' + fmtMoneyExact(g.amount) + '</span></div>' +
       (g.headline || g.summary ? '<p>' + esc(g.headline || g.summary) + '</p>' : '') +
-      '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span><span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
+      '<div class="gift-meta"><span class="pill">' + esc(GIFT_CATEGORY_LABELS[g.category] || g.category) + '</span>' + (g.higherEd ? ' <span class="pill gold">Higher ed</span>' : '') + '<span>' + fmtDate(g.announcedAt) + stateTag + '</span>' +
       (g.source ? (' &middot; <span>' + esc(g.source) + '</span>') : '') +
       (g.url ? (' &middot; <a href="' + esc(g.url) + '" target="_blank" rel="noopener">Read more</a>') : '') +
       '</div>' +
@@ -3143,6 +3163,7 @@
     var all = state.gifts.filter(hasCaseStudy);
     var filtered = all.filter(function(g){
       if(playbookCategoryFilter !== "all" && g.category !== playbookCategoryFilter) return false;
+      if(playbookHigherEdOnly && !g.higherEd) return false;
       if(playbookSearch){
         var haystack = [g.org, g.donor, g.headline, g.summary, g.impact, g.trendSignal, g.playbook, g.giftType, g.restriction].join(" ").toLowerCase();
         if(haystack.indexOf(playbookSearch) === -1) return false;

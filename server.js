@@ -219,7 +219,7 @@ function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
 }
 function rowToGift(r) {
-  return { id: r.id, donor: r.donor, org: r.org, state: r.state, category: r.category, amount: r.amount === null ? 0 : Number(r.amount), headline: r.headline, summary: r.summary, source: r.source, url: r.url, announcedAt: r.announced_at, loggedAt: r.logged_at, giftType: r.gift_type, restriction: r.restriction, impact: r.impact, trendSignal: r.trend_signal, playbook: r.playbook, publicOk: r.public_ok === true };
+  return { id: r.id, donor: r.donor, org: r.org, state: r.state, category: r.category, amount: r.amount === null ? 0 : Number(r.amount), headline: r.headline, summary: r.summary, source: r.source, url: r.url, announcedAt: r.announced_at, loggedAt: r.logged_at, giftType: r.gift_type, restriction: r.restriction, impact: r.impact, trendSignal: r.trend_signal, playbook: r.playbook, publicOk: r.public_ok === true, higherEd: r.higher_ed === true };
 }
 function rowToVision(r) {
   return { values: r.values_text, focus: r.focus, tenYear: r.ten_year, marketing: r.marketing, threeYear: r.three_year, oneYear: r.one_year, updatedAt: r.updated_at };
@@ -581,9 +581,9 @@ app.post("/api/gifts", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at, gift_type, restriction, impact, trend_signal, playbook)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-    [id, b.donor || "", b.org || "", b.state || "", b.category || "other", Number(b.amount || 0), b.headline || "", b.summary || "", b.source || "", b.url || "", b.announcedAt || "", now, b.giftType || "", b.restriction || "", b.impact || "", b.trendSignal || "", b.playbook || ""]
+    `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at, gift_type, restriction, impact, trend_signal, playbook, higher_ed)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+    [id, b.donor || "", b.org || "", b.state || "", b.category || "other", Number(b.amount || 0), b.headline || "", b.summary || "", b.source || "", b.url || "", b.announcedAt || "", now, b.giftType || "", b.restriction || "", b.impact || "", b.trendSignal || "", b.playbook || "", !!b.higherEd]
   );
   res.json({ id });
 });
@@ -617,10 +617,10 @@ app.post("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
     for (const item of items) {
       if (!item.id || !item.org) continue;
       await client.query(
-        `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at, gift_type, restriction, impact, trend_signal, playbook)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-         ON CONFLICT (id) DO UPDATE SET donor=$2, org=$3, state=$4, category=$5, amount=$6, headline=$7, summary=$8, source=$9, url=$10, announced_at=$11, logged_at=$12, gift_type=$13, restriction=$14, impact=$15, trend_signal=$16, playbook=$17`,
-        [item.id, item.donor || "", item.org, item.state || "", item.category || "other", Number(item.amount || 0), item.headline || "", item.summary || "", item.source || "", item.url || "", item.announcedAt || "", item.loggedAt || new Date().toISOString(), item.giftType || "", item.restriction || "", item.impact || "", item.trendSignal || "", item.playbook || ""]
+        `INSERT INTO gifts (id, donor, org, state, category, amount, headline, summary, source, url, announced_at, logged_at, gift_type, restriction, impact, trend_signal, playbook, higher_ed)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+         ON CONFLICT (id) DO UPDATE SET donor=$2, org=$3, state=$4, category=$5, amount=$6, headline=$7, summary=$8, source=$9, url=$10, announced_at=$11, logged_at=$12, gift_type=$13, restriction=$14, impact=$15, trend_signal=$16, playbook=$17, higher_ed=$18`,
+        [item.id, item.donor || "", item.org, item.state || "", item.category || "other", Number(item.amount || 0), item.headline || "", item.summary || "", item.source || "", item.url || "", item.announcedAt || "", item.loggedAt || new Date().toISOString(), item.giftType || "", item.restriction || "", item.impact || "", item.trendSignal || "", item.playbook || "", !!item.higherEd]
       );
     }
     await client.query("COMMIT");

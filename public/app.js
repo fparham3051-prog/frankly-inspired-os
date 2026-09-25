@@ -244,7 +244,7 @@
   US_REGIONS.forEach(function(r){ r.states.forEach(function(s){ STATE_NAME_BY_ABBR[s[0]] = s[1]; }); });
 
   var PROSPECT_STATUS_LABELS = {"new":"New", researching:"Researching", contacted:"Contacted", responded:"Responded", meeting:"Meeting booked", "not-fit":"Not a fit"};
-  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", other:"Other"};
+  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", research:"Weekly Research", other:"Other"};
 
   // ---------- nav ----------
   var navButtons = document.querySelectorAll("#app-nav .rail-btn");
@@ -355,6 +355,16 @@
       focusCandidates.push({
         urgency: daysPastDue(inv.dueDate),
         text: "Follow up on the overdue invoice for " + esc(pipelineLabelById(inv.pipelineId)) + ", " + fmtMoneyShort(Number(inv.amount) || 0) + " past due."
+      });
+    });
+    // A coaching engagement that's gone quiet competes in the same pool, on
+    // the same "how many days past the line" basis - no session ever logged
+    // sorts as maximally urgent rather than 0, since that's a bigger gap than
+    // any dated overdue item can be.
+    coachingEngagementSignals().filter(function(s){ return s.quiet; }).forEach(function(s){
+      focusCandidates.push({
+        urgency: s.daysSince === null ? 999999 : s.daysSince,
+        text: "Check in with " + esc(s.name) + " &mdash; " + (s.daysSince === null ? "no coaching session logged yet" : "no coaching session in " + s.daysSince + " days") + "."
       });
     });
     focusCandidates.sort(function(a, b){ return b.urgency - a.urgency; });
@@ -620,6 +630,29 @@
     renderCcTrendTiles();
     renderCcFieldIntel();
     renderCcFinanceDelivery();
+    renderCcCoaching();
+  }
+  // Same "gone quiet" signal as the Coaching tab's cadence card, condensed
+  // to the top few most-overdue engagements for the Command Center glance.
+  function renderCcCoaching(){
+    var summaryEl = document.getElementById("cc-coaching-summary");
+    var listEl = document.getElementById("cc-coaching-list");
+    if(!summaryEl || !listEl) return;
+    var signals = coachingEngagementSignals();
+    var quiet = signals.filter(function(s){ return s.quiet; });
+    if(signals.length === 0){
+      summaryEl.textContent = "No active coaching engagements.";
+      listEl.innerHTML = '<li class="empty-note" style="border:none;">Log a session for an active engagement on the Coaching tab.</li>';
+      return;
+    }
+    summaryEl.textContent = quiet.length === 0
+      ? (signals.length + " active coaching engagement" + (signals.length === 1 ? "" : "s") + ", all seen within " + COACHING_QUIET_DAYS + " days.")
+      : (quiet.length + " coaching engagement" + (quiet.length === 1 ? "" : "s") + " gone quiet, " + COACHING_QUIET_DAYS + "+ days since the last session.");
+    var shown = (quiet.length > 0 ? quiet : signals).slice(0, 5);
+    listEl.innerHTML = shown.map(function(s){
+      var when = s.daysSince === null ? "no session logged yet" : (s.daysSince + " days since last session");
+      return '<li><span><span class="who">' + esc(s.name) + '</span></span><span class="when"><span class="pill' + (s.quiet ? " gold" : "") + '">' + esc(when) + '</span></span></li>';
+    }).join("");
   }
   // ---------- masthead stat tiles + cross-links (clickable, jump to the relevant view/tab) ----------
   function goToView(view){
@@ -1346,6 +1379,51 @@
   function renderCoaching(){
     populatePipelineSelect(document.getElementById("coach-pipeline"));
     renderCoachingRows();
+    renderCoachingEngagementSummary();
+  }
+  // Coaching cadence: coaching is one of only four real offerings and, unlike
+  // an overdue invoice or an off-track Rock, an engagement that's gone quiet
+  // has no signal anywhere in the app - it just silently stops showing up.
+  // This is derived, never stored, the same convention as isOverduePipeline()
+  // and the Delivery progress list: computed fresh from coachingSessions and
+  // pipeline every render, nothing new to keep in sync.
+  var COACHING_QUIET_DAYS = 30;
+  function coachingEngagementSignals(){
+    var lastByPipeline = {};
+    state.coachingSessions.forEach(function(s){
+      var d = s.sessionDate || "";
+      if(!d) return;
+      if(!lastByPipeline[s.pipelineId] || d > lastByPipeline[s.pipelineId]) lastByPipeline[s.pipelineId] = d;
+    });
+    var today = todayStr();
+    return state.pipeline
+      .filter(function(p){ return p.track === "coaching" && !CLOSED_STAGES[p.stage]; })
+      .map(function(p){
+        var last = lastByPipeline[p.id] || null;
+        var daysSince = last ? Math.round((new Date(today) - new Date(last)) / 86400000) : null;
+        return { pipelineId: p.id, name: pipelineLabelById(p.id), lastSessionDate: last, daysSince: daysSince, quiet: daysSince === null || daysSince >= COACHING_QUIET_DAYS };
+      })
+      .sort(function(a, b){
+        if(a.daysSince === null && b.daysSince === null) return 0;
+        if(a.daysSince === null) return -1;
+        if(b.daysSince === null) return 1;
+        return b.daysSince - a.daysSince;
+      });
+  }
+  function renderCoachingEngagementSummary(){
+    var el = document.getElementById("coaching-engagement-summary");
+    if(!el) return;
+    var signals = coachingEngagementSignals();
+    if(signals.length === 0){
+      el.innerHTML = '<p class="empty-note">No active coaching engagements yet &mdash; set a Pipeline record’s track to Coaching to track one here.</p>';
+      return;
+    }
+    el.innerHTML = signals.map(function(s){
+      var when = s.daysSince === null ? "no session logged yet" : (s.daysSince + " day" + (s.daysSince === 1 ? "" : "s") + " since the last session");
+      return '<div class="dv-progress-card">' +
+        '<div class="dv-progress-head"><span class="who">' + esc(s.name) + '</span><span class="pill' + (s.quiet ? " gold" : "") + '">' + esc(when) + '</span></div>' +
+        '</div>';
+    }).join("");
   }
   function renderCoachingRows(){
     var body = document.getElementById("coaching-rows");

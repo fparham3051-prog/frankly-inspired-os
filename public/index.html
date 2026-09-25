@@ -121,6 +121,8 @@
         <div class="stat-grid" id="cc-finance-stats"></div>
         <p style="margin-top:14px;" id="cc-delivery-summary">Loading...</p>
         <ul class="action-list" id="cc-delivery-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
+        <p style="margin-top:14px;" id="cc-coaching-summary">Loading...</p>
+        <ul class="action-list" id="cc-coaching-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
       </div>
 
       <div class="example-box good">
@@ -676,7 +678,13 @@
         </form>
       </div>
 
-      <div class="fw-card" data-panel="15 · Coaching sessions" data-rp-tab="coaching" hidden>
+      <div class="fw-card" data-panel="15 · Coaching cadence" data-rp-tab="coaching" hidden>
+        <h3>Coaching Cadence</h3>
+        <p style="margin-top:-2px;">Every active coaching engagement, days since its last logged session &mdash; flagged once it passes 30 days, the same early-warning treatment an overdue invoice or an off-track priority already gets.</p>
+        <div id="coaching-engagement-summary"><p class="empty-note">Loading...</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="16 · Coaching sessions" data-rp-tab="coaching" hidden>
         <h3>Coaching Sessions</h3>
         <div class="table-wrap"><table>
           <thead><tr><th>Engagement</th><th>Date</th><th>Topic</th><th>Next step</th><th></th></tr></thead>

@@ -129,7 +129,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], coachingSessions:[], ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], coachingSessions:[], giftPatterns:null, ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -727,6 +727,7 @@
       state.engagementModules = data.engagementModules || [];
       state.timeEntries = data.timeEntries || [];
       state.coachingSessions = data.coachingSessions || [];
+      state.giftPatterns = data.giftPatterns || null;
       state.ready = true;
     });
   }
@@ -2422,6 +2423,36 @@
           '</div>';
       }).join("");
       return '<div class="digest-group"><h3>' + esc(DIGEST_CATEGORY_LABELS[g.cat] || g.cat) + '</h3>' + cards + '</div>';
+    }).join("");
+
+    renderGiftPatterns();
+  }
+
+  // Renders the standing weekly cross-gift synthesis (state.giftPatterns) -
+  // content is plain text with blank-line-separated paragraphs, written that
+  // way by the weekly automation on purpose so this can render it without a
+  // markdown parser: split on blank lines, escape, join paragraphs as <p>.
+  function renderGiftPatterns(){
+    var cardEl = document.getElementById("gift-patterns-card");
+    if(!cardEl) return;
+    var noteEl = document.getElementById("gift-patterns-note");
+    var bodyEl = document.getElementById("gift-patterns-body");
+    var gp = state.giftPatterns;
+    if(!gp || !gp.content){
+      cardEl.hidden = true;
+      return;
+    }
+    cardEl.hidden = false;
+    var countLabel = gp.giftCount ? (gp.giftCount + " gift" + (gp.giftCount === 1 ? "" : "s")) : "";
+    var windowLabel = gp.windowLabel || "";
+    var parts = [];
+    if(gp.generatedAt) parts.push("Generated " + fmtDate(gp.generatedAt.slice(0,10)));
+    if(windowLabel) parts.push(windowLabel);
+    if(countLabel) parts.push(countLabel);
+    noteEl.textContent = parts.join(" · ");
+    var paragraphs = String(gp.content).split(/\n\s*\n/).map(function(p){ return p.trim(); }).filter(Boolean);
+    bodyEl.innerHTML = paragraphs.map(function(p){
+      return '<p>' + esc(p).replace(/\n/g, "<br>") + '</p>';
     }).join("");
   }
 

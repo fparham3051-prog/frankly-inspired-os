@@ -82,7 +82,8 @@ const ADMIN_SCOPE_TOKENS = {
   digest: process.env.ADMIN_TOKEN_DIGEST || "",
   backup: process.env.ADMIN_TOKEN_BACKUP || "",
   restore: process.env.ADMIN_TOKEN_RESTORE || "",
-  status: process.env.ADMIN_TOKEN_STATUS || ""
+  status: process.env.ADMIN_TOKEN_STATUS || "",
+  giftPatterns: process.env.ADMIN_TOKEN_GIFT_PATTERNS || ""
 };
 function requireAdminScope(scope) {
   return function (req, res, next) {
@@ -166,7 +167,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, coachingSessions] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, coachingSessions, giftPatternsRes] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -179,7 +180,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM invoices WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
       pool.query("SELECT * FROM engagement_modules WHERE archived_at IS NULL ORDER BY created_at ASC"),
       pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC"),
-      pool.query("SELECT * FROM coaching_sessions WHERE archived_at IS NULL ORDER BY session_date DESC")
+      pool.query("SELECT * FROM coaching_sessions WHERE archived_at IS NULL ORDER BY session_date DESC"),
+      pool.query("SELECT * FROM gift_pattern_digests WHERE id = 'main'")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -194,7 +196,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       invoices: invoices.rows.map(rowToInvoice),
       engagementModules: engagementModules.rows.map(rowToEngagementModule),
       timeEntries: timeEntries.rows.map(rowToTimeEntry),
-      coachingSessions: coachingSessions.rows.map(rowToCoachingSession)
+      coachingSessions: coachingSessions.rows.map(rowToCoachingSession),
+      giftPatterns: giftPatternsRes.rows[0] ? rowToGiftPatterns(giftPatternsRes.rows[0]) : null
     });
   } catch (err) {
     console.error(err);
@@ -225,6 +228,9 @@ function rowToGift(r) {
 }
 function rowToVision(r) {
   return { values: r.values_text, focus: r.focus, tenYear: r.ten_year, marketing: r.marketing, threeYear: r.three_year, oneYear: r.one_year, updatedAt: r.updated_at };
+}
+function rowToGiftPatterns(r) {
+  return { content: r.content, windowLabel: r.window_label, giftCount: r.gift_count === null ? 0 : Number(r.gift_count), generatedAt: r.generated_at };
 }
 function rowToOrgLink(r) {
   return { org: r.org_name, ein: r.ein, matchedName: r.matched_name, matchedCity: r.matched_city, matchedState: r.matched_state, linkedAt: r.linked_at };
@@ -688,6 +694,36 @@ app.post("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// Admin-only read, used by the weekly gift-patterns synthesis pass to read
+// back a recent window of gifts - including the case-study fields the public
+// giving-landscape route deliberately never exposes - so it can reason across
+// them without duplicating that research itself. Read-only, same scope token
+// as the write route above; capped so a growing ticker can never make this
+// an unbounded response.
+app.get("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
+  const { rows } = await pool.query(
+    "SELECT * FROM gifts WHERE archived_at IS NULL ORDER BY announced_at DESC NULLS LAST, logged_at DESC LIMIT 100"
+  );
+  res.json({ items: rows.map(rowToGift) });
+});
+
+// Admin-only write for the weekly gift-patterns synthesis pass. Single-row
+// upsert (id 'main'), same pattern as /api/vision - each week's run replaces
+// the standing reading rather than accumulating a log, since gift_pattern_digests
+// is "the current synthesis," not a growing history the way gifts itself is.
+app.post("/api/admin/gift-patterns", requireAdminScope("giftPatterns"), async (req, res) => {
+  const b = req.body || {};
+  if (!b.content) return res.status(400).json({ error: "content required" });
+  const now = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO gift_pattern_digests (id, content, window_label, gift_count, generated_at)
+     VALUES ('main',$1,$2,$3,$4)
+     ON CONFLICT (id) DO UPDATE SET content=$1, window_label=$2, gift_count=$3, generated_at=$4`,
+    [b.content, b.windowLabel || "", Number(b.giftCount || 0), now]
+  );
+  res.json({ ok: true });
 });
 
 // ---------- automation health (admin-only write; read via /api/automation-status) ----------

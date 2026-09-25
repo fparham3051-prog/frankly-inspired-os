@@ -309,3 +309,20 @@ CREATE TABLE IF NOT EXISTS coaching_sessions (
 -- sessions, so turning this on for one engagement never exposes anything
 -- beyond bare progress for that one client.
 ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS delivery_public_ok BOOLEAN DEFAULT false;
+
+-- gift_pattern_digests: the weekly cross-gift synthesis that sits above the
+-- Weekly Gift Ticker - not a new gift record, but a standing read of what the
+-- last rolling window of tracked gifts implies together (where the money's
+-- coming from, what it means for reading the next gift, and portfolio
+-- implications for a client's own major-gift strategy). Same single-row
+-- upsert-by-fixed-id pattern as vision (id defaults to 'main') since this is
+-- always "the current reading," never a growing log the way gifts itself is -
+-- each weekly run replaces it rather than adding to it. Internal only: no
+-- public route ever selects from this table.
+CREATE TABLE IF NOT EXISTS gift_pattern_digests (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  content TEXT DEFAULT '',
+  window_label TEXT DEFAULT '',
+  gift_count INTEGER DEFAULT 0,
+  generated_at TEXT
+);

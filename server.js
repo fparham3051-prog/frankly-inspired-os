@@ -203,7 +203,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
 });
 
 function rowToPipeline(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), createdAt: r.created_at, updatedAt: r.updated_at };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), deliveryPublicOk: r.delivery_public_ok === true, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function rowToScorecard(r) {
   return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at };
@@ -288,6 +288,15 @@ app.patch("/api/pipeline/:id", requireAuth, async (req, res) => {
 app.delete("/api/pipeline/:id", requireAuth, async (req, res) => {
   await archiveRow("pipeline", req.params.id);
   res.json({ ok: true });
+});
+// Toggles whether one engagement's delivery progress appears on the public,
+// no-login Delivery status page - same on/off-per-record pattern as
+// POST /api/gifts/:id/public. Off by default, one record at a time, never a
+// blanket setting.
+app.post("/api/pipeline/:id/delivery-public", requireAuth, async (req, res) => {
+  const publicOk = !!(req.body && req.body.publicOk);
+  await pool.query("UPDATE pipeline SET delivery_public_ok = $1 WHERE id = $2", [publicOk, req.params.id]);
+  res.json({ ok: true, publicOk });
 });
 
 // ---------- scorecard ----------
@@ -839,6 +848,47 @@ app.get("/api/public/giving-landscape", async (req, res) => {
   }
 });
 
+// ---------- public, no-login Delivery status ----------
+// A per-engagement link, not an aggregate page like Giving Landscape above -
+// showing every opted-in client's progress on one shared URL would expose
+// one client's status to another, which the Giving Landscape design never
+// has to worry about since a publicly-announced gift isn't private to begin
+// with. Instead this is gated by :id, the engagement's own Pipeline row id
+// (already a crypto.randomUUID(), unguessable on its own), AND by
+// delivery_public_ok = true for that exact row - both have to hold, or the
+// route responds exactly like a record that doesn't exist at all, so it
+// never confirms or denies that a given id belongs to a real engagement.
+// The column list is a fixed whitelist: the engagement's own name/org, each
+// logged module's name and status, and one derived nextSessionDate (the
+// earliest scheduled date among not-yet-complete modules) - never a raw
+// per-module session date, notes, deliverable links, time entries, invoices,
+// or coaching sessions.
+app.get("/api/public/delivery-status/:id", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, name, org FROM pipeline WHERE id = $1 AND archived_at IS NULL AND delivery_public_ok = true",
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "not found" });
+    const modulesRes = await pool.query(
+      "SELECT module_name, status, session_date FROM engagement_modules WHERE pipeline_id = $1 AND archived_at IS NULL ORDER BY created_at ASC",
+      [req.params.id]
+    );
+    const upcoming = modulesRes.rows
+      .filter((m) => m.status !== "complete" && m.session_date)
+      .map((m) => m.session_date)
+      .sort();
+    res.json({
+      engagement: { name: rows[0].name, org: rows[0].org },
+      modules: modulesRes.rows.map((m) => ({ moduleName: m.module_name, status: m.status })),
+      nextSessionDate: upcoming[0] || null
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "failed to load delivery status" });
+  }
+});
+
 // ---------- organizational 990 health (ProPublica Nonprofit Explorer) ----------
 // A gift's "org" field is free text, so it is never auto-linked to a specific
 // EIN by name alone - a name match can be ambiguous (there are dozens of
@@ -1177,6 +1227,8 @@ app.get("/app.js", (req, res) => {
 app.get("/login.js", (req, res) => res.sendFile(path.join(__dirname, "public", "login.js")));
 app.get("/giving-landscape", (req, res) => res.sendFile(path.join(__dirname, "public", "giving-landscape-public.html")));
 app.get("/giving-landscape-public.js", (req, res) => res.sendFile(path.join(__dirname, "public", "giving-landscape-public.js")));
+app.get("/delivery-status/:id", (req, res) => res.sendFile(path.join(__dirname, "public", "delivery-status-public.html")));
+app.get("/delivery-status-public.js", (req, res) => res.sendFile(path.join(__dirname, "public", "delivery-status-public.js")));
 
 // ---------- page routes ----------
 app.get("/", (req, res) => {

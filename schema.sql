@@ -297,3 +297,15 @@ CREATE TABLE IF NOT EXISTS coaching_sessions (
   updated_at TEXT,
   archived_at TEXT
 );
+
+-- delivery_public_ok: opt-in flag for the unauthenticated public Delivery
+-- status page (GET /api/public/delivery-status/:id and /delivery-status/:id
+-- in server.js), same pattern as gifts.public_ok. Defaults to false on
+-- purpose - an engagement never becomes visible on that page until Franklin
+-- explicitly turns it on for that one Pipeline record from the Delivery tab.
+-- The public route only ever selects the engagement's name/org and each
+-- logged module's name and status - it never selects module notes,
+-- deliverable links, session dates, time entries, invoices, or coaching
+-- sessions, so turning this on for one engagement never exposes anything
+-- beyond bare progress for that one client.
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS delivery_public_ok BOOLEAN DEFAULT false;

@@ -716,7 +716,8 @@ const JOB_REGISTRY = [
   { key: "lead-import", label: "Website + Calendly + assessment lead import", cadenceHours: 24 + 6 },
   { key: "field-intel", label: "Weekly Field Intelligence refresh", cadenceHours: 7 * 24 + 24 },
   { key: "calendar-briefing", label: "Weekly calendar prep briefing", cadenceHours: 7 * 24 + 24 },
-  { key: "pipeline-review", label: "Weekly pipeline review", cadenceHours: 7 * 24 + 24 }
+  { key: "pipeline-review", label: "Weekly pipeline review", cadenceHours: 7 * 24 + 24 },
+  { key: "prospect-research", label: "Weekly Prospect Research", cadenceHours: 7 * 24 + 24 }
 ];
 
 app.get("/api/automation-status", requireAuth, async (req, res) => {

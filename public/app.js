@@ -1278,10 +1278,16 @@
       var pct = Math.round((complete / mods.length) * 100);
       var nextSession = mods.filter(function(m){ return m.status !== "complete" && m.sessionDate; })
         .sort(function(a,b){ return a.sessionDate.localeCompare(b.sessionDate); })[0];
-      return '<div class="dv-progress-card">' +
+      var p = state.pipeline.filter(function(x){ return x.id === pid; })[0];
+      var isPublic = !!(p && p.deliveryPublicOk);
+      return '<div class="dv-progress-card" data-id="' + esc(pid) + '">' +
         '<div class="dv-progress-head"><span class="who">' + esc(pipelineLabelById(pid)) + '</span><span class="count">' + complete + ' of ' + mods.length + ' modules complete</span></div>' +
         '<div class="dv-progress-track"><div class="dv-progress-fill" style="width:' + pct + '%"></div></div>' +
         (nextSession ? ('<div class="dv-progress-next">Next: ' + esc(nextSession.moduleName || "untitled module") + ', ' + fmtDate(nextSession.sessionDate) + '</div>') : '') +
+        '<div class="dv-progress-actions" style="margin-top:8px;">' +
+        '<button type="button" class="btn public-toggle' + (isPublic ? ' is-on' : '') + ' delivery-public-toggle" data-public="' + (isPublic ? "1" : "0") + '" title="Share just this engagement\'s module names and status (no notes, no financials) on a private, unguessable client link.">' + (isPublic ? "Client link on" : "Turn on client link") + '</button>' +
+        (isPublic ? (' <button type="button" class="btn delivery-copy-link" style="margin-left:8px;">Copy client link</button>') : '') +
+        '</div>' +
         '</div>';
     }).join("");
   }
@@ -2560,6 +2566,30 @@
         var gid = pubBtn.closest(".gift-card").getAttribute("data-id");
         var nextVal = pubBtn.getAttribute("data-public") !== "1";
         apiFetch("/api/gifts/" + gid + "/public", { method: "POST", body: { publicOk: nextVal } }).then(refreshAndRender).catch(function(err){ console.error(err); });
+      }
+    });
+
+    document.getElementById("delivery-progress-list").addEventListener("click", function(e){
+      var pubBtn = e.target.closest(".delivery-public-toggle");
+      if(pubBtn){
+        var pid = pubBtn.closest(".dv-progress-card").getAttribute("data-id");
+        var nextVal = pubBtn.getAttribute("data-public") !== "1";
+        apiFetch("/api/pipeline/" + pid + "/delivery-public", { method: "POST", body: { publicOk: nextVal } }).then(refreshAndRender).catch(function(err){ console.error(err); });
+        return;
+      }
+      var copyBtn = e.target.closest(".delivery-copy-link");
+      if(copyBtn){
+        var pid2 = copyBtn.closest(".dv-progress-card").getAttribute("data-id");
+        var link = location.origin + "/delivery-status/" + pid2;
+        var restoreLabel = copyBtn.textContent;
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(link).then(function(){
+            copyBtn.textContent = "Copied!";
+            setTimeout(function(){ copyBtn.textContent = restoreLabel; }, 1500);
+          }).catch(function(){ window.prompt("Copy this link:", link); });
+        } else {
+          window.prompt("Copy this link:", link);
+        }
       }
     });
 

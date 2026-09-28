@@ -1,1 +1,57 @@
+name: CI
 
+# The gate this repo has never had: catch a broken deploy before Render
+# picks it up, not after. Two independent checks, one that always runs
+# and needs no setup, one that's real but opt-in because it needs a secret.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  syntax-check:
+    name: Syntax check every JS file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - name: node --check on every tracked .js file
+        run: |
+          set -e
+          status=0
+          while IFS= read -r -d '' f; do
+            echo "checking $f"
+            node --check "$f" || status=1
+          done < <(git ls-files -z '*.js')
+          exit $status
+
+  smoke-test:
+    name: Smoke test the live deploy
+    runs-on: ubuntu-latest
+    needs: syntax-check
+    # Only runs once ADMIN_TOKEN is added as a repo secret (Settings ->
+    # Secrets and variables -> Actions). Until then this job is skipped,
+    # not failed - the syntax check above still gates every push on its
+    # own. This checks whatever is *currently live* on Render, so on a
+    # push it's really confirming the previous deploy is healthy; it is
+    # not yet wired to wait for this push's own deploy to finish first.
+    if: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - name: Run scripts/smoke-test.js against production
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "ADMIN_TOKEN secret not set - skipping smoke test. Add it in repo Settings > Secrets and variables > Actions to turn this on."
+            exit 0
+          fi
+          node scripts/smoke-test.js https://frankly-inspired-os.onrender.com

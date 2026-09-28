@@ -5,6 +5,8 @@ const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const compression = require("compression");
+const helmet = require("helmet");
 const { Pool } = require("pg");
 
 const PORT = process.env.PORT || 10000;
@@ -131,6 +133,15 @@ setInterval(() => {
 
 const app = express();
 app.set("trust proxy", 1);
+// Baseline security headers (X-Content-Type-Options, X-Frame-Options,
+// Referrer-Policy, and dropping the X-Powered-By: Express fingerprint,
+// among others). Content-Security-Policy is explicitly left off for now:
+// index.html relies on inline style="" attributes throughout, and
+// helmet's default CSP would block them and break the page's layout.
+// Turning a real CSP on needs a pass moving those onto classes first -
+// tracked as follow-up, not attempted here so this doesn't ship broken.
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 

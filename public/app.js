@@ -46,23 +46,18 @@
   // never a hard enum (see the engagement_modules schema comment).
   var MODULE_NAME_SUGGESTIONS = ["Governing Foundation", "Build Before the Ask", "Fundraising Fluency", "Zero to Portfolio", "Funding Pathway Finder"];
   var MODULE_STATUS_LABELS = { "not-started": "Not Started", "scheduled": "Scheduled", "complete": "Complete" };
-  // The client-safe edition of each pillar (documents 10, 12-15 in the
-  // fundraising series), so a logged Delivery module can link straight to
-  // the actual document instead of just naming it. Matched against
-  // MODULE_NAME_SUGGESTIONS's exact five strings, never a partial or fuzzy
-  // match - module_name stays free text (a Project Based Engagement's scope
-  // won't always match a pillar exactly), so a custom name simply gets no
-  // link rather than a guessed one.
-  var MODULE_DOC_URLS = {
-    "Governing Foundation": "https://claude.ai/code/artifact/c96f2946-a928-47b3-b49e-cfbc554c523d",
-    "Build Before the Ask": "https://claude.ai/code/artifact/ae21622f-3a7f-42ba-a2e6-a828b3689197",
-    "Fundraising Fluency": "https://claude.ai/code/artifact/057b68e9-111e-48b7-a0e7-44f2298f2209",
-    "Zero to Portfolio": "https://claude.ai/code/artifact/99638d09-1324-4f56-a745-268d9d6a9d58",
-    "Funding Pathway Finder": "https://claude.ai/code/artifact/85faf60e-ee5c-4f8c-b7d6-d16879100fe1"
+  // Encounters: two independent classifications (how contact happened vs.
+  // where it left the relationship), plus a next-step datalist keyed by
+  // stage - the same quick-fill-not-enum pattern as MODULE_NAME_SUGGESTIONS,
+  // just picked dynamically instead of one fixed list.
+  var INTERACTION_TYPE_LABELS = { call:"Call", meeting:"Meeting", email:"Email", letter:"Letter / mail", event:"Event", social:"Social touch", other:"Other" };
+  var RELATIONSHIP_STAGE_LABELS = { identification:"Identification", cultivation:"Cultivation", solicitation:"Solicitation", stewardship:"Stewardship" };
+  var NEXT_STEP_SUGGESTIONS_BY_STAGE = {
+    identification: ["Schedule an introductory call", "Research organization and giving history", "Identify a warm connection point", "Add to prospect pipeline"],
+    cultivation: ["Schedule a follow-up meeting", "Send relevant case for support materials", "Invite to an upcoming event", "Arrange a board or staff introduction"],
+    solicitation: ["Prepare and deliver a proposal", "Schedule the ask meeting", "Follow up on a pending ask", "Confirm gift terms and next steps"],
+    stewardship: ["Send a thank-you and acknowledgment", "Share an impact report", "Schedule a stewardship touch", "Invite to a recognition event"]
   };
-  function moduleDocUrl(name){
-    return MODULE_DOC_URLS[name] || null;
-  }
 
   // An invoice is overdue when it's been sent (not still a draft, not
   // already paid), has a due date, and that date has passed - the same
@@ -129,7 +124,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], coachingSessions:[], giftPatterns:null, ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -244,7 +239,7 @@
   US_REGIONS.forEach(function(r){ r.states.forEach(function(s){ STATE_NAME_BY_ABBR[s[0]] = s[1]; }); });
 
   var PROSPECT_STATUS_LABELS = {"new":"New", researching:"Researching", contacted:"Contacted", responded:"Responded", meeting:"Meeting booked", "not-fit":"Not a fit"};
-  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", research:"Weekly Research", other:"Other"};
+  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", other:"Other"};
 
   // ---------- nav ----------
   var navButtons = document.querySelectorAll("#app-nav .rail-btn");
@@ -355,16 +350,6 @@
       focusCandidates.push({
         urgency: daysPastDue(inv.dueDate),
         text: "Follow up on the overdue invoice for " + esc(pipelineLabelById(inv.pipelineId)) + ", " + fmtMoneyShort(Number(inv.amount) || 0) + " past due."
-      });
-    });
-    // A coaching engagement that's gone quiet competes in the same pool, on
-    // the same "how many days past the line" basis - no session ever logged
-    // sorts as maximally urgent rather than 0, since that's a bigger gap than
-    // any dated overdue item can be.
-    coachingEngagementSignals().filter(function(s){ return s.quiet; }).forEach(function(s){
-      focusCandidates.push({
-        urgency: s.daysSince === null ? 999999 : s.daysSince,
-        text: "Check in with " + esc(s.name) + " &mdash; " + (s.daysSince === null ? "no coaching session logged yet" : "no coaching session in " + s.daysSince + " days") + "."
       });
     });
     focusCandidates.sort(function(a, b){ return b.urgency - a.urgency; });
@@ -630,29 +615,6 @@
     renderCcTrendTiles();
     renderCcFieldIntel();
     renderCcFinanceDelivery();
-    renderCcCoaching();
-  }
-  // Same "gone quiet" signal as the Coaching tab's cadence card, condensed
-  // to the top few most-overdue engagements for the Command Center glance.
-  function renderCcCoaching(){
-    var summaryEl = document.getElementById("cc-coaching-summary");
-    var listEl = document.getElementById("cc-coaching-list");
-    if(!summaryEl || !listEl) return;
-    var signals = coachingEngagementSignals();
-    var quiet = signals.filter(function(s){ return s.quiet; });
-    if(signals.length === 0){
-      summaryEl.textContent = "No active coaching engagements.";
-      listEl.innerHTML = '<li class="empty-note" style="border:none;">Log a session for an active engagement on the Coaching tab.</li>';
-      return;
-    }
-    summaryEl.textContent = quiet.length === 0
-      ? (signals.length + " active coaching engagement" + (signals.length === 1 ? "" : "s") + ", all seen within " + COACHING_QUIET_DAYS + " days.")
-      : (quiet.length + " coaching engagement" + (quiet.length === 1 ? "" : "s") + " gone quiet, " + COACHING_QUIET_DAYS + "+ days since the last session.");
-    var shown = (quiet.length > 0 ? quiet : signals).slice(0, 5);
-    listEl.innerHTML = shown.map(function(s){
-      var when = s.daysSince === null ? "no session logged yet" : (s.daysSince + " days since last session");
-      return '<li><span><span class="who">' + esc(s.name) + '</span></span><span class="when"><span class="pill' + (s.quiet ? " gold" : "") + '">' + esc(when) + '</span></span></li>';
-    }).join("");
   }
   // ---------- masthead stat tiles + cross-links (clickable, jump to the relevant view/tab) ----------
   function goToView(view){
@@ -675,8 +637,6 @@
   if(ccFinanceLink) ccFinanceLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "finance"); });
   var ccDeliveryLink = document.getElementById("cc-delivery-link");
   if(ccDeliveryLink) ccDeliveryLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "delivery"); });
-  var ccCoachingLink = document.getElementById("cc-coaching-link");
-  if(ccCoachingLink) ccCoachingLink.addEventListener("click", function(e){ e.preventDefault(); goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "coaching"); });
   document.getElementById("stat-tile-active").addEventListener("click", function(){ goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "pipeline"); });
   document.getElementById("stat-tile-rocks").addEventListener("click", function(){ goToView("direction"); goToTab("dir-tabs", "data-dir-tab", "priorities"); });
   document.getElementById("stat-tile-weeks").addEventListener("click", function(){ goToView("practice"); goToTab("rp-tabs", "data-rp-tab", "scorecard"); });
@@ -726,8 +686,7 @@
       state.invoices = data.invoices || [];
       state.engagementModules = data.engagementModules || [];
       state.timeEntries = data.timeEntries || [];
-      state.coachingSessions = data.coachingSessions || [];
-      state.giftPatterns = data.giftPatterns || null;
+      state.encounters = data.encounters || [];
       state.ready = true;
     });
   }
@@ -1245,10 +1204,9 @@
       var opts = Object.keys(MODULE_STATUS_LABELS).map(function(k){
         return '<option value="' + k + '"' + (m.status === k ? " selected" : "") + '>' + MODULE_STATUS_LABELS[k] + '</option>';
       }).join("");
-      var docUrl = moduleDocUrl(m.moduleName);
       return '<tr data-id="' + esc(m.id) + '">' +
         '<td>' + esc(pipelineLabelById(m.pipelineId)) + '</td>' +
-        '<td><strong>' + esc(m.moduleName || "Untitled") + '</strong>' + (docUrl ? (' <a class="ics-link" href="' + docUrl + '" target="_blank" rel="noopener">Client guide &rarr;</a>') : '') + '</td>' +
+        '<td><strong>' + esc(m.moduleName || "Untitled") + '</strong></td>' +
         '<td><select class="inline-select mod-status-select">' + opts + '</select></td>' +
         '<td class="dim">' + (m.sessionDate ? fmtDate(m.sessionDate) : "not scheduled") + '</td>' +
         '<td>' + (m.deliverableLink ? ('<a href="' + esc(m.deliverableLink) + '" target="_blank" rel="noopener">Open</a>') : '<span class="dim">none</span>') + '</td>' +
@@ -1279,16 +1237,10 @@
       var pct = Math.round((complete / mods.length) * 100);
       var nextSession = mods.filter(function(m){ return m.status !== "complete" && m.sessionDate; })
         .sort(function(a,b){ return a.sessionDate.localeCompare(b.sessionDate); })[0];
-      var p = state.pipeline.filter(function(x){ return x.id === pid; })[0];
-      var isPublic = !!(p && p.deliveryPublicOk);
-      return '<div class="dv-progress-card" data-id="' + esc(pid) + '">' +
+      return '<div class="dv-progress-card">' +
         '<div class="dv-progress-head"><span class="who">' + esc(pipelineLabelById(pid)) + '</span><span class="count">' + complete + ' of ' + mods.length + ' modules complete</span></div>' +
         '<div class="dv-progress-track"><div class="dv-progress-fill" style="width:' + pct + '%"></div></div>' +
         (nextSession ? ('<div class="dv-progress-next">Next: ' + esc(nextSession.moduleName || "untitled module") + ', ' + fmtDate(nextSession.sessionDate) + '</div>') : '') +
-        '<div class="dv-progress-actions" style="margin-top:8px;">' +
-        '<button type="button" class="btn public-toggle' + (isPublic ? ' is-on' : '') + ' delivery-public-toggle" data-public="' + (isPublic ? "1" : "0") + '" title="Share just this engagement\'s module names and status (no notes, no financials) on a private, unguessable client link.">' + (isPublic ? "Client link on" : "Turn on client link") + '</button>' +
-        (isPublic ? (' <button type="button" class="btn delivery-copy-link" style="margin-left:8px;">Copy client link</button>') : '') +
-        '</div>' +
         '</div>';
     }).join("");
   }
@@ -1375,105 +1327,105 @@
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
   });
 
-  // ---------- Coaching (1:1 Executive Coaching session log) ----------
-  // The fourth real offering, and the one gap document 16's September 2026
-  // sync named directly: none of the other three offerings' logging tables
-  // fit it, since a session runs an ad hoc, leader-set agenda (document 19)
-  // rather than a fixed five-module sequence - so this is a flat log per
-  // engagement, same pipeline_id spine as Finance and Delivery, with no
-  // module-style quick-fill suggestions for topic, since there's no fixed
-  // menu to suggest from at the app layer either.
-  function renderCoaching(){
-    populatePipelineSelect(document.getElementById("coach-pipeline"));
-    renderCoachingRows();
-    renderCoachingEngagementSummary();
+  // ---------- Encounters (dated contact reports, built on a peer's recommendation) ----------
+  function renderEncounters(){
+    populatePipelineSelect(document.getElementById("en-pipeline"));
+    refreshNextStepSuggestions();
+    refreshLoggedBySuggestions();
+    renderEncounterRows();
   }
-  // Coaching cadence: coaching is one of only four real offerings and, unlike
-  // an overdue invoice or an off-track Rock, an engagement that's gone quiet
-  // has no signal anywhere in the app - it just silently stops showing up.
-  // This is derived, never stored, the same convention as isOverduePipeline()
-  // and the Delivery progress list: computed fresh from coachingSessions and
-  // pipeline every render, nothing new to keep in sync.
-  var COACHING_QUIET_DAYS = 30;
-  function coachingEngagementSignals(){
-    var lastByPipeline = {};
-    state.coachingSessions.forEach(function(s){
-      var d = s.sessionDate || "";
-      if(!d) return;
-      if(!lastByPipeline[s.pipelineId] || d > lastByPipeline[s.pipelineId]) lastByPipeline[s.pipelineId] = d;
+  function refreshNextStepSuggestions(){
+    var dl = document.getElementById("en-next-suggestions");
+    var stageEl = document.getElementById("en-stage");
+    if(!dl || !stageEl) return;
+    var list = NEXT_STEP_SUGGESTIONS_BY_STAGE[stageEl.value] || [];
+    dl.innerHTML = list.map(function(s){ return '<option value="' + esc(s) + '">'; }).join("");
+  }
+  // Built from every logged_by value already on record, not a maintained
+  // staff list somewhere else - the same demand-before-infrastructure
+  // reasoning behind MODULE_NAME_SUGGESTIONS: a real second table for
+  // staff names isn't worth it until this one datalist actually falls short.
+  function refreshLoggedBySuggestions(){
+    var dl = document.getElementById("en-logged-by-suggestions");
+    if(!dl) return;
+    var names = [];
+    state.encounters.forEach(function(e){
+      if(e.loggedBy && names.indexOf(e.loggedBy) === -1) names.push(e.loggedBy);
     });
-    var today = todayStr();
-    return state.pipeline
-      .filter(function(p){ return p.track === "coaching" && !CLOSED_STAGES[p.stage]; })
-      .map(function(p){
-        var last = lastByPipeline[p.id] || null;
-        var daysSince = last ? Math.round((new Date(today) - new Date(last)) / 86400000) : null;
-        return { pipelineId: p.id, name: pipelineLabelById(p.id), lastSessionDate: last, daysSince: daysSince, quiet: daysSince === null || daysSince >= COACHING_QUIET_DAYS };
-      })
-      .sort(function(a, b){
-        if(a.daysSince === null && b.daysSince === null) return 0;
-        if(a.daysSince === null) return -1;
-        if(b.daysSince === null) return 1;
-        return b.daysSince - a.daysSince;
-      });
+    names.sort();
+    dl.innerHTML = names.map(function(n){ return '<option value="' + esc(n) + '">'; }).join("");
   }
-  function renderCoachingEngagementSummary(){
-    var el = document.getElementById("coaching-engagement-summary");
-    if(!el) return;
-    var signals = coachingEngagementSignals();
-    if(signals.length === 0){
-      el.innerHTML = '<p class="empty-note">No active coaching engagements yet &mdash; set a Pipeline record’s track to Coaching to track one here.</p>';
-      return;
-    }
-    el.innerHTML = signals.map(function(s){
-      var when = s.daysSince === null ? "no session logged yet" : (s.daysSince + " day" + (s.daysSince === 1 ? "" : "s") + " since the last session");
-      return '<div class="dv-progress-card">' +
-        '<div class="dv-progress-head"><span class="who">' + esc(s.name) + '</span><span class="pill' + (s.quiet ? " gold" : "") + '">' + esc(when) + '</span></div>' +
-        '</div>';
-    }).join("");
-  }
-  function renderCoachingRows(){
-    var body = document.getElementById("coaching-rows");
+  function renderEncounterRows(){
+    var body = document.getElementById("encounter-rows");
     if(!body) return;
-    var rows = state.coachingSessions.slice().sort(function(a,b){ return (b.sessionDate || "").localeCompare(a.sessionDate || ""); });
+    var rows = state.encounters.slice().sort(function(a,b){
+      return (b.occurredAt || "").localeCompare(a.occurredAt || "") || (b.createdAt || "").localeCompare(a.createdAt || "");
+    });
     if(rows.length === 0){
-      body.innerHTML = '<tr><td colspan="5" class="empty-note">No coaching sessions logged yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="empty-note">No encounters logged yet.</td></tr>';
       return;
     }
-    body.innerHTML = rows.map(function(c){
-      return '<tr data-id="' + esc(c.id) + '">' +
-        '<td>' + esc(pipelineLabelById(c.pipelineId)) + '</td>' +
-        '<td class="dim">' + (c.sessionDate ? fmtDate(c.sessionDate) : "") + '</td>' +
-        '<td>' + esc(c.topic || "") + '</td>' +
-        '<td class="dim">' + esc(c.nextStep || "") + '</td>' +
-        '<td><button type="button" class="btn danger coach-delete">Remove</button></td>' +
+    body.innerHTML = rows.map(function(en){
+      return '<tr data-id="' + esc(en.id) + '">' +
+        '<td class="dim">' + (en.occurredAt ? fmtDate(en.occurredAt) : "") + '</td>' +
+        '<td>' + esc(pipelineLabelById(en.pipelineId)) + '</td>' +
+        '<td>' + esc(en.contactName || "") + '</td>' +
+        '<td>' + esc(INTERACTION_TYPE_LABELS[en.interactionType] || en.interactionType || "") + '</td>' +
+        '<td>' + esc(RELATIONSHIP_STAGE_LABELS[en.relationshipStage] || en.relationshipStage || "") + '</td>' +
+        '<td class="dim">' + esc(en.nextStep || "") + '</td>' +
+        '<td class="dim">' + esc(en.loggedBy || "") + '</td>' +
+        '<td><button type="button" class="btn danger en-delete">Remove</button></td>' +
         '</tr>';
     }).join("");
   }
-  document.getElementById("coaching-rows").addEventListener("click", function(e){
-    var btn = e.target.closest(".coach-delete");
+  document.getElementById("en-stage").addEventListener("change", refreshNextStepSuggestions);
+  document.getElementById("en-new-contact").addEventListener("change", function(e){
+    var isNew = e.target.checked;
+    document.getElementById("en-pipeline-field").hidden = isNew;
+    document.getElementById("en-pipeline").required = !isNew;
+    document.getElementById("en-new-name-field").hidden = !isNew;
+    document.getElementById("en-new-org-field").hidden = !isNew;
+  });
+  document.getElementById("encounter-rows").addEventListener("click", function(e){
+    var btn = e.target.closest(".en-delete");
     if(!btn) return;
     var id = btn.closest("tr").getAttribute("data-id");
-    if(!confirm("Remove this coaching session?")) return;
-    apiFetch("/api/coaching-sessions/" + id, { method: "DELETE" })
+    if(!confirm("Remove this encounter?")) return;
+    apiFetch("/api/encounters/" + id, { method: "DELETE" })
       .then(refreshAndRender)
       .catch(function(err){ console.error(err); });
   });
-  document.getElementById("coaching-form").addEventListener("submit", function(e){
+  document.getElementById("encounter-form").addEventListener("submit", function(e){
     e.preventDefault();
-    var statusEl = document.getElementById("coach-status-msg");
-    var pipelineId = document.getElementById("coach-pipeline").value;
-    if(!pipelineId){ statusEl.textContent = "Add a Pipeline record first."; return; }
+    var statusEl = document.getElementById("en-status-msg");
+    var isNew = document.getElementById("en-new-contact").checked;
     var data = {
-      pipelineId: pipelineId,
-      sessionDate: document.getElementById("coach-date").value || todayStr(),
-      topic: document.getElementById("coach-topic").value.trim(),
-      notes: document.getElementById("coach-notes").value.trim(),
-      nextStep: document.getElementById("coach-next").value.trim()
+      contactName: document.getElementById("en-contact-name").value.trim(),
+      occurredAt: document.getElementById("en-date").value,
+      interactionType: document.getElementById("en-type").value,
+      relationshipStage: document.getElementById("en-stage").value,
+      reason: document.getElementById("en-reason").value.trim(),
+      nextStep: document.getElementById("en-next").value.trim(),
+      nextStepDate: document.getElementById("en-next-date").value,
+      summary: document.getElementById("en-summary").value.trim(),
+      loggedBy: document.getElementById("en-logged-by").value.trim()
     };
-    apiFetch("/api/coaching-sessions", { method: "POST", body: data }).then(function(){
-      document.getElementById("coaching-form").reset();
-      statusEl.textContent = "Logged.";
+    if(isNew){
+      var newName = document.getElementById("en-new-name").value.trim();
+      if(!newName){ statusEl.textContent = "Enter the new contact's name or organization."; return; }
+      data.newContactName = newName;
+      data.newContactOrg = document.getElementById("en-new-org").value.trim();
+    } else {
+      var pipelineId = document.getElementById("en-pipeline").value;
+      if(!pipelineId){ statusEl.textContent = "Pick an engagement, or check “new contact.”"; return; }
+      data.pipelineId = pipelineId;
+    }
+    apiFetch("/api/encounters", { method: "POST", body: data }).then(function(){
+      document.getElementById("encounter-form").reset();
+      document.getElementById("en-pipeline-field").hidden = false;
+      document.getElementById("en-new-name-field").hidden = true;
+      document.getElementById("en-new-org-field").hidden = true;
+      statusEl.textContent = "Submitted.";
       setTimeout(function(){ statusEl.textContent = ""; }, 2200);
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
@@ -2424,36 +2376,6 @@
       }).join("");
       return '<div class="digest-group"><h3>' + esc(DIGEST_CATEGORY_LABELS[g.cat] || g.cat) + '</h3>' + cards + '</div>';
     }).join("");
-
-    renderGiftPatterns();
-  }
-
-  // Renders the standing weekly cross-gift synthesis (state.giftPatterns) -
-  // content is plain text with blank-line-separated paragraphs, written that
-  // way by the weekly automation on purpose so this can render it without a
-  // markdown parser: split on blank lines, escape, join paragraphs as <p>.
-  function renderGiftPatterns(){
-    var cardEl = document.getElementById("gift-patterns-card");
-    if(!cardEl) return;
-    var noteEl = document.getElementById("gift-patterns-note");
-    var bodyEl = document.getElementById("gift-patterns-body");
-    var gp = state.giftPatterns;
-    if(!gp || !gp.content){
-      cardEl.hidden = true;
-      return;
-    }
-    cardEl.hidden = false;
-    var countLabel = gp.giftCount ? (gp.giftCount + " gift" + (gp.giftCount === 1 ? "" : "s")) : "";
-    var windowLabel = gp.windowLabel || "";
-    var parts = [];
-    if(gp.generatedAt) parts.push("Generated " + fmtDate(gp.generatedAt.slice(0,10)));
-    if(windowLabel) parts.push(windowLabel);
-    if(countLabel) parts.push(countLabel);
-    noteEl.textContent = parts.join(" · ");
-    var paragraphs = String(gp.content).split(/\n\s*\n/).map(function(p){ return p.trim(); }).filter(Boolean);
-    bodyEl.innerHTML = paragraphs.map(function(p){
-      return '<p>' + esc(p).replace(/\n/g, "<br>") + '</p>';
-    }).join("");
   }
 
   // ---------- Giving Landscape (landing page): national chart + gift ticker + state grid ----------
@@ -2597,30 +2519,6 @@
         var gid = pubBtn.closest(".gift-card").getAttribute("data-id");
         var nextVal = pubBtn.getAttribute("data-public") !== "1";
         apiFetch("/api/gifts/" + gid + "/public", { method: "POST", body: { publicOk: nextVal } }).then(refreshAndRender).catch(function(err){ console.error(err); });
-      }
-    });
-
-    document.getElementById("delivery-progress-list").addEventListener("click", function(e){
-      var pubBtn = e.target.closest(".delivery-public-toggle");
-      if(pubBtn){
-        var pid = pubBtn.closest(".dv-progress-card").getAttribute("data-id");
-        var nextVal = pubBtn.getAttribute("data-public") !== "1";
-        apiFetch("/api/pipeline/" + pid + "/delivery-public", { method: "POST", body: { publicOk: nextVal } }).then(refreshAndRender).catch(function(err){ console.error(err); });
-        return;
-      }
-      var copyBtn = e.target.closest(".delivery-copy-link");
-      if(copyBtn){
-        var pid2 = copyBtn.closest(".dv-progress-card").getAttribute("data-id");
-        var link = location.origin + "/delivery-status/" + pid2;
-        var restoreLabel = copyBtn.textContent;
-        if(navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(link).then(function(){
-            copyBtn.textContent = "Copied!";
-            setTimeout(function(){ copyBtn.textContent = restoreLabel; }, 1500);
-          }).catch(function(){ window.prompt("Copy this link:", link); });
-        } else {
-          window.prompt("Copy this link:", link);
-        }
       }
     });
 
@@ -3675,7 +3573,7 @@
     renderForecasting();
     renderFinance();
     renderDelivery();
-    renderCoaching();
+    renderEncounters();
     renderVision();
     renderIssues();
     renderRocks();

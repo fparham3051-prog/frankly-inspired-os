@@ -5,8 +5,6 @@ const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
 const cookieParser = require("cookie-parser");
-const compression = require("compression");
-const helmet = require("helmet");
 const { Pool } = require("pg");
 
 const PORT = process.env.PORT || 10000;
@@ -84,8 +82,7 @@ const ADMIN_SCOPE_TOKENS = {
   digest: process.env.ADMIN_TOKEN_DIGEST || "",
   backup: process.env.ADMIN_TOKEN_BACKUP || "",
   restore: process.env.ADMIN_TOKEN_RESTORE || "",
-  status: process.env.ADMIN_TOKEN_STATUS || "",
-  giftPatterns: process.env.ADMIN_TOKEN_GIFT_PATTERNS || ""
+  status: process.env.ADMIN_TOKEN_STATUS || ""
 };
 function requireAdminScope(scope) {
   return function (req, res, next) {
@@ -133,15 +130,6 @@ setInterval(() => {
 
 const app = express();
 app.set("trust proxy", 1);
-// Baseline security headers (X-Content-Type-Options, X-Frame-Options,
-// Referrer-Policy, and dropping the X-Powered-By: Express fingerprint,
-// among others). Content-Security-Policy is explicitly left off for now:
-// index.html relies on inline style="" attributes throughout, and
-// helmet's default CSP would block them and break the page's layout.
-// Turning a real CSP on needs a pass moving those onto classes first -
-// tracked as follow-up, not attempted here so this doesn't ship broken.
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -178,7 +166,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, coachingSessions, giftPatternsRes] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -191,8 +179,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM invoices WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
       pool.query("SELECT * FROM engagement_modules WHERE archived_at IS NULL ORDER BY created_at ASC"),
       pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC"),
-      pool.query("SELECT * FROM coaching_sessions WHERE archived_at IS NULL ORDER BY session_date DESC"),
-      pool.query("SELECT * FROM gift_pattern_digests WHERE id = 'main'")
+      pool.query("SELECT * FROM encounters WHERE archived_at IS NULL ORDER BY occurred_at DESC NULLS LAST, created_at DESC")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -207,8 +194,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
       invoices: invoices.rows.map(rowToInvoice),
       engagementModules: engagementModules.rows.map(rowToEngagementModule),
       timeEntries: timeEntries.rows.map(rowToTimeEntry),
-      coachingSessions: coachingSessions.rows.map(rowToCoachingSession),
-      giftPatterns: giftPatternsRes.rows[0] ? rowToGiftPatterns(giftPatternsRes.rows[0]) : null
+      encounters: encounters.rows.map(rowToEncounter)
     });
   } catch (err) {
     console.error(err);
@@ -217,7 +203,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
 });
 
 function rowToPipeline(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), deliveryPublicOk: r.delivery_public_ok === true, createdAt: r.created_at, updatedAt: r.updated_at };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function rowToScorecard(r) {
   return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at };
@@ -240,9 +226,6 @@ function rowToGift(r) {
 function rowToVision(r) {
   return { values: r.values_text, focus: r.focus, tenYear: r.ten_year, marketing: r.marketing, threeYear: r.three_year, oneYear: r.one_year, updatedAt: r.updated_at };
 }
-function rowToGiftPatterns(r) {
-  return { content: r.content, windowLabel: r.window_label, giftCount: r.gift_count === null ? 0 : Number(r.gift_count), generatedAt: r.generated_at };
-}
 function rowToOrgLink(r) {
   return { org: r.org_name, ein: r.ein, matchedName: r.matched_name, matchedCity: r.matched_city, matchedState: r.matched_state, linkedAt: r.linked_at };
 }
@@ -255,8 +238,8 @@ function rowToEngagementModule(r) {
 function rowToTimeEntry(r) {
   return { id: r.id, pipelineId: r.pipeline_id, entryDate: r.entry_date, minutes: r.minutes === null ? 0 : Number(r.minutes), note: r.note, createdAt: r.created_at };
 }
-function rowToCoachingSession(r) {
-  return { id: r.id, pipelineId: r.pipeline_id, sessionDate: r.session_date, topic: r.topic, notes: r.notes, nextStep: r.next_step, createdAt: r.created_at, updatedAt: r.updated_at };
+function rowToEncounter(r) {
+  return { id: r.id, pipelineId: r.pipeline_id, contactName: r.contact_name, occurredAt: r.occurred_at, interactionType: r.interaction_type, relationshipStage: r.relationship_stage, reason: r.reason, nextStep: r.next_step, nextStepDate: r.next_step_date, summary: r.summary, loggedBy: r.logged_by, createdAt: r.created_at };
 }
 
 function newId() {
@@ -305,15 +288,6 @@ app.patch("/api/pipeline/:id", requireAuth, async (req, res) => {
 app.delete("/api/pipeline/:id", requireAuth, async (req, res) => {
   await archiveRow("pipeline", req.params.id);
   res.json({ ok: true });
-});
-// Toggles whether one engagement's delivery progress appears on the public,
-// no-login Delivery status page - same on/off-per-record pattern as
-// POST /api/gifts/:id/public. Off by default, one record at a time, never a
-// blanket setting.
-app.post("/api/pipeline/:id/delivery-public", requireAuth, async (req, res) => {
-  const publicOk = !!(req.body && req.body.publicOk);
-  await pool.query("UPDATE pipeline SET delivery_public_ok = $1 WHERE id = $2", [publicOk, req.params.id]);
-  res.json({ ok: true, publicOk });
 });
 
 // ---------- scorecard ----------
@@ -547,45 +521,50 @@ app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- coaching: session log (the fourth real offering, no fixed module sequence) ----------
-app.post("/api/coaching-sessions", requireAuth, async (req, res) => {
+// ---------- encounters (dated contact reports, built on a peer's recommendation) ----------
+// Either pipelineId (an existing Pipeline record) or newContactName is
+// required. When newContactName is given instead, a lightweight Pipeline
+// row is created on the spot (stage 'lead', track 'undecided', same shape
+// POST /api/prospects/:id/promote already uses) so a first-ever touch
+// never has to wait on adding the contact to Pipeline as a separate step.
+// When a next step is logged, it's also written onto the parent Pipeline
+// record's own next_step/next_step_date - an encounter report is meant to
+// move that forward, not just sit in a separate log nobody re-reads.
+app.post("/api/encounters", requireAuth, async (req, res) => {
   const b = req.body || {};
-  if (!b.pipelineId) return res.status(400).json({ error: "pipelineId required" });
-  const id = newId();
+  let pipelineId = b.pipelineId || "";
   const now = new Date().toISOString();
   try {
+    if (!pipelineId) {
+      const newName = (b.newContactName || "").trim();
+      if (!newName) return res.status(400).json({ error: "pipelineId or newContactName required" });
+      pipelineId = newId();
+      await pool.query(
+        `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, created_at, updated_at)
+         VALUES ($1,$2,$3,'Encounter log','undecided','lead',$4,$5,'',$6,$6)`,
+        [pipelineId, newName, (b.newContactOrg || "").trim(), b.nextStep || "", b.nextStepDate || "", now]
+      );
+    }
+    const id = newId();
     await pool.query(
-      `INSERT INTO coaching_sessions (id, pipeline_id, session_date, topic, notes, next_step, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
-      [id, b.pipelineId, b.sessionDate || now.slice(0, 10), b.topic || "", b.notes || "", b.nextStep || "", now]
+      `INSERT INTO encounters (id, pipeline_id, contact_name, occurred_at, interaction_type, relationship_stage, reason, next_step, next_step_date, summary, logged_by, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, pipelineId, b.contactName || "", b.occurredAt || now.slice(0, 10), b.interactionType || "call", b.relationshipStage || "identification", b.reason || "", b.nextStep || "", b.nextStepDate || "", b.summary || "", b.loggedBy || "", now]
     );
-    res.json({ id });
+    if ((b.nextStep || "").trim()) {
+      await pool.query(
+        "UPDATE pipeline SET next_step = $1, next_step_date = $2, updated_at = $3 WHERE id = $4",
+        [b.nextStep.trim(), b.nextStepDate || "", now, pipelineId]
+      );
+    }
+    res.json({ id, pipelineId });
   } catch (err) {
     console.error(err);
-    res.status(400).json({ error: "could not save coaching session, check the pipeline record still exists" });
+    res.status(400).json({ error: "could not save encounter, check the pipeline record still exists" });
   }
 });
-app.patch("/api/coaching-sessions/:id", requireAuth, async (req, res) => {
-  const b = req.body || {};
-  const fields = [];
-  const values = [];
-  let i = 1;
-  const map = { sessionDate: "session_date", topic: "topic", notes: "notes", nextStep: "next_step" };
-  for (const key of Object.keys(map)) {
-    if (Object.prototype.hasOwnProperty.call(b, key)) {
-      fields.push(`${map[key]} = $${i++}`);
-      values.push(b[key]);
-    }
-  }
-  fields.push(`updated_at = $${i++}`);
-  values.push(new Date().toISOString());
-  values.push(req.params.id);
-  if (fields.length === 1) return res.json({ ok: true });
-  await pool.query(`UPDATE coaching_sessions SET ${fields.join(", ")} WHERE id = $${i}`, values);
-  res.json({ ok: true });
-});
-app.delete("/api/coaching-sessions/:id", requireAuth, async (req, res) => {
-  await archiveRow("coaching_sessions", req.params.id);
+app.delete("/api/encounters/:id", requireAuth, async (req, res) => {
+  await archiveRow("encounters", req.params.id);
   res.json({ ok: true });
 });
 
@@ -707,36 +686,6 @@ app.post("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
   }
 });
 
-// Admin-only read, used by the weekly gift-patterns synthesis pass to read
-// back a recent window of gifts - including the case-study fields the public
-// giving-landscape route deliberately never exposes - so it can reason across
-// them without duplicating that research itself. Read-only, same scope token
-// as the write route above; capped so a growing ticker can never make this
-// an unbounded response.
-app.get("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
-  const { rows } = await pool.query(
-    "SELECT * FROM gifts WHERE archived_at IS NULL ORDER BY announced_at DESC NULLS LAST, logged_at DESC LIMIT 100"
-  );
-  res.json({ items: rows.map(rowToGift) });
-});
-
-// Admin-only write for the weekly gift-patterns synthesis pass. Single-row
-// upsert (id 'main'), same pattern as /api/vision - each week's run replaces
-// the standing reading rather than accumulating a log, since gift_pattern_digests
-// is "the current synthesis," not a growing history the way gifts itself is.
-app.post("/api/admin/gift-patterns", requireAdminScope("giftPatterns"), async (req, res) => {
-  const b = req.body || {};
-  if (!b.content) return res.status(400).json({ error: "content required" });
-  const now = new Date().toISOString();
-  await pool.query(
-    `INSERT INTO gift_pattern_digests (id, content, window_label, gift_count, generated_at)
-     VALUES ('main',$1,$2,$3,$4)
-     ON CONFLICT (id) DO UPDATE SET content=$1, window_label=$2, gift_count=$3, generated_at=$4`,
-    [b.content, b.windowLabel || "", Number(b.giftCount || 0), now]
-  );
-  res.json({ ok: true });
-});
-
 // ---------- automation health (admin-only write; read via /api/automation-status) ----------
 // Every scheduled job behind this app closes its run with one small POST
 // here reporting what happened - not proof it worked (a job that never
@@ -772,9 +721,7 @@ const JOB_REGISTRY = [
   { key: "lead-import", label: "Website + Calendly + assessment lead import", cadenceHours: 24 + 6 },
   { key: "field-intel", label: "Weekly Field Intelligence refresh", cadenceHours: 7 * 24 + 24 },
   { key: "calendar-briefing", label: "Weekly calendar prep briefing", cadenceHours: 7 * 24 + 24 },
-  { key: "pipeline-review", label: "Weekly pipeline review", cadenceHours: 7 * 24 + 24 },
-  { key: "prospect-research", label: "Weekly Prospect Research", cadenceHours: 7 * 24 + 24 },
-  { key: "gift-patterns", label: "Weekly Gift Patterns synthesis", cadenceHours: 7 * 24 + 24 }
+  { key: "pipeline-review", label: "Weekly pipeline review", cadenceHours: 7 * 24 + 24 }
 ];
 
 app.get("/api/automation-status", requireAuth, async (req, res) => {
@@ -893,47 +840,6 @@ app.get("/api/public/giving-landscape", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "failed to load public giving landscape" });
-  }
-});
-
-// ---------- public, no-login Delivery status ----------
-// A per-engagement link, not an aggregate page like Giving Landscape above -
-// showing every opted-in client's progress on one shared URL would expose
-// one client's status to another, which the Giving Landscape design never
-// has to worry about since a publicly-announced gift isn't private to begin
-// with. Instead this is gated by :id, the engagement's own Pipeline row id
-// (already a crypto.randomUUID(), unguessable on its own), AND by
-// delivery_public_ok = true for that exact row - both have to hold, or the
-// route responds exactly like a record that doesn't exist at all, so it
-// never confirms or denies that a given id belongs to a real engagement.
-// The column list is a fixed whitelist: the engagement's own name/org, each
-// logged module's name and status, and one derived nextSessionDate (the
-// earliest scheduled date among not-yet-complete modules) - never a raw
-// per-module session date, notes, deliverable links, time entries, invoices,
-// or coaching sessions.
-app.get("/api/public/delivery-status/:id", async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      "SELECT id, name, org FROM pipeline WHERE id = $1 AND archived_at IS NULL AND delivery_public_ok = true",
-      [req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: "not found" });
-    const modulesRes = await pool.query(
-      "SELECT module_name, status, session_date FROM engagement_modules WHERE pipeline_id = $1 AND archived_at IS NULL ORDER BY created_at ASC",
-      [req.params.id]
-    );
-    const upcoming = modulesRes.rows
-      .filter((m) => m.status !== "complete" && m.session_date)
-      .map((m) => m.session_date)
-      .sort();
-    res.json({
-      engagement: { name: rows[0].name, org: rows[0].org },
-      modules: modulesRes.rows.map((m) => ({ moduleName: m.module_name, status: m.status })),
-      nextSessionDate: upcoming[0] || null
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "failed to load delivery status" });
   }
 });
 
@@ -1174,7 +1080,7 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
 // whenever the database itself has to move (free-tier Postgres hosts expire
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
-const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "coaching_sessions"];
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "encounters"];
 app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   try {
     const out = {};
@@ -1275,8 +1181,6 @@ app.get("/app.js", (req, res) => {
 app.get("/login.js", (req, res) => res.sendFile(path.join(__dirname, "public", "login.js")));
 app.get("/giving-landscape", (req, res) => res.sendFile(path.join(__dirname, "public", "giving-landscape-public.html")));
 app.get("/giving-landscape-public.js", (req, res) => res.sendFile(path.join(__dirname, "public", "giving-landscape-public.js")));
-app.get("/delivery-status/:id", (req, res) => res.sendFile(path.join(__dirname, "public", "delivery-status-public.html")));
-app.get("/delivery-status-public.js", (req, res) => res.sendFile(path.join(__dirname, "public", "delivery-status-public.js")));
 
 // ---------- page routes ----------
 app.get("/", (req, res) => {

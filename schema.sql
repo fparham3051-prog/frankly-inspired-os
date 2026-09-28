@@ -279,50 +279,37 @@ CREATE TABLE IF NOT EXISTS time_entries (
 ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS revenue_booked NUMERIC DEFAULT 0;
 ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS revenue_collected NUMERIC DEFAULT 0;
 
--- coaching_sessions: the one real logging gap the September 2026 series sync
--- named (document 16) - 1:1 Executive Coaching, the fourth and newest of the
--- practice's four real offerings, had no record anywhere in FIOS. A session
--- is ad hoc, not a fixed five-module sequence (document 19 gives it a topic
--- menu instead of a curriculum), so this stays a flat log per engagement
--- rather than being forced into the engagement_modules shape. Same spine as
--- everything else: a child of pipeline_id, never a parallel client list.
-CREATE TABLE IF NOT EXISTS coaching_sessions (
+-- ---------- Encounters: a dated contact report for every real touch an ----------
+-- engagement has with its actual point of contact, built on a peer's
+-- recommendation. Same spine pattern as invoices, engagement_modules, and
+-- time_entries: every encounter belongs to a real Pipeline row. Unlike
+-- those three, an encounter can also *create* that Pipeline row on the
+-- spot (see POST /api/encounters) for a first-ever touch that hasn't been
+-- added to Pipeline yet, so logging a new contact never has to wait on a
+-- separate step first.
+--
+-- interaction_type (how contact happened: call, meeting, email, letter,
+-- event, social, other) and relationship_stage (where it left the
+-- relationship: identification, cultivation, solicitation, stewardship)
+-- are two independent fields on purpose, not one merged "category" - the
+-- same distinction Field Intelligence's own gift categories keep separate
+-- from a gift's restriction type. next_step is free text with suggestions
+-- offered client-side by relationship_stage, the same quick-fill-not-enum
+-- pattern as engagement_modules.module_name. summary is where the
+-- conversation itself gets paraphrased, in the fundraiser's own words.
+CREATE TABLE IF NOT EXISTS encounters (
   id TEXT PRIMARY KEY,
   pipeline_id TEXT NOT NULL REFERENCES pipeline(id),
-  session_date TEXT DEFAULT '',
-  topic TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
+  contact_name TEXT DEFAULT '',
+  occurred_at TEXT DEFAULT '',
+  interaction_type TEXT DEFAULT 'call',
+  relationship_stage TEXT DEFAULT 'identification',
+  reason TEXT DEFAULT '',
   next_step TEXT DEFAULT '',
+  next_step_date TEXT DEFAULT '',
+  summary TEXT DEFAULT '',
+  logged_by TEXT DEFAULT '',
   created_at TEXT,
-  updated_at TEXT,
   archived_at TEXT
 );
-
--- delivery_public_ok: opt-in flag for the unauthenticated public Delivery
--- status page (GET /api/public/delivery-status/:id and /delivery-status/:id
--- in server.js), same pattern as gifts.public_ok. Defaults to false on
--- purpose - an engagement never becomes visible on that page until Franklin
--- explicitly turns it on for that one Pipeline record from the Delivery tab.
--- The public route only ever selects the engagement's name/org and each
--- logged module's name and status - it never selects module notes,
--- deliverable links, session dates, time entries, invoices, or coaching
--- sessions, so turning this on for one engagement never exposes anything
--- beyond bare progress for that one client.
-ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS delivery_public_ok BOOLEAN DEFAULT false;
-
--- gift_pattern_digests: the weekly cross-gift synthesis that sits above the
--- Weekly Gift Ticker - not a new gift record, but a standing read of what the
--- last rolling window of tracked gifts implies together (where the money's
--- coming from, what it means for reading the next gift, and portfolio
--- implications for a client's own major-gift strategy). Same single-row
--- upsert-by-fixed-id pattern as vision (id defaults to 'main') since this is
--- always "the current reading," never a growing log the way gifts itself is -
--- each weekly run replaces it rather than adding to it. Internal only: no
--- public route ever selects from this table.
-CREATE TABLE IF NOT EXISTS gift_pattern_digests (
-  id TEXT PRIMARY KEY DEFAULT 'main',
-  content TEXT DEFAULT '',
-  window_label TEXT DEFAULT '',
-  gift_count INTEGER DEFAULT 0,
-  generated_at TEXT
-);
+CREATE INDEX IF NOT EXISTS idx_encounters_pipeline_id ON encounters(pipeline_id);

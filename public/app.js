@@ -1362,7 +1362,7 @@
       return (b.occurredAt || "").localeCompare(a.occurredAt || "") || (b.createdAt || "").localeCompare(a.createdAt || "");
     });
     if(rows.length === 0){
-      body.innerHTML = '<tr><td colspan="8" class="empty-note">No encounters logged yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" class="empty-note">No prospect reports logged yet.</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function(en){
@@ -1390,7 +1390,7 @@
     var btn = e.target.closest(".en-delete");
     if(!btn) return;
     var id = btn.closest("tr").getAttribute("data-id");
-    if(!confirm("Remove this encounter?")) return;
+    if(!confirm("Remove this prospect report?")) return;
     apiFetch("/api/encounters/" + id, { method: "DELETE" })
       .then(refreshAndRender)
       .catch(function(err){ console.error(err); });

@@ -374,7 +374,7 @@
         <button type="button" class="filter-btn" data-rp-tab="trends" role="tab" aria-selected="false">Trends</button>
         <button type="button" class="filter-btn" data-rp-tab="finance" role="tab" aria-selected="false">Finance</button>
         <button type="button" class="filter-btn" data-rp-tab="delivery" role="tab" aria-selected="false">Delivery</button>
-        <button type="button" class="filter-btn" data-rp-tab="encounters" role="tab" aria-selected="false">Encounters</button>
+        <button type="button" class="filter-btn" data-rp-tab="encounters" role="tab" aria-selected="false">Prospect Reports</button>
       </div>
 
       <div class="fw-card" data-panel="01 · Pipeline records" data-rp-tab="pipeline">
@@ -654,12 +654,12 @@
         </table></div>
       </div>
 
-      <!-- ---- Encounters tab ---- -->
-      <div class="fw-card" data-panel="14 · Log an encounter" data-rp-tab="encounters" hidden>
-        <h3>Log an Encounter</h3>
-        <p style="margin-top:-2px;">A dated contact report for every real touch with a donor or organization &mdash; who, why, what was actually said, and the recommended next step. Every encounter is tied to a Pipeline record; if this contact isn't in Pipeline yet, log it here and one is created automatically.</p>
+      <!-- ---- Prospect Reports tab ---- -->
+      <div class="fw-card" data-panel="14 · Log a prospect report" data-rp-tab="encounters" hidden>
+        <h3>Log a Prospect Report</h3>
+        <p style="margin-top:-2px;">A dated contact report for every real touch with a donor or organization &mdash; who, why, what was actually said, and the recommended next step. Every prospect report is tied to a Pipeline record; if this contact isn't in Pipeline yet, log it here and one is created automatically.</p>
         <form class="entry-form" id="encounter-form">
-          <div class="form-title">Log an encounter</div>
+          <div class="form-title">Log a prospect report</div>
           <div class="form-grid">
             <div class="field wide">
               <label><input type="checkbox" id="en-new-contact"> This is a new contact, not yet in Pipeline</label>
@@ -670,7 +670,7 @@
             <div class="field" id="en-new-name-field" hidden><label for="en-new-name">New contact (name or organization)</label><input id="en-new-name" placeholder="who is this"></div>
             <div class="field" id="en-new-org-field" hidden><label for="en-new-org">Organization (if different)</label><input id="en-new-org"></div>
             <div class="field"><label for="en-contact-name">Who you spoke with</label><input id="en-contact-name" placeholder="name and role, e.g. Jane Doe, Board Chair"></div>
-            <div class="field"><label for="en-date">Date of encounter</label><input id="en-date" type="date" required></div>
+            <div class="field"><label for="en-date">Report date</label><input id="en-date" type="date" required></div>
             <div class="field"><label for="en-type">How contact happened</label>
               <select id="en-type">
                 <option value="call">Call</option>
@@ -690,7 +690,7 @@
                 <option value="stewardship">Stewardship</option>
               </select>
             </div>
-            <div class="field wide"><label for="en-reason">Reason for this contact</label><textarea id="en-reason" placeholder="why this encounter happened"></textarea></div>
+            <div class="field wide"><label for="en-reason">Reason for this contact</label><textarea id="en-reason" placeholder="why this contact happened"></textarea></div>
             <div class="field"><label for="en-next">Recommended next step</label>
               <input id="en-next" list="en-next-suggestions" placeholder="pick a suggestion or type your own">
               <datalist id="en-next-suggestions"></datalist>
@@ -709,9 +709,9 @@
         </form>
       </div>
 
-      <div class="fw-card" data-panel="15 · Encounter archive" data-rp-tab="encounters" hidden>
-        <h3>Encounter Archive</h3>
-        <p style="margin-top:-2px;">Every encounter logged, most recent first &mdash; the dated record behind each engagement's next step.</p>
+      <div class="fw-card" data-panel="15 · Prospect report archive" data-rp-tab="encounters" hidden>
+        <h3>Prospect Report Archive</h3>
+        <p style="margin-top:-2px;">Every prospect report logged, most recent first &mdash; the dated record behind each engagement's next step.</p>
         <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Engagement</th><th>Contact</th><th>Type</th><th>Stage</th><th>Next step</th><th>Logged by</th><th></th></tr></thead>
           <tbody id="encounter-rows"><tr><td colspan="8" class="empty-note">Loading...</td></tr></tbody>

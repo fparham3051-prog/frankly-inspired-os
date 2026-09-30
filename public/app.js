@@ -793,7 +793,7 @@
         '<td class="dim">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</td>' +
         '<td><select class="inline-select ps-stage-select">' + opts + '</select></td>' +
         '<td class="dim">' + esc(p.notes || "") + '</td>' +
-        '<td><button type="button" class="btn ps-promote">Promote</button> <button type="button" class="btn danger ps-delete">Remove</button></td>' +
+        '<td><button type="button" class="btn ps-score" title="Score this organization in InstitutionalOS">Score</button> <button type="button" class="btn ps-promote">Promote</button> <button type="button" class="btn danger ps-delete">Remove</button></td>' +
         '</tr>';
       // Same 990 financial-health disclosure as the Giving Landscape org
       // tracker, keyed by prospect.org instead of gift.org - a prospect tied
@@ -819,6 +819,20 @@
   document.getElementById("prospect-rows").addEventListener("click", function(e){
     var delBtn = e.target.closest(".ps-delete");
     var promoteBtn = e.target.closest(".ps-promote");
+    var scoreBtn = e.target.closest(".ps-score");
+    if(scoreBtn){
+      var scoreRow = scoreBtn.closest("tr");
+      var scorePid = scoreRow.getAttribute("data-id");
+      var scoreProspect = state.prospects.filter(function(p){ return p.id === scorePid; })[0];
+      if(!scoreProspect) return;
+      if(typeof window.openInstitutionalOS !== "function") return;
+      window.openInstitutionalOS({
+        org: scoreProspect.org || scoreProspect.name || "",
+        description: scoreProspect.notes || "",
+        pipelineId: scoreProspect.id
+      });
+      return;
+    }
     if(delBtn){
       var id = delBtn.closest("tr").getAttribute("data-id");
       if(!confirm("Remove this prospect?")) return;

@@ -313,3 +313,42 @@ CREATE TABLE IF NOT EXISTS encounters (
   archived_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_encounters_pipeline_id ON encounters(pipeline_id);
+
+-- ---------- The President's Desk: ported from the standalone Claude Artifact ----------
+-- (claude.ai/artifact/2eettWspqNgnW7BvmduzYJ, then called "Advancement Desk") into a
+-- native FIOS feature, September 2026; renamed October 2026. Nearly everything it
+-- shows (glossary, domain notes, quiz bank, field notes, people, jobs, org intel,
+-- gift playbook, doctoral prep, policy & leadership) is static reference content
+-- that ships in app.js, the same way FIOS's own reference views work - not a table.
+-- Only the handful of things a person actually checks off or completes need to live
+-- here, replacing what the old artifact tracked in localStorage on that one browser.
+
+-- advancement_state: a single JSON-blob row (same convention as org_financials.data
+-- above) holding the two small toggle sets the artifact used to keep client-side:
+-- which This Week events are marked registered, and which certifications are marked
+-- "pursuing." Both are small and personal, with no natural per-item table of their
+-- own, so one blob beats two near-empty tables.
+CREATE TABLE IF NOT EXISTS advancement_state (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  week_progress TEXT DEFAULT '{}',
+  cred_pursuing TEXT DEFAULT '{}',
+  updated_at TEXT
+);
+
+-- quiz_attempts: every completed Practice Test run, replacing the artifact's
+-- localStorage "last attempt only" cache with real history - the exact gap the
+-- September 2026 Command Center concept memo flagged (no quiz-attempt history, no
+-- trend). domain_breakdown is a JSON string (this schema's usual convention for a
+-- nested shape) mapping each tested domain to {right, total} for that attempt.
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+  id TEXT PRIMARY KEY,
+  exam_key TEXT NOT NULL,
+  exam_label TEXT DEFAULT '',
+  score INTEGER DEFAULT 0,
+  total INTEGER DEFAULT 0,
+  domain_breakdown TEXT DEFAULT '{}',
+  taken_at TEXT,
+  created_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_exam_key ON quiz_attempts(exam_key);

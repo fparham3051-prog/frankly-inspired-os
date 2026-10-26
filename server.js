@@ -176,7 +176,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -189,7 +189,9 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM invoices WHERE archived_at IS NULL ORDER BY due_date ASC NULLS LAST"),
       pool.query("SELECT * FROM engagement_modules WHERE archived_at IS NULL ORDER BY created_at ASC"),
       pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC"),
-      pool.query("SELECT * FROM encounters WHERE archived_at IS NULL ORDER BY occurred_at DESC NULLS LAST, created_at DESC")
+      pool.query("SELECT * FROM encounters WHERE archived_at IS NULL ORDER BY occurred_at DESC NULLS LAST, created_at DESC"),
+      pool.query("SELECT * FROM advancement_state WHERE id = 'main'"),
+      pool.query("SELECT * FROM quiz_attempts WHERE archived_at IS NULL ORDER BY taken_at DESC NULLS LAST, created_at DESC LIMIT 200")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -204,7 +206,9 @@ app.get("/api/state", requireAuth, async (req, res) => {
       invoices: invoices.rows.map(rowToInvoice),
       engagementModules: engagementModules.rows.map(rowToEngagementModule),
       timeEntries: timeEntries.rows.map(rowToTimeEntry),
-      encounters: encounters.rows.map(rowToEncounter)
+      encounters: encounters.rows.map(rowToEncounter),
+      advancementState: advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} },
+      quizAttempts: quizAttempts.rows.map(rowToQuizAttempt)
     });
   } catch (err) {
     console.error(err);
@@ -250,6 +254,15 @@ function rowToTimeEntry(r) {
 }
 function rowToEncounter(r) {
   return { id: r.id, pipelineId: r.pipeline_id, contactName: r.contact_name, occurredAt: r.occurred_at, interactionType: r.interaction_type, relationshipStage: r.relationship_stage, reason: r.reason, nextStep: r.next_step, nextStepDate: r.next_step_date, summary: r.summary, loggedBy: r.logged_by, createdAt: r.created_at };
+}
+function safeJsonParse(s, fallback) {
+  try { return JSON.parse(s); } catch (e) { return fallback; }
+}
+function rowToAdvancementState(r) {
+  return { weekProgress: safeJsonParse(r.week_progress, {}), credPursuing: safeJsonParse(r.cred_pursuing, {}), updatedAt: r.updated_at };
+}
+function rowToQuizAttempt(r) {
+  return { id: r.id, examKey: r.exam_key, examLabel: r.exam_label, score: r.score, total: r.total, domainBreakdown: safeJsonParse(r.domain_breakdown, {}), takenAt: r.taken_at, createdAt: r.created_at };
 }
 
 function newId() {
@@ -575,6 +588,44 @@ app.post("/api/encounters", requireAuth, async (req, res) => {
 });
 app.delete("/api/encounters/:id", requireAuth, async (req, res) => {
   await archiveRow("encounters", req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------- The President's Desk (formerly Advancement Desk) ----------
+// See the schema.sql comment above advancement_state/quiz_attempts for why these
+// are shaped the way they are. weekProgress/credPursuing arrive as a partial patch
+// (one event id or one credential abbreviation at a time) and get merged into
+// whatever's already stored, so one checkbox toggle never clobbers another.
+app.put("/api/advancement-state", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const now = new Date().toISOString();
+  const existing = await pool.query("SELECT * FROM advancement_state WHERE id = 'main'");
+  const current = existing.rows[0] ? rowToAdvancementState(existing.rows[0]) : { weekProgress: {}, credPursuing: {} };
+  const weekProgress = b.weekProgress ? Object.assign({}, current.weekProgress, b.weekProgress) : current.weekProgress;
+  const credPursuing = b.credPursuing ? Object.assign({}, current.credPursuing, b.credPursuing) : current.credPursuing;
+  await pool.query(
+    `INSERT INTO advancement_state (id, week_progress, cred_pursuing, updated_at)
+     VALUES ('main', $1, $2, $3)
+     ON CONFLICT (id) DO UPDATE SET week_progress = $1, cred_pursuing = $2, updated_at = $3`,
+    [JSON.stringify(weekProgress), JSON.stringify(credPursuing), now]
+  );
+  res.json({ weekProgress, credPursuing, updatedAt: now });
+});
+
+app.post("/api/quiz-attempts", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const id = newId();
+  const now = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO quiz_attempts (id, exam_key, exam_label, score, total, domain_breakdown, taken_at, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [id, b.examKey || "", b.examLabel || "", Number(b.score) || 0, Number(b.total) || 0, JSON.stringify(b.domainBreakdown || {}), b.takenAt || now, now]
+  );
+  res.json({ id });
+});
+
+app.delete("/api/quiz-attempts/:id", requireAuth, async (req, res) => {
+  await archiveRow("quiz_attempts", req.params.id);
   res.json({ ok: true });
 });
 

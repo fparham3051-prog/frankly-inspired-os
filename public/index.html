@@ -23,7 +23,6 @@
     <div class="brandbar-actions">
       <div class="brandbar-tag">The Frankly Inspired Operating System</div>
       <a class="brandbar-link" href="https://franklyinspired.associates" target="_blank" rel="noopener">Visit Site</a>
-      <a class="brandbar-link" href="https://claude.ai/code/artifact/0d5b02f4-66ea-4da0-9a2b-e077857c7a3b" target="_blank" rel="noopener">Advancement Desk</a>
       <button type="button" class="brandbar-link" id="logout-btn" style="background:none;cursor:pointer;">Log Out</button>
     </div>
   </div>
@@ -63,7 +62,8 @@
     <button type="button" class="rail-btn" data-view="fieldintel">Field Intelligence</button>
     <button type="button" class="rail-btn" data-view="playbook">Playbook Library</button>
     <button type="button" class="rail-btn" data-view="process">Process Library</button>
-    <a class="rail-link" href="https://claude.ai/code/artifact/0d5b02f4-66ea-4da0-9a2b-e077857c7a3b" target="_blank" rel="noopener">Advancement Desk &#8599;</a>
+    <div class="rail-label">Personal</div>
+    <button type="button" class="rail-btn" data-view="advancement">The President's Desk</button>
   </nav>
 
   <main id="main-content" tabindex="-1">
@@ -935,6 +935,312 @@
           <tbody id="process-rows"></tbody>
         </table></div>
       </div>
+    </section>
+
+    <section class="view" data-view="advancement" hidden>
+      <div class="view-head"><h2>The President's Desk</h2><span class="tag">personal professional development</span></div>
+      <p class="view-intro">A one-person university in the field you practice: a term of the day with real examples behind it, the certifications worth earning, a practice-test bank with real history, the chapters worth showing up to, a running read on the sector's news, the people setting the bar, the open roles worth watching, and the policy and legal ground shifting under nonprofit leadership and higher education. Ported over from the standalone Advancement Desk page into FIOS itself, so it lives in one place with everything else and its state saves to this account, not just this browser.</p>
+
+      <div class="stat-row">
+        <div class="stat"><span class="num mono" id="stat-terms">...</span><span class="cap">terms in the glossary</span></div>
+        <div class="stat"><span class="num mono" id="stat-people">...</span><span class="cap">full profiles to follow</span></div>
+        <div class="stat"><span class="num mono" id="stat-creds">...</span><span class="cap">credentials mapped out</span></div>
+        <div class="stat"><span class="num mono" id="stat-jobs">...</span><span class="cap">open roles tracked</span></div>
+        <div class="stat"><span class="num mono" id="stat-open">...</span><span class="cap">registrations open this week</span></div>
+        <div class="stat"><span class="num mono" id="stat-quiz">...</span><span class="cap">questions in the bank, 5 exams</span></div>
+      </div>
+
+      <div class="toolbar" id="adv-tabs" role="tablist" aria-label="The President's Desk sections">
+        <button type="button" class="filter-btn is-active" data-adv-tab="vocabulary" role="tab" aria-selected="true">Today&rsquo;s Vocabulary</button>
+        <button type="button" class="filter-btn" data-adv-tab="thisweek" role="tab" aria-selected="false">This Week</button>
+        <button type="button" class="filter-btn" data-adv-tab="certifications" role="tab" aria-selected="false">Certifications</button>
+        <button type="button" class="filter-btn" data-adv-tab="practicetest" role="tab" aria-selected="false">Practice Test</button>
+        <button type="button" class="filter-btn" data-adv-tab="giftplaybook" role="tab" aria-selected="false">Gift Analysis Playbook</button>
+        <button type="button" class="filter-btn" data-adv-tab="chapters" role="tab" aria-selected="false">Chapters &amp; Communities</button>
+        <button type="button" class="filter-btn" data-adv-tab="doctoralprep" role="tab" aria-selected="false">Ed Policy &amp; Leadership</button>
+        <button type="button" class="filter-btn" data-adv-tab="policyleadership" role="tab" aria-selected="false">Policy &amp; Leadership</button>
+        <button type="button" class="filter-btn" data-adv-tab="fieldnotes" role="tab" aria-selected="false">Field Notes</button>
+        <button type="button" class="filter-btn" data-adv-tab="people" role="tab" aria-selected="false">People to Watch</button>
+        <button type="button" class="filter-btn" data-adv-tab="jobs" role="tab" aria-selected="false">Open Roles, Ranked</button>
+        <button type="button" class="filter-btn" data-adv-tab="orgintel" role="tab" aria-selected="false">Org Intelligence</button>
+        <button type="button" class="filter-btn" data-adv-tab="glossary" role="tab" aria-selected="false">Glossary</button>
+      </div>
+
+    <div class="adv-panel" data-adv-tab="vocabulary">
+      <div class="view-head"><h2>Today's Vocabulary</h2><span class="tag">start here</span></div>
+      <p class="view-intro">One term of art, every day, pulled from the same 25-word glossary the rest of this page draws from. Each one carries a real-world scenario, not just a dictionary line.</p>
+
+      <div class="fw-card vocab-card" id="vocab-card">
+        <div class="vocab-head">
+          <span class="vocab-term" id="vocab-term">...</span>
+          <span class="pill gold" id="vocab-category">...</span>
+        </div>
+        <p class="vocab-def" id="vocab-def"></p>
+        <div class="vocab-why"><span class="lbl">Why it matters</span><span id="vocab-why"></span></div>
+        <div class="vocab-example"><span class="lbl">Real-world example</span><span id="vocab-ex"></span></div>
+        <div>
+          <button type="button" class="btn secondary" id="vocab-browse">Browse the full glossary →</button>
+        </div>
+      </div>
+
+      <div class="fw-card">
+        <h3>This week at a glance</h3>
+        <ul class="action-list" id="glance-list"></ul>
+      </div>
+
+      <div class="example-box good">
+        <span class="eb-label">How this rotates</span>
+        <p class="extra">The term of the day is picked deterministically from the day of the year, so it's the same word all day and a new one tomorrow. Nothing to load, nothing that resets when you refresh. Ask Claude any time to add a term, swap the day's word, or go deeper on one you want to actually use this week.</p>
+      </div>
+    </div>
+
+    <!-- ================= THIS WEEK ================= -->
+    <div class="adv-panel" data-adv-tab="thisweek" hidden>
+      <div class="view-head"><h2>This Week</h2><span class="tag">registration needed</span></div>
+      <p class="view-intro">Calendar holds for Sept 15 to 17 that still need action. These are tentative blocks, not confirmed seats. Check a box once you've actually registered.</p>
+
+      <div class="example-box">
+        <span class="eb-label">Tuesday 9/15 double-books</span>
+        <p class="extra">AFP Deep Dive Day 3 (12:00 to 5:00 PM) fully overlaps the DRG webinar (1:00 to 2:00 PM, $60). Pick one before registering for both.</p>
+      </div>
+
+      <div id="week-list"></div>
+    </div>
+
+    <!-- ================= CERTIFICATIONS ================= -->
+    <div class="adv-panel" data-adv-tab="certifications" hidden>
+      <div class="view-head"><h2>Certifications</h2><span class="tag">the letters after the name</span></div>
+      <p class="view-intro">The Giving Institute page that started this covers Giving USA data and ethics, not a personal credential. Membership there is granted to firms, not individuals. These five are the ones that actually confer letters. Check the box on any you're actively pursuing; fees and eligibility shift year to year, so confirm current numbers on each site before paying anything. Four of the five carry a real exam or coursework behind them, open "Study guide" on any of those for exam structure, domain weights, eligibility math, and prep notes.</p>
+      <div id="cred-list"></div>
+    </div>
+
+    <!-- ================= PRACTICE TEST ================= -->
+    <div class="adv-panel" data-adv-tab="practicetest" hidden>
+      <div class="view-head"><h2>Practice Test</h2><span class="tag">self-check, not official items</span></div>
+      <p class="view-intro">Ten questions for every official domain, stage, or course in each Certifications study guide, drawn fresh each attempt from a bank twice that size, so totals vary by how much ground each credential actually covers (60 for CFRE's six domains, 40 for ACFRE's four process stages, 80 for GPC's eight knowledge areas, 30 for CAP's three courses) and the specific questions, their order, and each answer's position reshuffle every time you take or retake a test. These are practice questions modeled on the published domain list, not real exam items pulled from CFRE International, GPCI, AFP, or The American College; none of those bodies publish their actual bank. Score by domain to see exactly where to go back and study. A fifth exam, <strong>Ed Policy Comps</strong>, is modeled the same way on a doctoral comprehensive exam in Educational Policy and Leadership: 40 questions drawn from the Doctoral Prep section's four domains, theory and the policy process, research methods, program structure and the nonprofit-leadership minor, and the current policy landscape.</p>
+      <div id="quiz-root"></div>
+    </div>
+
+    <!-- ================= GIFT ANALYSIS PLAYBOOK ================= -->
+    <div class="adv-panel" data-adv-tab="giftplaybook" hidden>
+      <div class="view-head"><h2>Gift Analysis Playbook</h2><span class="tag">apply what you're studying</span></div>
+      <p class="view-intro">The Weekly Gift Ticker isn't just a log of headlines: every gift it captures is a worked example. This is the training system built around that practice: a repeatable way to read a gift, explain it to the right audience, understand the strategy behind it, and recognize the donor psychology driving it. It's meant to grow, since every new Ticker entry is a candidate for a new worked example, a new tactic, or a new psychology illustration below.</p>
+
+      <div class="fw-card">
+        <h3>1. How to analyze a gift: the seven-question framework</h3>
+        <p>Any gift, a $12,000 annual fund check or a $1 billion campus transformation, can be read with the same seven questions. The questions don't change; only the answers get bigger.</p>
+        <div id="gp-framework"></div>
+        <div class="cred-guide-row"><button type="button" class="cred-guide-toggle" data-guide-toggle="gp-example" aria-expanded="false"><span class="arrow">&#9656;</span> See it applied: Knight Foundation &rarr; Oregon ($1B, logged 2026-09-24)</button></div>
+        <div class="cred-guide-row"><div id="gp-example" hidden></div></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>2. Explaining a gift: calibrate to the audience</h3>
+        <p>The facts of a gift don't change between audiences. What changes is which facts you lead with and the vocabulary you carry them in. Talking process and mechanics to a VP wastes their time; talking pipeline abstractions to a gift officer sounds like you've never worked a prospect. Both scripts below explain the same Knight/Oregon gift.</p>
+        <div id="gp-scripts"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>3. Strategy and execution: moves management in practice</h3>
+        <p>Moves management is the governing theory behind every gift in the Ticker: Identification &rarr; Qualification &rarr; Cultivation &rarr; Solicitation &rarr; Stewardship. Knowing the five names isn't the skill; the skill is knowing what to actually <em>do</em> at each stage, and how to tell when a prospect has stalled.</p>
+        <div class="org-grid" id="gp-stages"></div>
+        <div class="diagnostic-box"><strong>Diagnostic:</strong> a cultivation plan with no next move and no date is a stalled prospect, whether anyone has said so out loud or not.</div>
+      </div>
+
+      <div class="fw-card">
+        <h3>4. Donor psychology</h3>
+        <p>Gift structure and language are downstream of donor psychology. Recognizing which motivation is driving a given donor changes how you talk to them, what you propose, and how you steward them afterward, and it's common for more than one to apply at once.</p>
+        <div class="org-grid" id="gp-psychology"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>5. Best practices: discover, close, steward</h3>
+        <div class="org-grid" id="gp-practices"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>6. The Weekly Gift Ticker as a practice loop</h3>
+        <p>The Ticker isn't just a record, it's a training mechanism. Here's the weekly loop this playbook is meant to support:</p>
+        <ol class="numbered-steps" id="gp-loop"></ol>
+        <div class="cred-guide-row"><button type="button" class="cred-guide-toggle notes-toggle" data-notes-toggle="gp-template" aria-expanded="false"><span class="arrow">&#9656;</span> Gift analysis template, for future entries</button></div>
+        <div class="cred-guide-row"><div id="gp-template" hidden><div class="template-block" id="gp-template-body"></div></div></div>
+      </div>
+
+      <div class="example-box good">
+        <span class="eb-label">Source</span>
+        <p class="extra">The full narrative version of this playbook, with complete worked examples, lives in the project doc <strong>Gift Fundraising Training Curriculum</strong>, also published as its own page: <a href="https://claude.ai/artifact/NF9ZRR5Ka7poLAauZJ1vYg" target="_blank" rel="noopener">Gift Fundraising Training Curriculum</a>. For gift-type-specific execution steps, stock, real estate, closely-held business interests, life insurance, cryptocurrency, and more, see the companion <a href="https://claude.ai/artifact/VLQWzDuQFHRTbFM9VgTcu2" target="_blank" rel="noopener">Gift Type Execution Playbook</a>, both also linked from FIOS's Process Library. This view is the working reference; ask Claude to add a new gift, tactic, or psychology line any time the Ticker turns one up.</p>
+      </div>
+    </div>
+
+    <!-- ================= CHAPTERS & COMMUNITIES ================= -->
+    <div class="adv-panel" data-adv-tab="chapters" hidden>
+      <div class="view-head"><h2>Chapters &amp; Communities</h2><span class="tag">where to show up</span></div>
+      <p class="view-intro">The recurring destinations behind this week's holds, plus the ones worth bookmarking, including the networks built specifically for Black fundraising professionals.</p>
+      <div class="org-grid" id="org-grid"></div>
+    </div>
+
+    <!-- ================= FIELD NOTES ================= -->
+    <div class="adv-panel" data-adv-tab="fieldnotes" hidden>
+      <div class="view-head"><h2>Field Notes</h2><span class="tag">the sector this week</span></div>
+      <p class="view-intro">A running read on philanthropy news, major-gift activity, foundation strategy, and sector trends, aimed at your own growth as a practitioner. The Operating System's Field Intelligence covers the same kind of sector news for a different purpose: positioning the business for prospects. This page is about you.</p>
+
+      <p class="digest-refreshed" id="fn-refreshed"></p>
+      <div id="fn-body"></div>
+
+      <div class="example-box">
+        <span class="eb-label">How this stays current</span>
+        <p class="extra">This isn't pulled live while you browse. A page can't search the web on its own. What's here came from a real research pass reading the Chronicle of Philanthropy, the Lilly Family School of Philanthropy's Giving USA report, and Candid on Sept 14, 2026. Ask in chat any time for a refresh, or a deeper dive on any item below.</p>
+      </div>
+    </div>
+
+    <!-- ================= PEOPLE TO WATCH ================= -->
+    <div class="adv-panel" data-adv-tab="people" hidden>
+      <div class="view-head"><h2>People to Watch</h2><span class="tag">full profiles, real sources</span></div>
+      <p class="view-intro">Full profiles across the disciplines that make up this field, including a dedicated section tracking Black leaders and institution-builders in philanthropy: who they are, what they built, and where the field's center of gravity actually sits. Every claim below is sourced from that person's own bio, an organization's official record, or a named publication. Nothing here is guessed from a name or a photo.</p>
+      <div id="people-body"></div>
+
+      <div class="example-box">
+        <span class="eb-label">On sourcing</span>
+        <p class="extra">Researched Sept 14, 2026. A person appears in the Black Leadership section only where there's clear public documentation: their own words, an organization's official bio, or a credible interview. Never a guess. Ask Claude to add someone, verify a detail, or build a reading list around any name below.</p>
+      </div>
+    </div>
+
+    <!-- ================= OPEN ROLES ================= -->
+    <div class="adv-panel" data-adv-tab="jobs" hidden>
+      <div class="view-head"><h2>Open Roles, Ranked</h2><span class="tag">13 postings, best fit first</span></div>
+      <p class="view-intro">Real, current openings in institutional advancement and development leadership, pulled from live job boards on Sept 14, 2026, ranked by fit against your documented track record: youth and workforce-development leadership (the Hidden Genius Project regional director role), HBCU-adjacent partnership work (Coppin Academy), nonprofit strategy consulting, and a Baltimore/DC base.</p>
+
+      <div class="example-box">
+        <span class="eb-label">On this ranking</span>
+        <p class="extra">Built from what's documented in your project files, not a resume I have on hand. Years of frontline solicitation experience, specific dollar figures raised, and formal credentials would sharpen this considerably. Share a resume or the details that are missing and I'll re-rank with more precision.</p>
+      </div>
+
+      <div id="jobs-body"></div>
+
+      <div class="fw-card">
+        <h3>Search these yourself</h3>
+        <p>A few boards block automated search and are worth checking directly. Real postings exist there; they just couldn't be pulled in automatically.</p>
+        <ul class="action-list" id="jobs-hubs"></ul>
+      </div>
+
+      <div class="example-box">
+        <span class="eb-label">Mission-fit employers with no open posting today</span>
+        <p class="extra">Urban Alliance, Year Up, Higher Achievement, and the Greater Washington Community Foundation all line up well with your youth and workforce-development track record. None had a live senior development posting at the time of this search, but they're worth checking back on.</p>
+      </div>
+
+      <div class="example-box good">
+        <span class="eb-label">How this stays current</span>
+        <p class="extra">Not a live feed. A real search pass ran Sept 14, 2026, across the Chronicle of Higher Education Jobs, Idealist, AFP Career Center, and the Council on Foundations job board. Postings close fast; verify a listing is still open before applying, and ask Claude any time for a fresh pass.</p>
+      </div>
+    </div>
+
+    <!-- ================= ORG INTELLIGENCE ================= -->
+    <div class="adv-panel" data-adv-tab="orgintel" hidden>
+      <div class="view-head"><h2>Org Intelligence</h2><span class="tag">leadership &amp; giving trends, 11 organizations</span></div>
+      <p class="view-intro">The organizations behind every posting in Open Roles, researched two ways at once: who leads them and what their fundraising history looks like (useful whether you're applying), and whether their profile signals real consulting demand. A vacant or newly created development role is a different kind of signal than a well-staffed shop that just needs one more body.</p>
+
+      <div id="orgintel-body"></div>
+
+      <div class="example-box good">
+        <span class="eb-label">How to read the consulting signal</span>
+        <p class="extra">Green means the organization's profile (small-to-mid budget, a newly built or newly vacant development function, mission overlap with your track record) lines up with the ICP in your consulting decision record. Amber means partial overlap. Grey means the org already has in-house development capacity or sits outside your stated ICP (large budget, unrelated mission, or a niche major-gift shop). Likely a better personal job target than a consulting prospect, or neither.</p>
+      </div>
+    </div>
+
+    <!-- ================= DOCTORAL PREP ================= -->
+    <div class="adv-panel" data-adv-tab="doctoralprep" hidden>
+      <div class="view-head"><h2>Doctoral Prep: Ed Policy &amp; Leadership</h2><span class="tag">theory, program expectations, current landscape</span></div>
+      <p class="view-intro">Built around your own framework bridging Fryer, Ladson-Billings, and the middle tradition: what a doctoral comprehensive exam in Educational Policy and Leadership would expect beyond it, what EdD and PhD programs structurally require (including how to build a nonprofit-leadership minor that no flagship program publishes), and a current, sourced read on the policy landscape across K-12, higher ed, early childhood/AI, and, deepest and closest to your own practice, philanthropy and the nonprofit sector. Researched Sept 29, 2026 across primary sources, court filings, and field publications; every claim below traces to a named source, and genuine gaps are flagged rather than papered over.</p>
+
+      <div class="fw-card">
+        <h3>Where your framework already stands</h3>
+        <p>Your bridge between Fryer and Ladson-Billings, extended through Rucker Johnson's structural causal analysis, QuantCrit, Dee and Penner's and Gershenson's same-race-teacher-effects research, Sean Reardon, Raj Chetty's Opportunity Insights work, and Anthony Bryk's improvement science, is not a private synthesis you'll need to defend against a program's "real" canon. It's structurally the same bridging move the field's own institutional leadership is currently making, visible in AERA's own 2026 presidential theme (Maisha Winn's "Unforgetting Histories, Imagining Futures," pairing historical consciousness with cross-stakeholder inclusion). A doctoral program will ask you to extend it in four directions, not replace it: with the political-science policy-process theories that explain <em>how</em> policy happens rather than <em>what effects</em> it has; with a third axis of capital theory (Coleman vs. Bourdieu) and the lineage extending your Ladson-Billings pole (culturally sustaining pedagogy, DisCrit, intersectionality); with a methods update, since the difference-in-differences techniques underlying causal work like Johnson's have undergone a real overhaul since 2018-2021; and with a nonprofit-leadership canon that does not exist as a named, published minor at any flagship Ed Policy program, meaning you'll likely build it yourself, cross-school, closer to Indiana University's O'Neill School model than to anything advertised in an Ed Policy catalog.</p>
+      </div>
+
+      <div class="fw-card">
+        <h3>1. What comps will expect beyond your framework</h3>
+        <p>Four adjacent bodies of theory your document doesn't yet name, not a competing framework, but the lattice a comps exam will expect your synthesis to sit inside.</p>
+        <div class="org-grid" id="dp-theory"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>2. EdD vs. PhD, and the multi-year shape</h3>
+        <p>The two credentials diverge consistently in kind even where specific credit totals vary by institution (figures below synthesized from the University of Vermont's published comparison table).</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th></th><th>EdD (typical)</th><th>PhD (typical)</th></tr></thead>
+            <tbody>
+              <tr><td>Research-methods credits</td><td>Fewer (e.g., UVM: 9)</td><td>More, often split quant/qual (e.g., UVM: 18)</td></tr>
+              <tr><td>Comps format</td><td>Standardized/take-home, or dissertation-proposal-as-comps</td><td>Individualized, tied to a publishable paper</td></tr>
+              <tr><td>Dissertation</td><td>Applied "dissertation in practice" / problem of practice</td><td>1-3 journal-article manuscripts, or traditional monograph</td></tr>
+              <tr><td>Career framing</td><td>Administration, government, nonprofit leadership</td><td>Research, scholarship, faculty roles</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A realistic multi-year shape, synthesized across UVM, the University of Iowa, Vanderbilt Peabody, and the University of Rochester: Year 1 is foundational methods and core theory, usually gated behind a software-competency requirement (most commonly SPSS, with R/Stata common in practice); Years 1-2 (PhD) or 1-3 (EdD, often part-time) cover specialization coursework and quantitative/qualitative methods sequences; a comprehensive or qualifying exam follows at the end of coursework, and Rochester's is unusually concrete about it: two questions, 12-15 pages each, a ten-day window, graded Pass / Revise-and-Resubmit / Fail, with two fails on either question triggering withdrawal from the program; and a multi-year dissertation phase runs three to five years for the PhD, a similar or compressed span for the EdD. Full comps reading lists were not found publicly posted for any of eight flagship programs searched (Harvard GSE, Stanford GSE, Teachers College, Vanderbilt Peabody PhD, USC Rossier, UCLA, Michigan State, UW-Madison); what's here is inference from published program structure and canonical literature, a distinction worth naming to a committee rather than glossing over.</p>
+      </div>
+
+      <div class="fw-card">
+        <h3>3. Building a nonprofit-leadership minor that doesn't formally exist</h3>
+        <p>None of the eight flagship Ed Policy and Leadership programs searched publish an explicit "nonprofit leadership minor." The clearest, most important finding for your specific situation: this credential is administrative and relational to build, not something you select from a catalog, and it's worth raising directly in admissions conversations rather than assuming from published materials.</p>
+        <div class="org-grid" id="dp-nonprofit-canon"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>4. The current policy landscape, domain by domain</h3>
+        <p>K-12, higher ed, and early childhood/AI are covered comprehensively; philanthropy and the nonprofit sector runs deepest, since it's the domain closest to your own consulting practice. Every domain closes on the same note: where the evidence is unresolved.</p>
+        <div id="dp-policy"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>5. Open questions &amp; genuine gaps</h3>
+        <p>Threads this research flagged as unresolved, contested, or missing entirely, worth checking before citing rather than treating as settled.</p>
+        <ol class="numbered-steps" id="dp-openq"></ol>
+      </div>
+
+      <div class="example-box good">
+        <span class="eb-label">Source</span>
+        <p class="extra">Built from a dedicated research pass across court filings, agency guidance, NCTQ, NIEER, Giving USA/Lilly Family School of Philanthropy, Brookings, EdChoice, Ballotpedia, and named scholarship (Tompkins-Stange, DiMaggio &amp; Powell, Carver, Kania &amp; Kramer, and others), completed Sept 29, 2026. The full research report this section is drawn from runs longer than fits here; ask Claude any time for the complete write-up, a deeper dive on any point above, or to re-check anything flagged as unresolved.</p>
+      </div>
+    </div>
+
+    <!-- ================= POLICY & LEADERSHIP ================= -->
+    <div class="adv-panel" data-adv-tab="policyleadership" hidden>
+      <div class="view-head"><h2>Policy &amp; Leadership</h2><span class="tag">the legal and regulatory ground under nonprofit and higher-ed leadership</span></div>
+      <p class="view-intro">Doctoral Prep above is built for a comprehensive exam; this is built for running an organization. A standing reference on the law and regulation that actually governs a nonprofit executive's decisions right now, tax exposure, board duties, and the DEI/civil-rights landscape, paired with higher education's own regulatory agenda, since so much of this practice's client base sits inside or around universities. Below that, a weekly-style updates feed in the same format as Field Notes, refreshed on the same cadence, plus an explicit list of what this research could not confirm.</p>
+
+      <div class="fw-card">
+        <h3>1. The legal &amp; policy landscape, domain by domain</h3>
+        <p>Two domains: the tax and governance law a nonprofit leader answers to directly, and the higher-education regulatory agenda shaping the institutions this practice's clients work inside. Researched Oct 19, 2026 against primary statutes, agency filings, and law-firm counsel alerts; every claim traces to a named, dated source, and genuine conflicts or gaps are flagged rather than smoothed over.</p>
+        <div id="pld-domains"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>2. Weekly updates</h3>
+        <p class="digest-refreshed" id="pld-refreshed"></p>
+        <div id="pld-body"></div>
+      </div>
+
+      <div class="fw-card">
+        <h3>3. Open questions &amp; genuine gaps</h3>
+        <p>Items this research flagged as unresolved, contested between sources, or unconfirmed, worth checking before citing as settled.</p>
+        <ol class="numbered-steps" id="pld-openq"></ol>
+      </div>
+
+      <div class="example-box good">
+        <span class="eb-label">How this stays current</span>
+        <p class="extra">Not a live feed; a page can't search the web on its own. What's here came from a dedicated research pass across law-firm client alerts (Venable, Troutman Pepper, Nixon Peabody, Holland &amp; Knight, Gibson Dunn, Saul Ewing, PKF O'Connor Davies, BerryDunn, Loeb &amp; Loeb, Labyrinth), the Chronicle of Philanthropy, and government sources (DOJ, EEOC, the Minnesota Attorney General, CASRAI) on Oct 19, 2026. Several sources are counsel summaries of primary law rather than the primary text itself, flagged above rather than hidden. Ask Claude any time for a refresh, a deeper dive on any item, or to pull the primary citation behind a counsel-alert summary.</p>
+      </div>
+    </div>
+
+    <!-- ================= GLOSSARY ================= -->
+    <div class="adv-panel" data-adv-tab="glossary" hidden>
+      <div class="view-head"><h2>Glossary</h2><span class="tag">the full 32, with examples</span></div>
+      <p class="view-intro">Every term Today's Vocabulary draws from, each with a concrete real-world scenario attached, the same list feeds the daily rotation, so nothing here is orphaned content.</p>
+      <div id="glossary-body"></div>
+    </div>
+
+  </main>
     </section>
 
   </main>

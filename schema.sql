@@ -387,9 +387,17 @@ CREATE TABLE IF NOT EXISTS week_events (
 -- describes it (it was writing to this panel for weeks before the panel,
 -- or this table, actually existed server-side - every run 404'd).
 CREATE TABLE IF NOT EXISTS gift_pattern_digests (
-  id TEXT PRIMARY KEY DEFAULT 'main',
-  content TEXT DEFAULT '',
-  window_label TEXT DEFAULT '',
-  gift_count INTEGER DEFAULT 0,
-  updated_at TEXT
+  id TEXT PRIMARY KEY DEFAULT 'main'
 );
+-- Defensive ADD COLUMN IF NOT EXISTS rather than folding these into the
+-- CREATE TABLE above: a gift_pattern_digests table already existed in this
+-- live database from an earlier, never-finished attempt at this same
+-- feature, with a different/incomplete column set - CREATE TABLE IF NOT
+-- EXISTS silently no-ops against an existing table, so the first deploy of
+-- this feature crashed the whole server on boot with "column updated_at
+-- does not exist". Each ADD COLUMN below is safe to run every boot
+-- whether the column is already there or not.
+ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS content TEXT DEFAULT '';
+ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS window_label TEXT DEFAULT '';
+ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS gift_count INTEGER DEFAULT 0;
+ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS updated_at TEXT;

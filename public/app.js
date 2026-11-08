@@ -3742,10 +3742,20 @@
 
   function renderWeek(){
     var events = getUpcomingWeekEvents();
+    var tagEl = document.getElementById("week-tag");
+    var introEl = document.getElementById("week-intro");
     if(events.length === 0){
+      if(tagEl){ tagEl.textContent = "quiet week"; }
+      if(introEl){ introEl.textContent = "Pulled from your real Google Calendar every Monday morning - nothing is holding a registration or deadline open for the week ahead right now."; }
       document.getElementById("week-list").innerHTML = '<p class="muted">Nothing on the calendar for the week ahead.</p>';
       return;
     }
+    var openNow = events.filter(function(ev){
+      var weekProgress = (state.advancementState && state.advancementState.weekProgress) || {};
+      return ev.status === "warn" && !weekProgress[ev.id];
+    }).length;
+    if(tagEl){ tagEl.textContent = openNow > 0 ? (openNow + " open") : "all set"; }
+    if(introEl){ introEl.textContent = "Pulled from your real Google Calendar every Monday morning, " + formatEventDateLabel(events[0].startsAt) + " to " + formatEventDateLabel(events[events.length-1].startsAt) + ". Tentative holds, not confirmed seats - check a box once you've actually registered."; }
     document.getElementById("week-list").innerHTML = events.map(function(ev){
       var pillClass = ev.status === "warn" ? "pill warn" : "pill";
       var meta = [formatEventDateLabel(ev.startsAt), formatEventTimeRange(ev.startsAt, ev.endsAt)];

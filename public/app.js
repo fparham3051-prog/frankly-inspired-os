@@ -5013,7 +5013,7 @@
     ]
   };
   function renderFieldNotes(){
-    document.getElementById("fn-refreshed").textContent = "Last refreshed Sept 14, 2026";
+    document.getElementById("fn-refreshed").textContent = "Researched Sept 14, 2026 · not a live feed, ask Claude for a refresh";
     document.getElementById("fn-body").innerHTML = Object.keys(FIELD_NOTES).map(function(cat){
       var cards = FIELD_NOTES[cat].map(function(d){
         return '<div class="digest-card"><h4>' + esc(d.h) + '</h4><p>' + esc(d.s) + '</p>' +
@@ -5489,7 +5489,7 @@
         '<div class="cred-guide-row"><div id="' + pid + '" hidden>' + renderPolicyDomainHTML(d) + '</div></div>';
     }).join("");
 
-    document.getElementById("pld-refreshed").textContent = "Last refreshed Oct 19, 2026";
+    document.getElementById("pld-refreshed").textContent = "Researched Oct 19, 2026 · not a live feed, ask Claude for a refresh";
     document.getElementById("pld-body").innerHTML = Object.keys(POLICY_UPDATES).map(function(cat){
       var cards = POLICY_UPDATES[cat].map(function(d){
         return '<div class="digest-card"><h4>' + esc(d.h) + '</h4><p>' + esc(d.s) + '</p>' +

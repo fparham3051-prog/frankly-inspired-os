@@ -124,7 +124,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], giftPatterns:null, ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -689,6 +689,7 @@
       state.encounters = data.encounters || [];
       state.advancementState = data.advancementState || { weekProgress: {}, credPursuing: {} };
       state.weekEvents = data.weekEvents || [];
+      state.giftPatterns = data.giftPatterns || null;
       state.quizAttempts = data.quizAttempts || [];
       state.ready = true;
     });
@@ -2395,6 +2396,22 @@
     }).join("");
   }
 
+  function renderGiftPatterns(){
+    var body = document.getElementById("gp-body");
+    var refreshedEl = document.getElementById("gp-refreshed");
+    if(!body || !refreshedEl) return;
+    var gp = state.giftPatterns;
+    if(!gp || !gp.content){
+      body.innerHTML = '<p class="empty-note">Nothing logged yet, the first weekly synthesis will populate this.</p>';
+      refreshedEl.textContent = "";
+      return;
+    }
+    refreshedEl.textContent = (gp.windowLabel ? gp.windowLabel + " · " : "") + (gp.giftCount ? gp.giftCount + " gifts · " : "") + (gp.updatedAt ? "Last refreshed " + fmtDate(gp.updatedAt.slice(0,10)) : "");
+    body.innerHTML = gp.content.split(/\n\s*\n/).filter(Boolean).map(function(p){
+      return '<p>' + esc(p.trim()) + '</p>';
+    }).join("");
+  }
+
   // ---------- Giving Landscape (landing page): national chart + gift ticker + state grid ----------
   function fmtMoneyShort(n){
     n = Number(n) || 0;
@@ -3596,6 +3613,7 @@
     renderIssues();
     renderRocks();
     renderFieldIntel();
+    renderGiftPatterns();
     renderPlaybookLibrary();
     renderTimeHorizon();
     renderPracticeTrends();

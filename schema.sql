@@ -377,3 +377,19 @@ CREATE TABLE IF NOT EXISTS week_events (
   created_at TEXT,
   updated_at TEXT
 );
+
+-- gift_pattern_digests: a single JSON-ish blob row (same convention as
+-- advancement_state) holding the standing "Gift Patterns & Portfolio
+-- Implications" synthesis in the Field Intelligence tab, right below the
+-- weekly news digest. Replaced in full every week by the Weekly Gift
+-- Patterns synthesis scheduled task - this is one standing record, not a
+-- growing log, matching how that automation's own prompt already
+-- describes it (it was writing to this panel for weeks before the panel,
+-- or this table, actually existed server-side - every run 404'd).
+CREATE TABLE IF NOT EXISTS gift_pattern_digests (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  content TEXT DEFAULT '',
+  window_label TEXT DEFAULT '',
+  gift_count INTEGER DEFAULT 0,
+  updated_at TEXT
+);

@@ -85,7 +85,8 @@ const ADMIN_SCOPE_TOKENS = {
   backup: process.env.ADMIN_TOKEN_BACKUP || "",
   restore: process.env.ADMIN_TOKEN_RESTORE || "",
   status: process.env.ADMIN_TOKEN_STATUS || "",
-  calendar: process.env.ADMIN_TOKEN_CALENDAR || ""
+  calendar: process.env.ADMIN_TOKEN_CALENDAR || "",
+  giftPatterns: process.env.ADMIN_TOKEN_GIFT_PATTERNS || ""
 };
 function requireAdminScope(scope) {
   return function (req, res, next) {
@@ -177,7 +178,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes, giftPatternsRes] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -193,7 +194,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM encounters WHERE archived_at IS NULL ORDER BY occurred_at DESC NULLS LAST, created_at DESC"),
       pool.query("SELECT * FROM advancement_state WHERE id = 'main'"),
       pool.query("SELECT * FROM quiz_attempts WHERE archived_at IS NULL ORDER BY taken_at DESC NULLS LAST, created_at DESC LIMIT 200"),
-      pool.query("SELECT * FROM week_events ORDER BY starts_at ASC")
+      pool.query("SELECT * FROM week_events ORDER BY starts_at ASC"),
+      pool.query("SELECT * FROM gift_pattern_digests WHERE id = 'main'")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -211,7 +213,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       encounters: encounters.rows.map(rowToEncounter),
       advancementState: advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} },
       quizAttempts: quizAttempts.rows.map(rowToQuizAttempt),
-      weekEvents: weekEventsRes.rows.map(rowToWeekEvent)
+      weekEvents: weekEventsRes.rows.map(rowToWeekEvent),
+      giftPatterns: giftPatternsRes.rows[0] ? rowToGiftPatternDigest(giftPatternsRes.rows[0]) : null
     });
   } catch (err) {
     console.error(err);
@@ -266,6 +269,9 @@ function rowToAdvancementState(r) {
 }
 function rowToWeekEvent(r) {
   return { id: r.id, title: r.title, startsAt: r.starts_at, endsAt: r.ends_at, location: r.location, url: r.url, status: r.status, statusLabel: r.status_label, cta: r.cta };
+}
+function rowToGiftPatternDigest(r) {
+  return { content: r.content, windowLabel: r.window_label, giftCount: r.gift_count === null ? 0 : Number(r.gift_count), updatedAt: r.updated_at };
 }
 function rowToQuizAttempt(r) {
   return { id: r.id, examKey: r.exam_key, examLabel: r.exam_label, score: r.score, total: r.total, domainBreakdown: safeJsonParse(r.domain_breakdown, {}), takenAt: r.taken_at, createdAt: r.created_at };
@@ -751,6 +757,44 @@ app.post("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// ---------- gifts read + gift-patterns synthesis (Field Intelligence tab) ----------
+// GET mirrors the existing POST /api/admin/gifts upsert below, returning the
+// same fields (including the internal case-study ones the public site never
+// shows) so the Weekly Gift Patterns synthesis task can read before it
+// writes - this route never existed, which is the main reason that task has
+// 404'd every run since it was created.
+app.get("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM gifts WHERE archived_at IS NULL ORDER BY announced_at DESC NULLS LAST, logged_at DESC LIMIT 100"
+    );
+    res.json({ items: rows.map(rowToGift) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "failed to read gifts" });
+  }
+});
+
+// Admin-only write for the standing "Gift Patterns & Portfolio Implications"
+// panel in the Field Intelligence tab, right below the weekly news digest -
+// a single replace-in-full row (read via /api/state), not a growing log,
+// matching how the Weekly Gift Patterns synthesis task's own prompt already
+// describes it.
+app.post("/api/admin/gift-patterns", requireAdminScope("giftPatterns"), async (req, res) => {
+  const b = req.body || {};
+  if (!b.content) {
+    return res.status(400).json({ error: "content required" });
+  }
+  const now = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO gift_pattern_digests (id, content, window_label, gift_count, updated_at)
+     VALUES ('main', $1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE SET content = $1, window_label = $2, gift_count = $3, updated_at = $4`,
+    [b.content, b.windowLabel || "", Number(b.giftCount || 0), now]
+  );
+  res.json({ ok: true });
 });
 
 // ---------- week events (the President's Desk "This Week" panel) ----------

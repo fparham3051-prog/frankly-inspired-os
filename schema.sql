@@ -352,3 +352,28 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
   archived_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_exam_key ON quiz_attempts(exam_key);
+
+-- week_events: the President's Desk "This Week" panel's calendar holds -
+-- replaces the September-migration hardcoded WEEK_EVENTS array that used
+-- to live in app.js. Populated by the "Weekly calendar prep briefing"
+-- scheduled task, which already pulls Franklin's real Google Calendar for
+-- the week ahead - this is that same pull, upserted here so the panel
+-- shows it too instead of only that run's own chat reply. Nothing here is
+-- ever manually deleted: the frontend only renders rows whose starts_at
+-- falls in the week ahead (the same derived-not-stored pattern invoices
+-- uses for "overdue"), so a past event just drops out of view on its own;
+-- the admin endpoint prunes anything more than 21 days past so the table
+-- itself doesn't grow forever.
+CREATE TABLE IF NOT EXISTS week_events (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT DEFAULT '',
+  location TEXT DEFAULT '',
+  url TEXT DEFAULT '',
+  status TEXT DEFAULT 'neutral',
+  status_label TEXT DEFAULT '',
+  cta TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT
+);

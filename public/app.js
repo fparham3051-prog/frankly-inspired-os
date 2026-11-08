@@ -124,7 +124,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -688,6 +688,7 @@
       state.timeEntries = data.timeEntries || [];
       state.encounters = data.encounters || [];
       state.advancementState = data.advancementState || { weekProgress: {}, credPursuing: {} };
+      state.weekEvents = data.weekEvents || [];
       state.quizAttempts = data.quizAttempts || [];
       state.ready = true;
     });
@@ -3701,22 +3702,59 @@
   }
 
   // ---------- this week ----------
-  var WEEK_EVENTS = [
-    {id:"afp-deepdive-3", title:"AFP Deep Dive: Fundamentals of Fundraising, Day 3 of 4", meta:["TUE 9/15","12:00 to 5:00 PM ET","Virtual"], status:"warn", statusLabel:"Not registered", url:"https://afpglobal.org/webinars/afp-deep-dive-fundamentals-fundraising-virtual-course-4-day-series-sept-2026", cta:"Register"},
-    {id:"drg-webinar", title:"DRG Webinar: Engagement at Scale (Storytelling for Relationship)", meta:["TUE 9/15","1:00 to 2:00 PM ET","Virtual","$60"], status:"warn", statusLabel:"Not registered", url:"https://donorrelations.com/2026-webinar-series", cta:"Register"},
-    {id:"afpdc-legacy", title:"AFP-DC: From Legacy to Next Gen Giving (Video &amp; Fundraising)", meta:["WED 9/16","8:30 to 9:45 AM ET","Location unpublished","CFRE credit"], status:"neutral", statusLabel:"Confirm location", url:"https://afpdc.org/upcoming-events", cta:"AFP-DC events"},
-    {id:"afp-major-gift", title:"AFP Webinar: The Ask Isn't the Hard Part (Major Gift Presence)", meta:["THU 9/17","Time unpublished","Free members / $129 non-members"], status:"warn", statusLabel:"Not registered", url:"https://afpglobal.org/professional-development/webinars", cta:"Register"},
-    {id:"afp-deepdive-4", title:"AFP Deep Dive: Fundamentals of Fundraising, Day 4 of 4 (final)", meta:["THU 9/17","12:00 to 5:00 PM ET","Virtual"], status:"warn", statusLabel:"Not registered", url:"https://afpglobal.org/webinars/afp-deep-dive-fundamentals-fundraising-virtual-course-4-day-series-sept-2026", cta:"Register"}
-  ];
+  // Replaces the old hardcoded WEEK_EVENTS array (a September-migration
+  // leftover) with the live week_events table, populated weekly by the
+  // "Weekly calendar prep briefing" scheduled task from Franklin's real
+  // Google Calendar. A past event just drops off this list on its own
+  // once its date passes - see getUpcomingWeekEvents() below - so this
+  // panel never needs manual pruning to "stay current."
+  var EVENT_TZ = "America/New_York";
+  function formatEventDateLabel(iso){
+    try {
+      var d = new Date(iso);
+      var wd = d.toLocaleDateString("en-US", { weekday:"short", timeZone: EVENT_TZ }).toUpperCase();
+      var md = d.toLocaleDateString("en-US", { month:"numeric", day:"numeric", timeZone: EVENT_TZ });
+      return wd + " " + md;
+    } catch(e){ return ""; }
+  }
+  function formatEventTimeRange(startIso, endIso){
+    try {
+      var opts = { hour:"numeric", minute:"2-digit", timeZone: EVENT_TZ };
+      var startStr = new Date(startIso).toLocaleTimeString("en-US", opts);
+      if(endIso){
+        var endStr = new Date(endIso).toLocaleTimeString("en-US", opts);
+        return startStr + " to " + endStr + " ET";
+      }
+      return startStr + " ET";
+    } catch(e){ return ""; }
+  }
+  function getUpcomingWeekEvents(){
+    var now = Date.now();
+    var horizon = now + 8 * 24 * 3600 * 1000;
+    return (state.weekEvents || []).filter(function(ev){
+      var start = new Date(ev.startsAt).getTime();
+      if(!isFinite(start)) return false;
+      var end = ev.endsAt ? new Date(ev.endsAt).getTime() : start;
+      if(!isFinite(end)) end = start;
+      return end >= now && start <= horizon;
+    }).sort(function(a,b){ return new Date(a.startsAt) - new Date(b.startsAt); });
+  }
 
   function renderWeek(){
-    document.getElementById("week-list").innerHTML = WEEK_EVENTS.map(function(ev){
+    var events = getUpcomingWeekEvents();
+    if(events.length === 0){
+      document.getElementById("week-list").innerHTML = '<p class="muted">Nothing on the calendar for the week ahead.</p>';
+      return;
+    }
+    document.getElementById("week-list").innerHTML = events.map(function(ev){
       var pillClass = ev.status === "warn" ? "pill warn" : "pill";
+      var meta = [formatEventDateLabel(ev.startsAt), formatEventTimeRange(ev.startsAt, ev.endsAt)];
+      if(ev.location) meta.push(ev.location);
       return '<div class="event-card" data-id="' + ev.id + '">' +
-        '<div class="event-main"><div class="event-title">' + ev.title + '</div>' +
-        '<div class="event-meta">' + ev.meta.map(function(m){ return '<span>' + esc(m) + '</span>'; }).join('<span>&middot;</span>') + '</div></div>' +
-        '<span class="' + pillClass + '" data-role="pill">' + ev.statusLabel + '</span>' +
-        '<div class="event-actions"><a class="btn" href="' + ev.url + '" target="_blank" rel="noopener">' + ev.cta + ' →</a>' +
+        '<div class="event-main"><div class="event-title">' + esc(ev.title) + '</div>' +
+        '<div class="event-meta">' + meta.filter(Boolean).map(function(m){ return '<span>' + esc(m) + '</span>'; }).join('<span>&middot;</span>') + '</div></div>' +
+        (ev.statusLabel ? '<span class="' + pillClass + '" data-role="pill">' + esc(ev.statusLabel) + '</span>' : '') +
+        '<div class="event-actions">' + (ev.url ? '<a class="btn" href="' + ev.url + '" target="_blank" rel="noopener">' + esc(ev.cta || "Details") + ' →</a>' : '') +
         (ev.status === "warn" ? '<label class="check-label"><input type="checkbox" data-track="' + ev.id + '"> Done</label>' : '') +
         '</div></div>';
     }).join("");
@@ -3728,8 +3766,10 @@
       function apply(){
         var card = box.closest(".event-card");
         var pill = card.querySelector('[data-role="pill"]');
-        if(box.checked){ pill.textContent = "Registered"; pill.className = "pill gold"; }
-        else { pill.textContent = "Not registered"; pill.className = "pill warn"; }
+        if(pill){
+          if(box.checked){ pill.textContent = "Registered"; pill.className = "pill gold"; }
+          else { pill.textContent = "Not registered"; pill.className = "pill warn"; }
+        }
       }
       apply();
       box.addEventListener("change", function(){
@@ -3742,20 +3782,26 @@
 
   function openCount(){
     var weekProgress = (state.advancementState && state.advancementState.weekProgress) || {};
-    return WEEK_EVENTS.filter(function(ev){
+    return getUpcomingWeekEvents().filter(function(ev){
       return ev.status === "warn" && !weekProgress[ev.id];
     }).length;
   }
   function updateOpenStat(){ document.getElementById("stat-open").textContent = openCount(); }
 
   function renderGlance(){
-    var open = openCount();
-    var confirmNeeded = WEEK_EVENTS.filter(function(ev){ return ev.status === "neutral"; }).length;
-    var items = [
-      {who: open === 0 ? "All this week's registrations are handled" : (open + " registration" + (open===1?"":"s") + " still open"), when: "Sept 15 to 17"},
-      {who: "Tuesday's AFP Deep Dive and DRG webinar overlap 1 to 2 PM", when: "conflict"},
-      {who: confirmNeeded + " event" + (confirmNeeded===1?"":"s") + " needs a location confirmed", when: "AFP-DC"}
-    ];
+    var events = getUpcomingWeekEvents();
+    var items = [];
+    if(events.length === 0){
+      items.push({who: "Nothing on the calendar for the week ahead", when: ""});
+    } else {
+      var open = openCount();
+      var confirmNeeded = events.filter(function(ev){ return ev.status === "neutral"; }).length;
+      var rangeLabel = formatEventDateLabel(events[0].startsAt) + " to " + formatEventDateLabel(events[events.length-1].startsAt);
+      items.push({who: open === 0 ? "All this week's registrations are handled" : (open + " registration" + (open===1?"":"s") + " still open"), when: rangeLabel});
+      if(confirmNeeded > 0){
+        items.push({who: confirmNeeded + " event" + (confirmNeeded===1?"":"s") + " needs a location confirmed", when: ""});
+      }
+    }
     document.getElementById("glance-list").innerHTML = items.map(function(i){
       return '<li><span class="who">' + esc(i.who) + '</span><span class="when">' + esc(i.when) + '</span></li>';
     }).join("");

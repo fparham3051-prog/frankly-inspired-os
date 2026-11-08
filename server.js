@@ -84,7 +84,8 @@ const ADMIN_SCOPE_TOKENS = {
   digest: process.env.ADMIN_TOKEN_DIGEST || "",
   backup: process.env.ADMIN_TOKEN_BACKUP || "",
   restore: process.env.ADMIN_TOKEN_RESTORE || "",
-  status: process.env.ADMIN_TOKEN_STATUS || ""
+  status: process.env.ADMIN_TOKEN_STATUS || "",
+  calendar: process.env.ADMIN_TOKEN_CALENDAR || ""
 };
 function requireAdminScope(scope) {
   return function (req, res, next) {
@@ -176,7 +177,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -191,7 +192,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM time_entries WHERE archived_at IS NULL ORDER BY entry_date DESC"),
       pool.query("SELECT * FROM encounters WHERE archived_at IS NULL ORDER BY occurred_at DESC NULLS LAST, created_at DESC"),
       pool.query("SELECT * FROM advancement_state WHERE id = 'main'"),
-      pool.query("SELECT * FROM quiz_attempts WHERE archived_at IS NULL ORDER BY taken_at DESC NULLS LAST, created_at DESC LIMIT 200")
+      pool.query("SELECT * FROM quiz_attempts WHERE archived_at IS NULL ORDER BY taken_at DESC NULLS LAST, created_at DESC LIMIT 200"),
+      pool.query("SELECT * FROM week_events ORDER BY starts_at ASC")
     ]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
@@ -208,7 +210,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       timeEntries: timeEntries.rows.map(rowToTimeEntry),
       encounters: encounters.rows.map(rowToEncounter),
       advancementState: advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} },
-      quizAttempts: quizAttempts.rows.map(rowToQuizAttempt)
+      quizAttempts: quizAttempts.rows.map(rowToQuizAttempt),
+      weekEvents: weekEventsRes.rows.map(rowToWeekEvent)
     });
   } catch (err) {
     console.error(err);
@@ -260,6 +263,9 @@ function safeJsonParse(s, fallback) {
 }
 function rowToAdvancementState(r) {
   return { weekProgress: safeJsonParse(r.week_progress, {}), credPursuing: safeJsonParse(r.cred_pursuing, {}), updatedAt: r.updated_at };
+}
+function rowToWeekEvent(r) {
+  return { id: r.id, title: r.title, startsAt: r.starts_at, endsAt: r.ends_at, location: r.location, url: r.url, status: r.status, statusLabel: r.status_label, cta: r.cta };
 }
 function rowToQuizAttempt(r) {
   return { id: r.id, examKey: r.exam_key, examLabel: r.exam_label, score: r.score, total: r.total, domainBreakdown: safeJsonParse(r.domain_breakdown, {}), takenAt: r.taken_at, createdAt: r.created_at };
@@ -742,6 +748,45 @@ app.post("/api/admin/gifts", requireAdminScope("gifts"), async (req, res) => {
     await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "failed to update gifts" });
+  } finally {
+    client.release();
+  }
+});
+
+// ---------- week events (the President's Desk "This Week" panel) ----------
+// Admin-only bulk upsert, used by the Weekly calendar prep briefing scheduled
+// task to push the real Google Calendar pull it already does each Monday.
+// Upserts by id (a stable "gcal-" + calendar event id), same pattern as
+// /api/admin/digest and /api/admin/gifts, so re-running the same week's
+// pull is always safe. Also prunes anything more than 21 days past so this
+// table never grows unbounded - nothing is "deleted" from Franklin's real
+// calendar, just dropped from this one small mirror of it.
+app.post("/api/admin/week-events", requireAdminScope("calendar"), async (req, res) => {
+  const items = (req.body && req.body.items) || [];
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: "items array required" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const now = new Date().toISOString();
+    for (const item of items) {
+      if (!item.id || !item.title || !item.startsAt) continue;
+      await client.query(
+        `INSERT INTO week_events (id, title, starts_at, ends_at, location, url, status, status_label, cta, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
+         ON CONFLICT (id) DO UPDATE SET title=$2, starts_at=$3, ends_at=$4, location=$5, url=$6, status=$7, status_label=$8, cta=$9, updated_at=$10`,
+        [item.id, item.title, item.startsAt, item.endsAt || "", item.location || "", item.url || "", item.status || "neutral", item.statusLabel || "", item.cta || "", now]
+      );
+    }
+    const cutoff = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString();
+    await client.query("DELETE FROM week_events WHERE starts_at < $1", [cutoff]);
+    await client.query("COMMIT");
+    res.json({ ok: true, count: items.length });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "failed to update week events" });
   } finally {
     client.release();
   }

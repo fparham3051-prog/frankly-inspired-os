@@ -28,8 +28,24 @@
     return !!(p.nextStepDate && !CLOSED_STAGES[p.stage] && p.nextStepDate < todayStr());
   }
 
-  var STAGE_LABELS = {lead:"Lead", discovery:"Discovery Call", assessment:"InstitutionalOS Assessment", engaged:"Engaged", graduated:"Graduated", referred:"Referred Out", lost:"Lost, No Fit"};
-  var TRACK_LABELS = {undecided:"Undecided", coaching:"Coaching", consulting:"Project Consulting", institutionalos:"InstitutionalOS Assessment"};
+  var STAGE_LABELS = {lead:"Lead", discovery:"Discovery Call", assessment:"InstitutionalOS Diagnostic", engaged:"Engaged", graduated:"Graduated", referred:"Referred Out", lost:"Lost, No Fit"};
+  // Tracks mirror the offers on franklyinspired.associates (#pricing). Keys
+  // stay as they were so existing records keep their track.
+  var TRACK_LABELS = {undecided:"Undecided", institutionalos:"InstitutionalOS Diagnostic", retainer:"Advisory and Implementation Retainer", consulting:"Project Based Engagement", coaching:"1:1 Executive Coaching", speaking:"Speaking and Board Service"};
+  // The Diagnostic's three lifecycle stages (InstitutionalOS BUILD/FUND/SUSTAIN).
+  var DIAGNOSTIC_STAGE_LABELS = {build:"Build (Formation Readiness)", fund:"Fund (Grant Readiness)", sustain:"Sustain (Institutional Durability)"};
+  // Website price book, kept in step with the site's #pricing section.
+  // Used only to pre-fill an invoice amount; always editable.
+  var PRICE_BOOK = {
+    "institutionalos-diagnostic": {build: 2000, fund: 2500, sustain: 2500, "": 2500},
+    "retainer": 2500,          // $2,500 to $3,500 per month, 3-month recommended minimum
+    "coaching": 350,           // per 60-minute session
+    "project": 0,              // priced to scope
+    "speaking": 0,             // quoted per engagement
+    "other": 0
+  };
+  // Website lead interest -> short label (same keys as OFFERING_LABELS).
+  var INTEREST_LABELS = {"institutionalos-diagnostic":"Diagnostic", retainer:"Retainer", project:"Project", coaching:"Coaching", speaking:"Speaking"};
   var CLOSED_STAGES = {graduated:1, referred:1, lost:1};
 
   // The four things Frankly Inspired actually sells, matching the pipeline
@@ -37,14 +53,22 @@
   // can (an invoice is more specific than a track: a "consulting" track
   // pipeline record could later be billed as either a Retainer or a single
   // Project Based Engagement).
-  var OFFERING_LABELS = { "institutionalos-diagnostic": "InstitutionalOS Diagnostic", "retainer": "Advisory and Implementation Retainer", "project": "Project Based Engagement", "coaching": "1:1 Executive Coaching", "other": "Other" };
+  var OFFERING_LABELS = { "institutionalos-diagnostic": "InstitutionalOS Diagnostic", "retainer": "Advisory and Implementation Retainer", "project": "Project Based Engagement", "coaching": "1:1 Executive Coaching", "speaking": "Speaking and Board Service", "other": "Other" };
   // Deliberately just three real, stored states - no stored "overdue", see
   // the schema.sql comment on the invoices table for why.
   var INVOICE_STATUS_LABELS = { draft: "Draft", sent: "Sent", paid: "Paid" };
   // The five pillars document 9's Runbook already sequences an engagement
   // through - offered as quick-fill suggestions on the module name field,
   // never a hard enum (see the engagement_modules schema comment).
-  var MODULE_NAME_SUGGESTIONS = ["Governing Foundation", "Build Before the Ask", "Fundraising Fluency", "Zero to Portfolio", "Funding Pathway Finder"];
+  // Plus the Diagnostic's promised deliverables (website #pricing), the
+  // seven Health Index dimensions a retainer works on, and the Candid Seal
+  // step every 90-day plan includes.
+  var MODULE_NAME_SUGGESTIONS = [
+    "Governing Foundation", "Build Before the Ask", "Fundraising Fluency", "Zero to Portfolio", "Funding Pathway Finder",
+    "Diagnostic: evidence review (all seven dimensions)", "Diagnostic: binding-constraint memo", "Diagnostic: 90-day plan with Candid Seal step", "Diagnostic: readout session", "90-day reassessment",
+    "Strategy and Positioning", "Program and Impact Evidence", "Revenue and Financial Health", "Leadership and Organizational Capacity", "Operations and Infrastructure", "Partnerships and Ecosystem", "Governance and Risk",
+    "Candid Seal: next level"
+  ];
   var MODULE_STATUS_LABELS = { "not-started": "Not Started", "scheduled": "Scheduled", "complete": "Complete" };
   // Encounters: two independent classifications (how contact happened vs.
   // where it left the relationship), plus a next-step datalist keyed by
@@ -723,7 +747,7 @@
       var overdue = isOverduePipeline(p);
       return '<tr data-id="' + esc(p.id) + '"' + (overdue ? ' class="row-overdue"' : '') + '>' +
         '<td>' + dotHtml(pipelineHealth(p)) + '<strong>' + esc(p.name || "Untitled") + '</strong>' + (p.org ? '<div class="dim">' + esc(p.org) + '</div>' : '') + '</td>' +
-        '<td>' + esc(TRACK_LABELS[p.track] || "Undecided") + '</td>' +
+        '<td>' + esc(TRACK_LABELS[p.track] || "Undecided") + (p.diagnosticStage ? '<div class="dim">' + esc(DIAGNOSTIC_STAGE_LABELS[p.diagnosticStage] || p.diagnosticStage) + '</div>' : '') + '</td>' +
         '<td><select class="inline-select pl-stage-select">' + stageOptions + '</select></td>' +
         '<td>' + esc(p.nextStep || "") + '</td>' +
         '<td>' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</td>' +
@@ -764,12 +788,14 @@
       nextStep: document.getElementById("pl-next").value.trim(),
       nextStepDate: document.getElementById("pl-next-date").value,
       dealValue: Number(document.getElementById("pl-deal-value").value || 0),
+      diagnosticStage: document.getElementById("pl-diag-stage").value,
       notes: document.getElementById("pl-notes").value.trim()
     };
     apiFetch("/api/pipeline", { method: "POST", body: data }).then(function(){
       document.getElementById("pipeline-form").reset();
       document.getElementById("pl-stage").value = "lead";
       document.getElementById("pl-track").value = "undecided";
+      document.getElementById("pl-diag-stage").value = "";
       statusEl.textContent = "Added.";
       setTimeout(function(){ statusEl.textContent = ""; }, 2200);
       return refreshAndRender();
@@ -792,7 +818,7 @@
         ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener">' + esc(p.name || "Untitled") + '</a>'
         : esc(p.name || "Untitled");
       var row = '<tr data-id="' + esc(p.id) + '">' +
-        '<td>' + dotHtml(prospectHealth(p)) + '<strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</div></td>' +
+        '<td>' + dotHtml(prospectHealth(p)) + '<strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + (p.interest ? ' · wants ' + esc(INTEREST_LABELS[p.interest] || p.interest) : '') + (p.orgStage ? ' · ' + esc((DIAGNOSTIC_STAGE_LABELS[p.orgStage] || p.orgStage).split(" (")[0]) + ' stage' : '') + '</div></td>' +
         '<td class="dim">' + esc(p.org || "") + '</td>' +
         '<td class="dim">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</td>' +
         '<td><select class="inline-select ps-stage-select">' + opts + '</select></td>' +
@@ -1176,6 +1202,23 @@
       .then(refreshAndRender)
       .catch(function(err){ console.error(err); });
   });
+  // Pre-fill the invoice amount from the website price book when the
+  // offering or engagement changes, unless an amount was typed by hand.
+  function suggestInvoiceAmount(){
+    var amountEl = document.getElementById("inv-amount");
+    if(amountEl.value && amountEl.getAttribute("data-auto") !== "1") return;
+    var offering = document.getElementById("inv-offering").value;
+    var rec = state.pipeline.find(function(p){ return p.id === document.getElementById("inv-pipeline").value; });
+    var price = PRICE_BOOK[offering];
+    if(price && typeof price === "object") price = price[(rec && rec.diagnosticStage) || ""];
+    if(price){ amountEl.value = price; amountEl.setAttribute("data-auto", "1"); }
+    else if(amountEl.getAttribute("data-auto") === "1"){ amountEl.value = ""; amountEl.removeAttribute("data-auto"); }
+  }
+  ["inv-offering", "inv-pipeline"].forEach(function(id){
+    document.getElementById(id).addEventListener("change", suggestInvoiceAmount);
+  });
+  document.getElementById("inv-amount").addEventListener("input", function(){ this.removeAttribute("data-auto"); });
+
   document.getElementById("invoice-form").addEventListener("submit", function(e){
     e.preventDefault();
     var statusEl = document.getElementById("inv-status-msg");

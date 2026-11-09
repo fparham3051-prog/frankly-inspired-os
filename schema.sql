@@ -401,3 +401,15 @@ ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS content TEXT DEFAULT '
 ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS window_label TEXT DEFAULT '';
 ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS gift_count INTEGER DEFAULT 0;
 ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS updated_at TEXT;
+
+-- ---------- Offer alignment with franklyinspired.associates (Nov 2026) ----------
+-- interest: which offer a website lead asked about, using the same keys as
+-- invoices.offering (institutionalos-diagnostic, retainer, project,
+-- coaching, speaking). org_stage: the lifecycle stage the visitor picked in
+-- a free tool (build, fund, sustain). Promoting a prospect copies these
+-- onto the pipeline row as its track and diagnostic_stage, so a lead never
+-- has to be re-classified by hand. diagnostic_stage also sets the default
+-- Diagnostic invoice amount (Build $2,000; Fund and Sustain $2,500).
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS interest TEXT DEFAULT '';
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS org_stage TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS diagnostic_stage TEXT DEFAULT '';

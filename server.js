@@ -223,7 +223,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
 });
 
 function rowToPipeline(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), createdAt: r.created_at, updatedAt: r.updated_at };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), diagnosticStage: r.diagnostic_stage || "", createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function rowToScorecard(r) {
   return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at };
@@ -235,7 +235,7 @@ function rowToRock(r) {
   return { id: r.id, title: r.title, quarter: r.quarter, dueDate: r.due_date, notes: r.notes, status: r.status, createdAt: r.created_at };
 }
 function rowToProspect(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "" };
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
@@ -290,14 +290,21 @@ function archiveRow(table, id) {
 }
 
 // ---------- pipeline ----------
+// Offer alignment with franklyinspired.associates: a website lead's
+// interest (an invoices.offering key) maps onto the pipeline track it
+// belongs to, and its lifecycle stage carries over as diagnostic_stage.
+const DIAGNOSTIC_STAGES = new Set(["build", "fund", "sustain"]);
+const INTEREST_KEYS = new Set(["institutionalos-diagnostic", "retainer", "project", "coaching", "speaking"]);
+const INTEREST_TO_TRACK = { "institutionalos-diagnostic": "institutionalos", retainer: "retainer", project: "consulting", coaching: "coaching", speaking: "speaking" };
+
 app.post("/api/pipeline", requireAuth, async (req, res) => {
   const b = req.body || {};
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, deal_value, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
-    [id, b.name || "", b.org || "", b.source || "", b.track || "undecided", b.stage || "lead", b.nextStep || "", b.nextStepDate || "", b.notes || "", Number(b.dealValue || 0), now]
+    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, deal_value, diagnostic_stage, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
+    [id, b.name || "", b.org || "", b.source || "", b.track || "undecided", b.stage || "lead", b.nextStep || "", b.nextStepDate || "", b.notes || "", Number(b.dealValue || 0), DIAGNOSTIC_STAGES.has(b.diagnosticStage) ? b.diagnosticStage : "", now]
   );
   res.json({ id });
 });
@@ -306,7 +313,7 @@ app.patch("/api/pipeline/:id", requireAuth, async (req, res) => {
   const fields = [];
   const values = [];
   let i = 1;
-  const map = { stage: "stage", nextStep: "next_step", nextStepDate: "next_step_date", notes: "notes", name: "name", org: "org", source: "source", track: "track", dealValue: "deal_value" };
+  const map = { stage: "stage", nextStep: "next_step", nextStepDate: "next_step_date", notes: "notes", name: "name", org: "org", source: "source", track: "track", dealValue: "deal_value", diagnosticStage: "diagnostic_stage" };
   for (const key of Object.keys(map)) {
     if (Object.prototype.hasOwnProperty.call(b, key)) {
       fields.push(`${map[key]} = $${i++}`);
@@ -419,9 +426,10 @@ app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,'undecided','lead','First outreach','',$5,$6,$6)`,
-    [id, p.name || "", p.org || "", "Prospecting: " + (p.source || ""), p.notes || "", now]
+    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, diagnostic_stage, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,'lead',$6,'',$7,$8,$9,$9)`,
+    [id, p.name || "", p.org || "", "Prospecting: " + (p.source || ""), INTEREST_TO_TRACK[p.interest] || "undecided",
+     p.interest ? "Discovery call" : "First outreach", p.notes || "", DIAGNOSTIC_STAGES.has(p.org_stage) ? p.org_stage : "", now]
   );
   // A dedicated update rather than the shared archiveRow() helper, so this
   // archival is tagged 'promoted' - distinct from an ordinary manual Remove
@@ -657,10 +665,11 @@ app.post("/api/admin/prospects", requireAdminScope("prospects"), async (req, res
     const id = newId();
     const now = new Date().toISOString();
     const result = await pool.query(
-      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref, interest, org_stage)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (source_ref) DO NOTHING`,
-      [id, item.name || "", item.org || "", item.source || "inbound", item.status || "new", item.link || "", item.notes || "", now, item.sourceRef]
+      [id, item.name || "", item.org || "", item.source || "inbound", item.status || "new", item.link || "", item.notes || "", now, item.sourceRef,
+       INTEREST_KEYS.has(item.interest) ? item.interest : "", DIAGNOSTIC_STAGES.has(item.orgStage) ? item.orgStage : ""]
     );
     if (result.rowCount > 0) created++; else skipped++;
   }

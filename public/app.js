@@ -46,6 +46,8 @@
   };
   // Website lead interest -> short label (same keys as OFFERING_LABELS).
   var INTEREST_LABELS = {"institutionalos-diagnostic":"Diagnostic", retainer:"Retainer", project:"Project", coaching:"Coaching", speaking:"Speaking"};
+  var TRIGGER_LABELS = { expansion:"Expansion", funder:"Funder readiness", founder:"Founder dependence", strain:"Capacity strain", transition:"Leadership transition", checkup:"Check-up" };
+  var PROBLEM_KIND_LABELS = { interview:"Interview", discovery:"Discovery call", diagnostic:"Diagnostic" };
   var CLOSED_STAGES = {graduated:1, referred:1, lost:1};
 
   // The four things Frankly Inspired actually sells, matching the pipeline
@@ -148,7 +150,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], giftPatterns:null, ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], problemLog:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], giftPatterns:null, ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -711,6 +713,7 @@
       state.engagementModules = data.engagementModules || [];
       state.timeEntries = data.timeEntries || [];
       state.encounters = data.encounters || [];
+      state.problemLog = data.problemLog || [];
       state.advancementState = data.advancementState || { weekProgress: {}, credPursuing: {} };
       state.weekEvents = data.weekEvents || [];
       state.giftPatterns = data.giftPatterns || null;
@@ -818,7 +821,7 @@
         ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener">' + esc(p.name || "Untitled") + '</a>'
         : esc(p.name || "Untitled");
       var row = '<tr data-id="' + esc(p.id) + '">' +
-        '<td>' + dotHtml(prospectHealth(p)) + '<strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + (p.interest ? ' · wants ' + esc(INTEREST_LABELS[p.interest] || p.interest) : '') + (p.orgStage ? ' · ' + esc((DIAGNOSTIC_STAGE_LABELS[p.orgStage] || p.orgStage).split(" (")[0]) + ' stage' : '') + '</div></td>' +
+        '<td>' + dotHtml(prospectHealth(p)) + '<strong>' + nameCell + '</strong><div class="prospect-source-tag">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + (p.interest ? ' · wants ' + esc(INTEREST_LABELS[p.interest] || p.interest) : '') + (p.orgStage ? ' · ' + esc((DIAGNOSTIC_STAGE_LABELS[p.orgStage] || p.orgStage).split(" (")[0]) + ' stage' : '') + (p.trigger ? ' · ' + esc(TRIGGER_LABELS[p.trigger] || p.trigger) : '') + '</div></td>' +
         '<td class="dim">' + esc(p.org || "") + '</td>' +
         '<td class="dim">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</td>' +
         '<td><select class="inline-select ps-stage-select">' + opts + '</select></td>' +
@@ -1487,6 +1490,82 @@
       document.getElementById("en-new-name-field").hidden = true;
       document.getElementById("en-new-org-field").hidden = true;
       statusEl.textContent = "Submitted.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      return refreshAndRender();
+    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+
+  // ---------- Problem log (interviews, discovery calls, Diagnostics) ----------
+  // The practice's problem rate: how often each trigger appears, and the
+  // hidden-problem rate (verified constraint differed from the presenting
+  // problem) across entries where that is known.
+  function problemPct(n, d){ return d ? Math.round(n / d * 100) + "%" : "–"; }
+  function renderProblemLog(){
+    var rows = state.problemLog || [];
+    var sum = document.getElementById("problem-summary");
+    var body = document.getElementById("problem-rows");
+    if(!sum || !body) return;
+    if(rows.length === 0){
+      sum.innerHTML = '<p class="empty-note">No entries yet. Each interview and discovery call you log here builds the numbers.</p>';
+      body.innerHTML = '<tr><td colspan="8" class="empty-note">Nothing logged yet.</td></tr>';
+      return;
+    }
+    var withTrigger = rows.filter(function(r){ return r.trigger && r.trigger !== "checkup"; });
+    var counts = {};
+    withTrigger.forEach(function(r){ counts[r.trigger] = (counts[r.trigger] || 0) + 1; });
+    var known = rows.filter(function(r){ return r.differs === true || r.differs === false; });
+    var differed = known.filter(function(r){ return r.differs === true; }).length;
+    var kinds = {};
+    rows.forEach(function(r){ kinds[r.kind] = (kinds[r.kind] || 0) + 1; });
+    var trigRows = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; }).map(function(k){
+      return '<tr><td>' + esc(TRIGGER_LABELS[k] || k) + '</td><td>' + counts[k] + '</td><td>' + problemPct(counts[k], withTrigger.length) + '</td></tr>';
+    }).join("");
+    sum.innerHTML =
+      '<p><strong>' + rows.length + '</strong> logged (' + Object.keys(kinds).map(function(k){ return kinds[k] + ' ' + (PROBLEM_KIND_LABELS[k] || k).toLowerCase() + (kinds[k] === 1 ? '' : 's'); }).join(", ") + ').</p>' +
+      '<p><strong>Hidden-problem rate: ' + problemPct(differed, known.length) + '</strong> <span class="dim">(' + differed + ' of ' + known.length + ' where the verified constraint is known)</span></p>' +
+      (trigRows ? '<div class="table-wrap"><table><thead><tr><th>Trigger</th><th>Count</th><th>Share</th></tr></thead><tbody>' + trigRows + '</tbody></table></div>' : '<p class="dim">No triggers recorded yet.</p>');
+    body.innerHTML = rows.map(function(r){
+      return '<tr data-id="' + esc(r.id) + '">' +
+        '<td class="dim">' + (r.loggedOn ? fmtDate(r.loggedOn) : "") + '</td>' +
+        '<td>' + esc(PROBLEM_KIND_LABELS[r.kind] || r.kind || "") + '</td>' +
+        '<td>' + esc(r.organization || r.orgType || "") + '</td>' +
+        '<td>' + esc(TRIGGER_LABELS[r.trigger] || "") + '</td>' +
+        '<td>' + esc(r.presentingProblem || "") + '</td>' +
+        '<td>' + esc(r.verifiedConstraint || "") + '</td>' +
+        '<td>' + (r.differs === true ? "Yes" : r.differs === false ? "No" : '<span class="dim">–</span>') + '</td>' +
+        '<td><button type="button" class="btn danger pb-delete">Remove</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+  document.getElementById("problem-rows").addEventListener("click", function(e){
+    var btn = e.target.closest(".pb-delete");
+    if(!btn) return;
+    if(!confirm("Remove this entry?")) return;
+    apiFetch("/api/problem-log/" + btn.closest("tr").getAttribute("data-id"), { method: "DELETE" })
+      .then(refreshAndRender)
+      .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("problem-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("pb-status-msg");
+    var differs = document.getElementById("pb-differs").value;
+    var data = {
+      loggedOn: document.getElementById("pb-date").value,
+      kind: document.getElementById("pb-kind").value,
+      organization: document.getElementById("pb-org").value.trim(),
+      orgType: document.getElementById("pb-type").value.trim(),
+      orgSize: document.getElementById("pb-size").value.trim(),
+      trigger: document.getElementById("pb-trigger").value,
+      presentingProblem: document.getElementById("pb-presenting").value.trim(),
+      verifiedConstraint: document.getElementById("pb-verified").value.trim(),
+      differs: differs === "yes" ? true : differs === "no" ? false : null,
+      whoPays: document.getElementById("pb-pays").value,
+      atStake: document.getElementById("pb-stake").value.trim(),
+      notes: document.getElementById("pb-notes").value.trim()
+    };
+    apiFetch("/api/problem-log", { method: "POST", body: data }).then(function(){
+      document.getElementById("problem-form").reset();
+      statusEl.textContent = "Logged.";
       setTimeout(function(){ statusEl.textContent = ""; }, 2200);
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
@@ -3652,6 +3731,7 @@
     renderFinance();
     renderDelivery();
     renderEncounters();
+    renderProblemLog();
     renderVision();
     renderIssues();
     renderRocks();

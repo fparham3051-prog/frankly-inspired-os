@@ -381,6 +381,7 @@
         <button type="button" class="filter-btn" data-rp-tab="finance" role="tab" aria-selected="false">Finance</button>
         <button type="button" class="filter-btn" data-rp-tab="delivery" role="tab" aria-selected="false">Delivery</button>
         <button type="button" class="filter-btn" data-rp-tab="encounters" role="tab" aria-selected="false">Prospect Reports</button>
+        <button type="button" class="filter-btn" data-rp-tab="problems" role="tab" aria-selected="false">Problem Log</button>
       </div>
 
       <div class="fw-card" data-panel="01 · Pipeline records" data-rp-tab="pipeline">
@@ -732,6 +733,62 @@
         <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Engagement</th><th>Contact</th><th>Type</th><th>Stage</th><th>Next step</th><th>Logged by</th><th></th></tr></thead>
           <tbody id="encounter-rows"><tr><td colspan="8" class="empty-note">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
+      <!-- ---- Problem Log tab ---- -->
+      <div class="fw-card" data-panel="16 · Problem rate" data-rp-tab="problems" hidden>
+        <h3>Problem Rate</h3>
+        <p style="margin-top:-2px;">How often each trigger shows up across interviews, discovery calls, and Diagnostics, and how often the verified constraint turned out to be different from the problem leadership first named.</p>
+        <div id="problem-summary"><p class="empty-note">No entries yet.</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="17 · Log a conversation" data-rp-tab="problems" hidden>
+        <h3>Log an Interview, Discovery Call, or Diagnostic</h3>
+        <p style="margin-top:-2px;">Write the presenting problem in their words. Add the verified constraint once a Diagnostic confirms it.</p>
+        <form class="entry-form" id="problem-form">
+          <div class="form-title">Log a conversation</div>
+          <div class="form-grid">
+            <div class="field"><label for="pb-date">Date</label><input id="pb-date" type="date" required></div>
+            <div class="field"><label for="pb-kind">Kind</label>
+              <select id="pb-kind"><option value="interview">Market interview</option><option value="discovery">Discovery call</option><option value="diagnostic">Diagnostic</option></select>
+            </div>
+            <div class="field"><label for="pb-org">Organization (optional)</label><input id="pb-org"></div>
+            <div class="field"><label for="pb-type">Org type</label><input id="pb-type" placeholder="youth development, workforce, education access"></div>
+            <div class="field"><label for="pb-size">Size</label><input id="pb-size" placeholder="$2M, 18 staff"></div>
+            <div class="field"><label for="pb-trigger">Trigger</label>
+              <select id="pb-trigger">
+                <option value="">Not clear yet</option>
+                <option value="expansion">Expansion: new site, city, or program</option>
+                <option value="funder">Funder readiness or grant ending</option>
+                <option value="founder">Founder or ED dependence</option>
+                <option value="strain">Growth without capacity</option>
+                <option value="transition">Leadership transition</option>
+                <option value="checkup">No trigger, check-up</option>
+              </select>
+            </div>
+            <div class="field wide"><label for="pb-presenting">Presenting problem (their words)</label><textarea id="pb-presenting" placeholder="what they said the problem was"></textarea></div>
+            <div class="field wide"><label for="pb-verified">Verified constraint (after a Diagnostic)</label><textarea id="pb-verified" placeholder="what the evidence showed"></textarea></div>
+            <div class="field"><label for="pb-differs">Did it differ from the presenting problem?</label>
+              <select id="pb-differs"><option value="">Not known yet</option><option value="yes">Yes, it differed</option><option value="no">No, it matched</option></select>
+            </div>
+            <div class="field"><label for="pb-pays">Who would pay</label>
+              <select id="pb-pays"><option value="">Not discussed</option><option value="organization">The organization</option><option value="board">The board</option><option value="funder">A funder</option><option value="unknown">Unclear</option></select>
+            </div>
+            <div class="field wide"><label for="pb-stake">What was at stake</label><textarea id="pb-stake" placeholder="a grant, a site opening, a leader leaving, months of cash"></textarea></div>
+            <div class="field wide"><label for="pb-notes">Exact phrases worth keeping</label><textarea id="pb-notes" placeholder="quotes to reuse in website copy and talks"></textarea></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Submit to database</button>
+            <span class="save-status" aria-live="polite" id="pb-status-msg"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="fw-card" data-panel="18 · Problem log" data-rp-tab="problems" hidden>
+        <h3>Problem Log</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Kind</th><th>Organization</th><th>Trigger</th><th>Presenting problem</th><th>Verified constraint</th><th>Differed</th><th></th></tr></thead>
+          <tbody id="problem-rows"><tr><td colspan="8" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
       </div>
     </section>

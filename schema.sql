@@ -413,3 +413,30 @@ ALTER TABLE gift_pattern_digests ADD COLUMN IF NOT EXISTS updated_at TEXT;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS interest TEXT DEFAULT '';
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS org_stage TEXT DEFAULT '';
 ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS diagnostic_stage TEXT DEFAULT '';
+
+-- trigger_key: the situation a website visitor picked ("What's happening
+-- right now?" on every free tool): expansion, funder, founder, strain,
+-- transition, checkup.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS trigger_key TEXT DEFAULT '';
+
+-- Problem log: one row per market interview, discovery call, or Diagnostic.
+-- It is where the practice's "problem rate" comes from: how often each
+-- trigger shows up, and how often the verified constraint differs from
+-- the problem leadership first named (the hidden-problem rate).
+CREATE TABLE IF NOT EXISTS problem_log (
+  id TEXT PRIMARY KEY,
+  logged_on TEXT,
+  kind TEXT DEFAULT 'interview',
+  organization TEXT DEFAULT '',
+  org_type TEXT DEFAULT '',
+  org_size TEXT DEFAULT '',
+  trigger_key TEXT DEFAULT '',
+  presenting_problem TEXT DEFAULT '',
+  verified_constraint TEXT DEFAULT '',
+  differs BOOLEAN,
+  at_stake TEXT DEFAULT '',
+  who_pays TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);

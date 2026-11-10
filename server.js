@@ -178,7 +178,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes, giftPatternsRes] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes, giftPatternsRes, problemLog] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -196,7 +196,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM quiz_attempts WHERE archived_at IS NULL ORDER BY taken_at DESC NULLS LAST, created_at DESC LIMIT 200"),
       pool.query("SELECT * FROM week_events ORDER BY starts_at ASC"),
       pool.query("SELECT * FROM gift_pattern_digests WHERE id = 'main'")
-    ]);
+    ,
+      pool.query("SELECT * FROM problem_log WHERE archived_at IS NULL ORDER BY logged_on DESC NULLS LAST, created_at DESC")]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
       scorecard: scorecard.rows.map(rowToScorecard),
@@ -211,6 +212,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
       engagementModules: engagementModules.rows.map(rowToEngagementModule),
       timeEntries: timeEntries.rows.map(rowToTimeEntry),
       encounters: encounters.rows.map(rowToEncounter),
+      problemLog: problemLog.rows.map(rowToProblem),
       advancementState: advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} },
       quizAttempts: quizAttempts.rows.map(rowToQuizAttempt),
       weekEvents: weekEventsRes.rows.map(rowToWeekEvent),
@@ -235,7 +237,7 @@ function rowToRock(r) {
   return { id: r.id, title: r.title, quarter: r.quarter, dueDate: r.due_date, notes: r.notes, status: r.status, createdAt: r.created_at };
 }
 function rowToProspect(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "" };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "", trigger: r.trigger_key || "" };
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
@@ -257,6 +259,12 @@ function rowToEngagementModule(r) {
 }
 function rowToTimeEntry(r) {
   return { id: r.id, pipelineId: r.pipeline_id, entryDate: r.entry_date, minutes: r.minutes === null ? 0 : Number(r.minutes), note: r.note, createdAt: r.created_at };
+}
+const TRIGGER_KEYS = new Set(["expansion", "funder", "founder", "strain", "transition", "checkup"]);
+const PROBLEM_KINDS = new Set(["interview", "discovery", "diagnostic"]);
+const WHO_PAYS = new Set(["organization", "board", "funder", "unknown"]);
+function rowToProblem(r) {
+  return { id: r.id, loggedOn: r.logged_on, kind: r.kind, organization: r.organization, orgType: r.org_type, orgSize: r.org_size, trigger: r.trigger_key, presentingProblem: r.presenting_problem, verifiedConstraint: r.verified_constraint, differs: r.differs, atStake: r.at_stake, whoPays: r.who_pays, notes: r.notes, createdAt: r.created_at };
 }
 function rowToEncounter(r) {
   return { id: r.id, pipelineId: r.pipeline_id, contactName: r.contact_name, occurredAt: r.occurred_at, interactionType: r.interaction_type, relationshipStage: r.relationship_stage, reason: r.reason, nextStep: r.next_step, nextStepDate: r.next_step_date, summary: r.summary, loggedBy: r.logged_by, createdAt: r.created_at };
@@ -564,6 +572,27 @@ app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- problem log (interviews, discovery calls, Diagnostics) ----------
+app.post("/api/problem-log", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const clip = (v, n) => String(v || "").trim().slice(0, n);
+  const id = newId();
+  const now = new Date().toISOString();
+  await pool.query(
+    `INSERT INTO problem_log (id, logged_on, kind, organization, org_type, org_size, trigger_key, presenting_problem, verified_constraint, differs, at_stake, who_pays, notes, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    [id, /^\d{4}-\d{2}-\d{2}$/.test(b.loggedOn || "") ? b.loggedOn : now.slice(0, 10),
+     PROBLEM_KINDS.has(b.kind) ? b.kind : "interview", clip(b.organization, 200), clip(b.orgType, 120), clip(b.orgSize, 60),
+     TRIGGER_KEYS.has(b.trigger) ? b.trigger : "", clip(b.presentingProblem, 1000), clip(b.verifiedConstraint, 1000),
+     typeof b.differs === "boolean" ? b.differs : null, clip(b.atStake, 1000), WHO_PAYS.has(b.whoPays) ? b.whoPays : "", clip(b.notes, 2000), now]
+  );
+  res.json({ id });
+});
+app.delete("/api/problem-log/:id", requireAuth, async (req, res) => {
+  await archiveRow("problem_log", req.params.id);
+  res.json({ ok: true });
+});
+
 // ---------- encounters (dated contact reports, built on a peer's recommendation) ----------
 // Either pipelineId (an existing Pipeline record) or newContactName is
 // required. When newContactName is given instead, a lightweight Pipeline
@@ -665,11 +694,12 @@ app.post("/api/admin/prospects", requireAdminScope("prospects"), async (req, res
     const id = newId();
     const now = new Date().toISOString();
     const result = await pool.query(
-      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref, interest, org_stage)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref, interest, org_stage, trigger_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (source_ref) DO NOTHING`,
       [id, item.name || "", item.org || "", item.source || "inbound", item.status || "new", item.link || "", item.notes || "", now, item.sourceRef,
-       INTEREST_KEYS.has(item.interest) ? item.interest : "", DIAGNOSTIC_STAGES.has(item.orgStage) ? item.orgStage : ""]
+       INTEREST_KEYS.has(item.interest) ? item.interest : "", DIAGNOSTIC_STAGES.has(item.orgStage) ? item.orgStage : "",
+       TRIGGER_KEYS.has(item.trigger) ? item.trigger : ""]
     );
     if (result.rowCount > 0) created++; else skipped++;
   }
@@ -1241,7 +1271,7 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
 // whenever the database itself has to move (free-tier Postgres hosts expire
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
-const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "encounters"];
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "encounters", "problem_log"];
 app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   try {
     const out = {};

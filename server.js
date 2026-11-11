@@ -945,7 +945,7 @@ async function buildReconcile(hours) {
       const overdue = orgs.filter((o) => o.reassessOn && o.reassessOn < today);
       out.checks.iosClients = {
         status: brokenLinks.length || missingOrgs.length ? "mismatch" : (orphanOrgs.length ? "warn" : "ok"),
-        clients: orgs.length, notInFios: orphanOrgs.map((o) => ({ orgId: o.orgId, name: o.name })),
+        clients: orgs.length, actingAs: data.actingAs || "", notInFios: orphanOrgs.map((o) => ({ orgId: o.orgId, name: o.name })),
         linkDisagrees: brokenLinks.map((o) => ({ orgId: o.orgId, name: o.name, externalRef: o.externalRef })),
         dealPointsToMissingClient: missingOrgs.map((d) => ({ id: d.id, orgId: d.ios_org_id }))
       };

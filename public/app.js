@@ -1689,6 +1689,7 @@
     (c.overdue || []).forEach(function(o){ list.push(o.name + " was due " + fmtDate(o.reassessOn)); });
     if(key === "websiteLeads" && c.status === "ok") list.push(c.websiteLeads + " leads and " + c.feedback + " feedback in the window, all in FIOS");
     if(key === "iosClients" && c.clients !== undefined && c.status === "ok") list.push(c.clients + " clients, all linked");
+    if(key === "iosClients" && c.actingAs) list.push("FIOS acts as the InstitutionalOS console login " + c.actingAs);
     return list.map(esc).join("<br>");
   }
   var reconcileBtn = document.getElementById("reconcile-run");

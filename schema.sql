@@ -440,3 +440,47 @@ CREATE TABLE IF NOT EXISTS problem_log (
   created_at TEXT,
   archived_at TEXT
 );
+
+-- Self-assessment by dimension (JSON {strategy: 62, ...}) from the free tool
+-- or scorecard a lead came through; carried onto the deal and on to the
+-- InstitutionalOS client, where it is shown beside the verified scores.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS self_scores TEXT DEFAULT '';
+
+-- The deal's link to its InstitutionalOS client. Created automatically when
+-- the deal reaches the Diagnostic stage ("assessment"); kept current by
+-- InstitutionalOS pushing results back to /api/admin/ios-sync.
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS trigger_key TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS self_scores TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_org_id INTEGER;
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_portal_url TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_overall NUMERIC;
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_decision TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_constraint TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_next_session TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_record TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_synced_at TEXT;
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_link_error TEXT DEFAULT '';
+
+-- A Problem Log row written by InstitutionalOS carries source_ref
+-- 'ios:<org id>', so each Diagnostic has exactly one entry and the
+-- hidden-problem rate comes from one place.
+ALTER TABLE problem_log ADD COLUMN IF NOT EXISTS source_ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS problem_log_source_ref ON problem_log (source_ref);
+
+-- Client feedback from the website's /feedback form, with the publishing
+-- permission the client chose (named, anonymous, private).
+CREATE TABLE IF NOT EXISTS feedback (
+  id TEXT PRIMARY KEY,
+  source_ref TEXT UNIQUE,
+  name TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  role TEXT DEFAULT '',
+  organization TEXT DEFAULT '',
+  rating INTEGER,
+  result TEXT DEFAULT '',
+  quote TEXT DEFAULT '',
+  permission TEXT DEFAULT 'private',
+  status TEXT DEFAULT 'new',
+  created_at TEXT,
+  archived_at TEXT
+);

@@ -86,7 +86,10 @@ const ADMIN_SCOPE_TOKENS = {
   restore: process.env.ADMIN_TOKEN_RESTORE || "",
   status: process.env.ADMIN_TOKEN_STATUS || "",
   calendar: process.env.ADMIN_TOKEN_CALENDAR || "",
-  giftPatterns: process.env.ADMIN_TOKEN_GIFT_PATTERNS || ""
+  giftPatterns: process.env.ADMIN_TOKEN_GIFT_PATTERNS || "",
+  // InstitutionalOS pushes Diagnostic results back here (POST /api/admin/ios-sync).
+  // Same value as OS_IOS_TOKEN on the grantpass-backend service.
+  ios: process.env.ADMIN_TOKEN_IOS || ""
 };
 function requireAdminScope(scope) {
   return function (req, res, next) {
@@ -178,7 +181,7 @@ app.get("/api/session", (req, res) => {
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
   try {
-    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes, giftPatternsRes, problemLog] = await Promise.all([
+    const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes, giftPatternsRes, problemLog, feedbackRes] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),
       pool.query("SELECT * FROM scorecard WHERE archived_at IS NULL ORDER BY week_of DESC"),
       pool.query("SELECT * FROM issues WHERE archived_at IS NULL ORDER BY created_at DESC"),
@@ -197,7 +200,8 @@ app.get("/api/state", requireAuth, async (req, res) => {
       pool.query("SELECT * FROM week_events ORDER BY starts_at ASC"),
       pool.query("SELECT * FROM gift_pattern_digests WHERE id = 'main'")
     ,
-      pool.query("SELECT * FROM problem_log WHERE archived_at IS NULL ORDER BY logged_on DESC NULLS LAST, created_at DESC")]);
+      pool.query("SELECT * FROM problem_log WHERE archived_at IS NULL ORDER BY logged_on DESC NULLS LAST, created_at DESC"),
+      pool.query("SELECT * FROM feedback WHERE archived_at IS NULL ORDER BY created_at DESC")]);
     res.json({
       pipeline: pipeline.rows.map(rowToPipeline),
       scorecard: scorecard.rows.map(rowToScorecard),
@@ -213,6 +217,7 @@ app.get("/api/state", requireAuth, async (req, res) => {
       timeEntries: timeEntries.rows.map(rowToTimeEntry),
       encounters: encounters.rows.map(rowToEncounter),
       problemLog: problemLog.rows.map(rowToProblem),
+      feedback: feedbackRes.rows.map(rowToFeedback),
       advancementState: advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} },
       quizAttempts: quizAttempts.rows.map(rowToQuizAttempt),
       weekEvents: weekEventsRes.rows.map(rowToWeekEvent),
@@ -225,7 +230,17 @@ app.get("/api/state", requireAuth, async (req, res) => {
 });
 
 function rowToPipeline(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), diagnosticStage: r.diagnostic_stage || "", createdAt: r.created_at, updatedAt: r.updated_at };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, track: r.track, stage: r.stage, nextStep: r.next_step, nextStepDate: r.next_step_date, notes: r.notes, dealValue: r.deal_value === null ? 0 : Number(r.deal_value), diagnosticStage: r.diagnostic_stage || "", createdAt: r.created_at, updatedAt: r.updated_at,
+    trigger: r.trigger_key || "", selfScores: safeJsonParse(r.self_scores || "", null),
+    ios: r.ios_org_id ? {
+      orgId: r.ios_org_id, portalUrl: r.ios_portal_url || "", overall: r.ios_overall === null || r.ios_overall === undefined ? null : Number(r.ios_overall),
+      decision: r.ios_decision || "", constraint: r.ios_constraint || "", nextSession: r.ios_next_session || "",
+      record: safeJsonParse(r.ios_record || "", null), syncedAt: r.ios_synced_at || null
+    } : null,
+    iosLinkError: r.ios_link_error || "" };
+}
+function rowToFeedback(r) {
+  return { id: r.id, sourceRef: r.source_ref, name: r.name, email: r.email, role: r.role, organization: r.organization, rating: r.rating, result: r.result, quote: r.quote, permission: r.permission, status: r.status, createdAt: r.created_at };
 }
 function rowToScorecard(r) {
   return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at };
@@ -237,7 +252,7 @@ function rowToRock(r) {
   return { id: r.id, title: r.title, quarter: r.quarter, dueDate: r.due_date, notes: r.notes, status: r.status, createdAt: r.created_at };
 }
 function rowToProspect(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "", trigger: r.trigger_key || "" };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "", trigger: r.trigger_key || "", selfScores: safeJsonParse(r.self_scores || "", null) };
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
@@ -264,7 +279,7 @@ const TRIGGER_KEYS = new Set(["expansion", "funder", "founder", "strain", "trans
 const PROBLEM_KINDS = new Set(["interview", "discovery", "diagnostic"]);
 const WHO_PAYS = new Set(["organization", "board", "funder", "unknown"]);
 function rowToProblem(r) {
-  return { id: r.id, loggedOn: r.logged_on, kind: r.kind, organization: r.organization, orgType: r.org_type, orgSize: r.org_size, trigger: r.trigger_key, presentingProblem: r.presenting_problem, verifiedConstraint: r.verified_constraint, differs: r.differs, atStake: r.at_stake, whoPays: r.who_pays, notes: r.notes, createdAt: r.created_at };
+  return { id: r.id, loggedOn: r.logged_on, kind: r.kind, organization: r.organization, orgType: r.org_type, orgSize: r.org_size, trigger: r.trigger_key, presentingProblem: r.presenting_problem, verifiedConstraint: r.verified_constraint, differs: r.differs, atStake: r.at_stake, whoPays: r.who_pays, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref || "" };
 }
 function rowToEncounter(r) {
   return { id: r.id, pipelineId: r.pipeline_id, contactName: r.contact_name, occurredAt: r.occurred_at, interactionType: r.interaction_type, relationshipStage: r.relationship_stage, reason: r.reason, nextStep: r.next_step, nextStepDate: r.next_step_date, summary: r.summary, loggedBy: r.logged_by, createdAt: r.created_at };
@@ -333,7 +348,20 @@ app.patch("/api/pipeline/:id", requireAuth, async (req, res) => {
   values.push(req.params.id);
   if (fields.length === 1) return res.json({ ok: true });
   await pool.query(`UPDATE pipeline SET ${fields.join(", ")} WHERE id = $${i}`, values);
+  // Moving a deal into the InstitutionalOS Diagnostic stage opens its client
+  // record in InstitutionalOS (once), so the two systems share one record.
+  if (b.stage === "assessment") {
+    const { rows } = await pool.query("SELECT ios_org_id FROM pipeline WHERE id = $1", [req.params.id]);
+    if (rows[0] && !rows[0].ios_org_id) {
+      const link = await linkToIOS(req.params.id);
+      return res.json({ ok: true, ios: link });
+    }
+  }
   res.json({ ok: true });
+});
+app.post("/api/pipeline/:id/link-ios", requireAuth, async (req, res) => {
+  const link = await linkToIOS(req.params.id);
+  res.status(link.ok ? 200 : 502).json(link);
 });
 app.delete("/api/pipeline/:id", requireAuth, async (req, res) => {
   await archiveRow("pipeline", req.params.id);
@@ -434,10 +462,11 @@ app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, diagnostic_stage, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,'lead',$6,'',$7,$8,$9,$9)`,
+    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, diagnostic_stage, created_at, updated_at, trigger_key, self_scores)
+     VALUES ($1,$2,$3,$4,$5,'lead',$6,'',$7,$8,$9,$9,$10,$11)`,
     [id, p.name || "", p.org || "", "Prospecting: " + (p.source || ""), INTEREST_TO_TRACK[p.interest] || "undecided",
-     p.interest ? "Discovery call" : "First outreach", p.notes || "", DIAGNOSTIC_STAGES.has(p.org_stage) ? p.org_stage : "", now]
+     p.interest ? "Discovery call" : "First outreach", p.notes || "", DIAGNOSTIC_STAGES.has(p.org_stage) ? p.org_stage : "", now,
+     p.trigger_key || "", p.self_scores || ""]
   );
   // A dedicated update rather than the shared archiveRow() helper, so this
   // archival is tagged 'promoted' - distinct from an ordinary manual Remove
@@ -694,16 +723,253 @@ app.post("/api/admin/prospects", requireAdminScope("prospects"), async (req, res
     const id = newId();
     const now = new Date().toISOString();
     const result = await pool.query(
-      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref, interest, org_stage, trigger_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO prospects (id, name, org, source, status, link, notes, created_at, source_ref, interest, org_stage, trigger_key, self_scores)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (source_ref) DO NOTHING`,
       [id, item.name || "", item.org || "", item.source || "inbound", item.status || "new", item.link || "", item.notes || "", now, item.sourceRef,
        INTEREST_KEYS.has(item.interest) ? item.interest : "", DIAGNOSTIC_STAGES.has(item.orgStage) ? item.orgStage : "",
-       TRIGGER_KEYS.has(item.trigger) ? item.trigger : ""]
+       TRIGGER_KEYS.has(item.trigger) ? item.trigger : "", cleanSelfScores(item.selfScores)]
     );
     if (result.rowCount > 0) created++; else skipped++;
   }
   res.json({ ok: true, created, skipped });
+});
+
+// ---------- InstitutionalOS link (one client record across FIOS and InstitutionalOS) ----------
+// FIOS is the system of record for the relationship; InstitutionalOS is the
+// system of record for the Diagnostic. The pipeline id is the shared key
+// (InstitutionalOS stores it as external_ref), so either side can find the
+// other and the daily reconcile can prove they agree.
+const SITE_DIMENSIONS = ["strategy", "program", "revenue", "leadership", "operations", "partnerships", "governance"];
+function cleanSelfScores(v) {
+  if (!v || typeof v !== "object") return "";
+  const out = {};
+  for (const k of SITE_DIMENSIONS) {
+    const n = Number(v[k]);
+    if (Number.isFinite(n) && n >= 0 && n <= 100) out[k] = Math.round(n);
+  }
+  return Object.keys(out).length ? JSON.stringify(out) : "";
+}
+const GRANTPASS_API = (process.env.GRANTPASS_API || "https://grantpass-backend.onrender.com").replace(/\/+$/, "");
+const GRANTPASS_DASHBOARD = (process.env.GRANTPASS_DASHBOARD || "https://grantpass-dashboard.onrender.com").replace(/\/+$/, "");
+const GRANTPASS_INTEGRATION_KEY = process.env.GRANTPASS_INTEGRATION_KEY || "";
+async function iosFetch(pathname, opts = {}) {
+  // grantpass-backend sleeps on Render's free tier; a cold start can take ~50s.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 60000);
+  try {
+    const r = await fetch(GRANTPASS_API + pathname, {
+      method: opts.method || "GET",
+      headers: { "Content-Type": "application/json", "X-Integration-Key": GRANTPASS_INTEGRATION_KEY },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: ctrl.signal
+    });
+    const text = await r.text();
+    const data = safeJsonParse(text, {});
+    if (!r.ok) throw new Error((data && data.error) || ("InstitutionalOS returned " + r.status));
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function linkToIOS(pipelineId) {
+  if (!GRANTPASS_INTEGRATION_KEY) return { ok: false, error: "GRANTPASS_INTEGRATION_KEY is not set" };
+  const { rows } = await pool.query("SELECT * FROM pipeline WHERE id = $1", [pipelineId]);
+  const d = rows[0];
+  if (!d) return { ok: false, error: "deal not found" };
+  const orgName = (d.org || d.name || "").trim();
+  if (!orgName) return { ok: false, error: "the deal needs an organization name first" };
+  // The presenting problem comes from the Problem Log entry for this
+  // organization, when one was logged on the discovery call.
+  const pl = await pool.query(
+    "SELECT presenting_problem FROM problem_log WHERE archived_at IS NULL AND lower(organization) = lower($1) AND presenting_problem <> '' ORDER BY logged_on DESC NULLS LAST, created_at DESC LIMIT 1",
+    [orgName]
+  );
+  try {
+    const out = await iosFetch("/integration/orgs", {
+      method: "POST",
+      body: {
+        externalRef: d.id,
+        name: orgName,
+        stage: DIAGNOSTIC_STAGES.has(d.diagnostic_stage) ? d.diagnostic_stage.toUpperCase() : "",
+        trigger: d.trigger_key || "",
+        presentingProblem: pl.rows[0] ? pl.rows[0].presenting_problem : "",
+        selfScores: safeJsonParse(d.self_scores || "", null) || undefined
+      }
+    });
+    const portal = out.clientToken
+      ? `${GRANTPASS_DASHBOARD}/report.html?client=${encodeURIComponent(out.clientToken)}&api=${encodeURIComponent(GRANTPASS_API)}`
+      : "";
+    await pool.query(
+      "UPDATE pipeline SET ios_org_id = $1, ios_portal_url = $2, ios_link_error = '', updated_at = $3 WHERE id = $4",
+      [out.orgId, portal, new Date().toISOString(), d.id]
+    );
+    return { ok: true, orgId: out.orgId, portalUrl: portal, created: !!out.created };
+  } catch (err) {
+    const msg = err.name === "AbortError" ? "InstitutionalOS did not answer within 60 seconds" : String(err.message || err);
+    await pool.query("UPDATE pipeline SET ios_link_error = $1 WHERE id = $2", [msg.slice(0, 300), d.id]);
+    return { ok: false, error: msg };
+  }
+}
+
+// InstitutionalOS calls this whenever a Diagnostic's scores, record, portal
+// session, or Candid Seal change. It updates the deal and keeps exactly one
+// Problem Log entry per Diagnostic (source_ref 'ios:<org id>'), so the
+// hidden-problem rate is counted in one place.
+app.post("/api/admin/ios-sync", requireAdminScope("ios"), async (req, res) => {
+  const b = req.body || {};
+  const orgId = Number(b.orgId);
+  if (!Number.isInteger(orgId) || orgId <= 0) return res.status(400).json({ error: "orgId required" });
+  const clip = (v, n) => String(v === null || v === undefined ? "" : v).trim().slice(0, n);
+  const now = new Date().toISOString();
+  const rec = b.record && typeof b.record === "object" ? b.record : {};
+  let deal = null;
+  if (b.externalRef) deal = (await pool.query("SELECT * FROM pipeline WHERE id = $1", [String(b.externalRef)])).rows[0] || null;
+  if (!deal) deal = (await pool.query("SELECT * FROM pipeline WHERE ios_org_id = $1 ORDER BY created_at DESC LIMIT 1", [orgId])).rows[0] || null;
+  if (deal) {
+    await pool.query(
+      `UPDATE pipeline SET ios_org_id = $1, ios_overall = $2, ios_decision = $3, ios_constraint = $4, ios_next_session = $5,
+         ios_record = $6, ios_synced_at = $7, ios_link_error = '' WHERE id = $8`,
+      [orgId, Number.isFinite(Number(b.overall)) ? Number(b.overall) : null, clip(b.decision, 120),
+       clip(rec.verifiedConstraint || b.lowestDimension, 300), clip(b.nextSessionAt, 40),
+       JSON.stringify({ ...rec, dimensions: b.dimensions || null, lowestDimension: b.lowestDimension || "" }).slice(0, 20000), now, deal.id]
+    );
+  }
+  // Problem Log: only once there's something to log.
+  let problemLogged = false;
+  if (rec.presentingProblem || rec.verifiedConstraint) {
+    const differs = typeof rec.differs === "boolean" ? rec.differs : null;
+    const notes = [rec.nextInLine ? "Next in line: " + rec.nextInLine : "",
+      rec.closeout && rec.closeout.reassessOn ? "Reassess on " + rec.closeout.reassessOn : "",
+      b.overall !== undefined && b.overall !== null ? "Overall " + b.overall + (b.decision ? " (" + b.decision + ")" : "") : ""].filter(Boolean).join("\n");
+    const params = [newId(), now.slice(0, 10),
+      clip(b.name, 200), TRIGGER_KEYS.has(rec.trigger) ? rec.trigger : (deal && deal.trigger_key) || "",
+      clip(rec.presentingProblem, 1000), clip(rec.verifiedConstraint, 1000), differs, clip(rec.atStake, 1000),
+      WHO_PAYS.has(rec.whoPays) ? rec.whoPays : "", clip(notes, 2000), now, "ios:" + orgId, clip(b.stage, 60)];
+    await pool.query(
+      `INSERT INTO problem_log (id, logged_on, kind, organization, trigger_key, presenting_problem, verified_constraint, differs, at_stake, who_pays, notes, created_at, source_ref, org_size)
+       VALUES ($1,$2,'diagnostic',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (source_ref) DO UPDATE SET organization = EXCLUDED.organization, trigger_key = EXCLUDED.trigger_key,
+         presenting_problem = EXCLUDED.presenting_problem, verified_constraint = EXCLUDED.verified_constraint, differs = EXCLUDED.differs,
+         at_stake = EXCLUDED.at_stake, who_pays = EXCLUDED.who_pays, notes = EXCLUDED.notes, org_size = EXCLUDED.org_size, archived_at = NULL`,
+      params
+    );
+    problemLogged = true;
+  }
+  res.json({ ok: true, matchedDeal: deal ? deal.id : null, problemLogged });
+});
+
+// Client feedback from franklyinspired.associates/feedback. Pushed by the
+// website backend; deduped on its feedback id.
+const FEEDBACK_PERMISSIONS = new Set(["named", "anonymous", "private"]);
+app.post("/api/admin/feedback", requireAdminScope("prospects"), async (req, res) => {
+  const b = req.body || {};
+  const clip = (v, n) => String(v || "").trim().slice(0, n);
+  if (!b.sourceRef || !(b.quote || b.result)) return res.status(400).json({ error: "sourceRef and quote or result required" });
+  const rating = Number(b.rating);
+  const r = await pool.query(
+    `INSERT INTO feedback (id, source_ref, name, email, role, organization, rating, result, quote, permission, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (source_ref) DO NOTHING`,
+    [newId(), clip(b.sourceRef, 120), clip(b.name, 200), clip(b.email, 200), clip(b.role, 200), clip(b.organization, 200),
+     Number.isInteger(rating) && rating >= 0 && rating <= 10 ? rating : null, clip(b.result, 2000), clip(b.quote, 2000),
+     FEEDBACK_PERMISSIONS.has(b.permission) ? b.permission : "private", new Date().toISOString()]
+  );
+  res.json({ ok: true, created: r.rowCount > 0 });
+});
+const FEEDBACK_STATUSES = new Set(["new", "approved", "published", "hold"]);
+app.patch("/api/feedback/:id", requireAuth, async (req, res) => {
+  const b = req.body || {};
+  if (!FEEDBACK_STATUSES.has(b.status)) return res.status(400).json({ error: "bad status" });
+  await pool.query("UPDATE feedback SET status = $1 WHERE id = $2", [b.status, req.params.id]);
+  res.json({ ok: true });
+});
+app.delete("/api/feedback/:id", requireAuth, async (req, res) => {
+  await archiveRow("feedback", req.params.id);
+  res.json({ ok: true });
+});
+
+// Daily reconciliation: do the website, FIOS and InstitutionalOS agree?
+// Read-only. Each check reports what it found or why it couldn't run, so a
+// missing setting shows up as "skipped" rather than as a false all-clear.
+const WEBSITE_API_URL = (process.env.WEBSITE_API_URL || "").replace(/\/+$/, "");
+const WEBSITE_ADMIN_SECRET = process.env.WEBSITE_ADMIN_SECRET || "";
+async function buildReconcile(hours) {
+  const out = { generatedAt: new Date().toISOString(), hours, checks: {}, issues: 0 };
+  // 1. Every website lead the API says it pushed exists in FIOS.
+  if (WEBSITE_API_URL && WEBSITE_ADMIN_SECRET) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 60000);
+      const r = await fetch(`${WEBSITE_API_URL}/api/admin/lead-log?hours=${hours}`, { headers: { "X-Reminder-Secret": WEBSITE_ADMIN_SECRET }, signal: ctrl.signal });
+      clearTimeout(t);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "status " + r.status);
+      const all = (data.leads || []).map((l) => ({ ...l, sourceRef: l.sourceRef || l.ref }));
+      const leads = all.filter((l) => l.kind !== "feedback");
+      const fb = all.filter((l) => l.kind === "feedback");
+      const refs = leads.map((l) => l.sourceRef).filter(Boolean);
+      const fbRefs = fb.map((l) => l.sourceRef).filter(Boolean);
+      const have = refs.length ? new Set((await pool.query("SELECT source_ref FROM prospects WHERE source_ref = ANY($1)", [refs])).rows.map((x) => x.source_ref)) : new Set();
+      const haveFb = fbRefs.length ? new Set((await pool.query("SELECT source_ref FROM feedback WHERE source_ref = ANY($1)", [fbRefs])).rows.map((x) => x.source_ref)) : new Set();
+      const missing = leads.filter((l) => l.sourceRef && !have.has(l.sourceRef));
+      const missingFb = fb.filter((l) => l.sourceRef && !haveFb.has(l.sourceRef));
+      out.checks.websiteLeads = { status: missing.length || missingFb.length ? "mismatch" : "ok", websiteLeads: leads.length, missingInFios: missing, feedback: fb.length, feedbackMissingInFios: missingFb };
+      out.issues += missing.length + missingFb.length;
+    } catch (err) {
+      out.checks.websiteLeads = { status: "error", error: err.name === "AbortError" ? "website API timed out" : String(err.message || err) };
+      out.issues++;
+    }
+  } else {
+    out.checks.websiteLeads = { status: "skipped", error: "WEBSITE_API_URL / WEBSITE_ADMIN_SECRET not set" };
+  }
+  // 2. Every Diagnostic-stage deal has an InstitutionalOS client.
+  const unlinked = (await pool.query("SELECT id, name, org, ios_link_error FROM pipeline WHERE archived_at IS NULL AND stage = 'assessment' AND ios_org_id IS NULL")).rows;
+  out.checks.diagnosticDealsLinked = { status: unlinked.length ? "mismatch" : "ok", unlinked: unlinked.map((d) => ({ id: d.id, org: d.org || d.name, error: d.ios_link_error || "" })) };
+  out.issues += unlinked.length;
+  // 3. Linked deals have heard back from InstitutionalOS at least once.
+  const neverSynced = (await pool.query("SELECT id, org, name, ios_org_id FROM pipeline WHERE archived_at IS NULL AND ios_org_id IS NOT NULL AND ios_synced_at IS NULL")).rows;
+  out.checks.resultsFlowing = { status: neverSynced.length ? "warn" : "ok", neverSynced: neverSynced.map((d) => ({ id: d.id, org: d.org || d.name, orgId: d.ios_org_id })) };
+  // 4. InstitutionalOS clients and FIOS deals point at each other; rechecks aren't overdue.
+  if (GRANTPASS_INTEGRATION_KEY) {
+    try {
+      const data = await iosFetch("/integration/orgs");
+      const orgs = data.organizations || data.orgs || [];
+      const deals = (await pool.query("SELECT id, ios_org_id FROM pipeline WHERE ios_org_id IS NOT NULL")).rows;
+      const byOrg = new Map(deals.map((d) => [Number(d.ios_org_id), d.id]));
+      const dealIds = new Set(deals.map((d) => d.id));
+      const orphanOrgs = orgs.filter((o) => !byOrg.has(Number(o.orgId)) && !(o.externalRef && dealIds.has(o.externalRef)));
+      const brokenLinks = orgs.filter((o) => o.externalRef && byOrg.has(Number(o.orgId)) && byOrg.get(Number(o.orgId)) !== o.externalRef);
+      const orgIds = new Set(orgs.map((o) => Number(o.orgId)));
+      const missingOrgs = deals.filter((d) => !orgIds.has(Number(d.ios_org_id)));
+      const today = new Date().toISOString().slice(0, 10);
+      const overdue = orgs.filter((o) => o.reassessOn && o.reassessOn < today);
+      out.checks.iosClients = {
+        status: brokenLinks.length || missingOrgs.length ? "mismatch" : (orphanOrgs.length ? "warn" : "ok"),
+        clients: orgs.length, notInFios: orphanOrgs.map((o) => ({ orgId: o.orgId, name: o.name })),
+        linkDisagrees: brokenLinks.map((o) => ({ orgId: o.orgId, name: o.name, externalRef: o.externalRef })),
+        dealPointsToMissingClient: missingOrgs.map((d) => ({ id: d.id, orgId: d.ios_org_id }))
+      };
+      out.issues += brokenLinks.length + missingOrgs.length;
+      out.checks.rechecksDue = { status: overdue.length ? "due" : "ok", overdue: overdue.map((o) => ({ orgId: o.orgId, name: o.name, reassessOn: o.reassessOn })) };
+      // Hidden-problem rate from the one Problem Log.
+    } catch (err) {
+      out.checks.iosClients = { status: "error", error: err.name === "AbortError" ? "InstitutionalOS timed out" : String(err.message || err) };
+      out.issues++;
+    }
+  } else {
+    out.checks.iosClients = { status: "skipped", error: "GRANTPASS_INTEGRATION_KEY not set" };
+  }
+  const pr = (await pool.query("SELECT count(*) FILTER (WHERE differs IS TRUE) AS hidden, count(*) FILTER (WHERE differs IS NOT NULL) AS judged FROM problem_log WHERE archived_at IS NULL AND kind = 'diagnostic'")).rows[0];
+  out.hiddenProblemRate = { diagnostics: Number(pr.judged), hidden: Number(pr.hidden), rate: Number(pr.judged) ? Math.round((100 * Number(pr.hidden)) / Number(pr.judged)) : null };
+  out.ok = out.issues === 0;
+  return out;
+}
+app.get("/api/admin/reconcile", requireAdminScope("status"), async (req, res) => {
+  const hours = Math.min(Math.max(parseInt(req.query.hours, 10) || 48, 1), 24 * 14);
+  try { res.json(await buildReconcile(hours)); } catch (err) { console.error(err); res.status(500).json({ error: "reconcile failed" }); }
+});
+app.get("/api/reconcile", requireAuth, async (req, res) => {
+  try { res.json(await buildReconcile(48)); } catch (err) { console.error(err); res.status(500).json({ error: "reconcile failed" }); }
 });
 
 // ---------- digest (read via /api/state; admin-only write for the weekly refresh) ----------
@@ -1271,7 +1537,7 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
 // whenever the database itself has to move (free-tier Postgres hosts expire
 // or get retired from time to time), and it doubles as an on-demand backup -
 // something this app didn't have any way to produce before.
-const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "encounters", "problem_log"];
+const BACKUP_TABLES = ["pipeline", "scorecard", "issues", "rocks", "prospects", "digest", "gifts", "invoices", "engagement_modules", "time_entries", "encounters", "problem_log", "feedback"];
 app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   try {
     const out = {};

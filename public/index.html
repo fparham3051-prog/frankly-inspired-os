@@ -382,6 +382,8 @@
         <button type="button" class="filter-btn" data-rp-tab="delivery" role="tab" aria-selected="false">Delivery</button>
         <button type="button" class="filter-btn" data-rp-tab="encounters" role="tab" aria-selected="false">Prospect Reports</button>
         <button type="button" class="filter-btn" data-rp-tab="problems" role="tab" aria-selected="false">Problem Log</button>
+        <button type="button" class="filter-btn" data-rp-tab="feedback" role="tab" aria-selected="false">Feedback</button>
+        <button type="button" class="filter-btn" data-rp-tab="systems" role="tab" aria-selected="false">Systems Check</button>
       </div>
 
       <div class="fw-card" data-panel="01 · Pipeline records" data-rp-tab="pipeline">
@@ -790,6 +792,19 @@
           <thead><tr><th>Date</th><th>Kind</th><th>Organization</th><th>Trigger</th><th>Presenting problem</th><th>Verified constraint</th><th>Differed</th><th></th></tr></thead>
           <tbody id="problem-rows"><tr><td colspan="8" class="empty-note">Loading...</td></tr></tbody>
         </table></div>
+      </div>
+
+      <div class="fw-card" data-panel="19 · Client feedback" data-rp-tab="feedback" hidden>
+        <h3>Client Feedback</h3>
+        <p style="margin-top:-2px;">What clients sent through franklyinspired.associates/feedback. Only feedback marked <em>named</em> or <em>anonymous</em> can be used as proof on the website; <em>private</em> stays here. Approve one, then copy its snippet into the website's proof list.</p>
+        <div id="feedback-list"><p class="empty-note">Loading...</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="20 · Do the systems agree?" data-rp-tab="systems" hidden>
+        <h3>Systems Check</h3>
+        <p style="margin-top:-2px;">Compares the website, FIOS, and InstitutionalOS: every website lead reached FIOS, every Diagnostic deal has an InstitutionalOS client, results are flowing back, and no reassessment is overdue. The morning check runs the same comparison every day.</p>
+        <p><button type="button" class="btn" id="reconcile-run">Run the check now</button> <span class="dim" id="reconcile-status"></span></p>
+        <div id="reconcile-out"></div>
       </div>
     </section>
 

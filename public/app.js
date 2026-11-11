@@ -150,7 +150,7 @@
     return "attn"; // researching, contacted
   }
 
-  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], problemLog:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], giftPatterns:null, ready:false };
+  var state = { pipeline:[], scorecard:[], issues:[], rocks:[], prospects:[], digest:[], gifts:[], vision:null, orgLinks:[], invoices:[], engagementModules:[], timeEntries:[], encounters:[], problemLog:[], feedback:[], advancementState:{ weekProgress:{}, credPursuing:{} }, quizAttempts:[], weekEvents:[], giftPatterns:null, ready:false };
   // Structural-horizon data (see renderTimeHorizon below) loads separately
   // from the rest of state: it's a cache-only read of org 990 history, not
   // part of the gifts/pipeline/etc. payload /api/state already returns, and
@@ -714,6 +714,7 @@
       state.timeEntries = data.timeEntries || [];
       state.encounters = data.encounters || [];
       state.problemLog = data.problemLog || [];
+      state.feedback = data.feedback || [];
       state.advancementState = data.advancementState || { weekProgress: {}, credPursuing: {} };
       state.weekEvents = data.weekEvents || [];
       state.giftPatterns = data.giftPatterns || null;
@@ -749,7 +750,7 @@
       }).join("");
       var overdue = isOverduePipeline(p);
       return '<tr data-id="' + esc(p.id) + '"' + (overdue ? ' class="row-overdue"' : '') + '>' +
-        '<td>' + dotHtml(pipelineHealth(p)) + '<strong>' + esc(p.name || "Untitled") + '</strong>' + (p.org ? '<div class="dim">' + esc(p.org) + '</div>' : '') + '</td>' +
+        '<td>' + dotHtml(pipelineHealth(p)) + '<strong>' + esc(p.name || "Untitled") + '</strong>' + (p.org ? '<div class="dim">' + esc(p.org) + '</div>' : '') + iosLineHtml(p) + '</td>' +
         '<td>' + esc(TRACK_LABELS[p.track] || "Undecided") + (p.diagnosticStage ? '<div class="dim">' + esc(DIAGNOSTIC_STAGE_LABELS[p.diagnosticStage] || p.diagnosticStage) + '</div>' : '') + '</td>' +
         '<td><select class="inline-select pl-stage-select">' + stageOptions + '</select></td>' +
         '<td>' + esc(p.nextStep || "") + '</td>' +
@@ -760,9 +761,51 @@
     }).join("");
   }
 
+  // The deal's InstitutionalOS client: portal link, verified score and
+  // constraint as InstitutionalOS last reported them, and the visitor's own
+  // self-assessment where the lead came through a free tool.
+  var SELF_DIM_SHORT = { strategy:"Strategy", program:"Program", revenue:"Revenue", leadership:"Leadership", operations:"Operations", partnerships:"Partnerships", governance:"Governance" };
+  function iosLineHtml(p){
+    var out = "";
+    if(p.selfScores){
+      var parts = Object.keys(SELF_DIM_SHORT).filter(function(k){ return typeof p.selfScores[k] === "number"; })
+        .map(function(k){ return SELF_DIM_SHORT[k] + " " + p.selfScores[k]; });
+      if(parts.length) out += '<div class="dim" title="What they scored themselves on the free tool">Self-score: ' + esc(parts.join(" · ")) + '</div>';
+    }
+    if(p.ios){
+      var bits = [];
+      if(p.ios.overall !== null && p.ios.overall !== undefined) bits.push("verified " + Math.round(p.ios.overall) + (p.ios.decision ? " (" + p.ios.decision + ")" : ""));
+      if(p.ios.constraint) bits.push("constraint: " + p.ios.constraint);
+      if(p.ios.nextSession) bits.push("next session " + fmtDate(String(p.ios.nextSession).slice(0, 10)));
+      out += '<div class="dim">InstitutionalOS client #' + esc(String(p.ios.orgId)) + (bits.length ? ' · ' + esc(bits.join(" · ")) : ' · no results yet') +
+        (p.ios.portalUrl ? ' · <a href="' + esc(p.ios.portalUrl) + '" target="_blank" rel="noopener">client portal</a> <button type="button" class="btn pl-copy-portal" data-url="' + esc(p.ios.portalUrl) + '">Copy link</button>' : '') + '</div>';
+    } else if(p.stage === "assessment" || p.track === "institutionalos"){
+      out += '<div class="dim">' + (p.iosLinkError ? '<span class="overdue-tag">Not linked</span> ' + esc(p.iosLinkError) + ' ' : 'Not yet in InstitutionalOS ') +
+        '<button type="button" class="btn pl-link-ios">Link to InstitutionalOS</button></div>';
+    }
+    return out;
+  }
+  document.getElementById("pipeline-rows").addEventListener("click", function(e){
+    var link = e.target.closest(".pl-link-ios");
+    if(link){
+      var id = link.closest("tr").getAttribute("data-id");
+      link.disabled = true; link.textContent = "Linking (can take a minute)...";
+      apiFetch("/api/pipeline/" + id + "/link-ios", { method: "POST" })
+        .catch(function(err){ console.error(err); })
+        .then(refreshAndRender);
+      return;
+    }
+    var copy = e.target.closest(".pl-copy-portal");
+    if(copy){
+      var url = copy.getAttribute("data-url");
+      if(navigator.clipboard) navigator.clipboard.writeText(url).then(function(){ copy.textContent = "Copied"; setTimeout(function(){ copy.textContent = "Copy link"; }, 1800); });
+    }
+  });
+
   document.getElementById("pipeline-rows").addEventListener("change", function(e){
     if(!e.target.classList.contains("pl-stage-select")) return;
     var id = e.target.closest("tr").getAttribute("data-id");
+    if(e.target.value === "assessment") e.target.insertAdjacentHTML("afterend", '<div class="dim">Opening the InstitutionalOS client...</div>');
     apiFetch("/api/pipeline/" + id, { method: "PATCH", body: { stage: e.target.value } })
       .then(refreshAndRender)
       .catch(function(err){ console.error(err); });
@@ -1515,6 +1558,8 @@
     withTrigger.forEach(function(r){ counts[r.trigger] = (counts[r.trigger] || 0) + 1; });
     var known = rows.filter(function(r){ return r.differs === true || r.differs === false; });
     var differed = known.filter(function(r){ return r.differs === true; }).length;
+    var diagKnown = known.filter(function(r){ return r.kind === "diagnostic"; });
+    var diagDiffered = diagKnown.filter(function(r){ return r.differs === true; }).length;
     var kinds = {};
     rows.forEach(function(r){ kinds[r.kind] = (kinds[r.kind] || 0) + 1; });
     var trigRows = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; }).map(function(k){
@@ -1522,12 +1567,13 @@
     }).join("");
     sum.innerHTML =
       '<p><strong>' + rows.length + '</strong> logged (' + Object.keys(kinds).map(function(k){ return kinds[k] + ' ' + (PROBLEM_KIND_LABELS[k] || k).toLowerCase() + (kinds[k] === 1 ? '' : 's'); }).join(", ") + ').</p>' +
-      '<p><strong>Hidden-problem rate: ' + problemPct(differed, known.length) + '</strong> <span class="dim">(' + differed + ' of ' + known.length + ' where the verified constraint is known)</span></p>' +
+      '<p><strong>Hidden-problem rate: ' + problemPct(diagDiffered, diagKnown.length) + '</strong> <span class="dim">(' + diagDiffered + ' of ' + diagKnown.length + ' Diagnostics where the verified constraint differed from the presenting problem; the same number the Systems Check reports)</span></p>' +
+      (known.length > diagKnown.length ? '<p class="dim">Including interviews and discovery calls: ' + problemPct(differed, known.length) + ' (' + differed + ' of ' + known.length + ')</p>' : '') +
       (trigRows ? '<div class="table-wrap"><table><thead><tr><th>Trigger</th><th>Count</th><th>Share</th></tr></thead><tbody>' + trigRows + '</tbody></table></div>' : '<p class="dim">No triggers recorded yet.</p>');
     body.innerHTML = rows.map(function(r){
       return '<tr data-id="' + esc(r.id) + '">' +
         '<td class="dim">' + (r.loggedOn ? fmtDate(r.loggedOn) : "") + '</td>' +
-        '<td>' + esc(PROBLEM_KIND_LABELS[r.kind] || r.kind || "") + '</td>' +
+        '<td>' + esc(PROBLEM_KIND_LABELS[r.kind] || r.kind || "") + (r.sourceRef && r.sourceRef.indexOf("ios:") === 0 ? '<div class="dim">from InstitutionalOS</div>' : '') + '</td>' +
         '<td>' + esc(r.organization || r.orgType || "") + '</td>' +
         '<td>' + esc(TRIGGER_LABELS[r.trigger] || "") + '</td>' +
         '<td>' + esc(r.presentingProblem || "") + '</td>' +
@@ -1569,6 +1615,97 @@
       setTimeout(function(){ statusEl.textContent = ""; }, 2200);
       return refreshAndRender();
     }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+
+  // ---------- Client feedback (from the website's /feedback form) ----------
+  var FEEDBACK_STATUS_LABELS = { "new":"New", approved:"Approved for proof", published:"On the website", hold:"Hold" };
+  function feedbackSnippet(f){
+    // Matches the Testimonial shape in the website's src/data/proof.ts.
+    var named = f.permission === "named";
+    var t = { quote: f.quote || f.result || "" };
+    if(named && f.name) t.name = f.name;
+    t.role = f.role || "Nonprofit leader";
+    if(named && f.organization) t.org = f.organization;
+    return JSON.stringify(t).replace(/"(\w+)":/g, "$1: ") + ",";
+  }
+  function renderFeedback(){
+    var el = document.getElementById("feedback-list");
+    if(!el) return;
+    var rows = state.feedback || [];
+    if(!rows.length){ el.innerHTML = '<p class="empty-note">No feedback yet. Send clients to franklyinspired.associates/feedback after each readout.</p>'; return; }
+    el.innerHTML = rows.map(function(f){
+      var usable = f.permission === "named" || f.permission === "anonymous";
+      var opts = Object.keys(FEEDBACK_STATUS_LABELS).map(function(k){ return '<option value="' + k + '"' + (f.status === k ? " selected" : "") + '>' + FEEDBACK_STATUS_LABELS[k] + '</option>'; }).join("");
+      return '<div class="example-box" data-id="' + esc(f.id) + '" style="margin-bottom:10px;">' +
+        '<p><strong>' + esc(f.name || "") + '</strong>' + (f.role ? ', ' + esc(f.role) : '') + (f.organization ? ', ' + esc(f.organization) : '') +
+        ' <span class="dim">· ' + fmtDate(String(f.createdAt || "").slice(0, 10)) + (f.rating !== null && f.rating !== undefined ? ' · would recommend ' + f.rating + '/10' : '') + ' · permission: ' + esc(f.permission) + '</span></p>' +
+        (f.result ? '<p><em>What changed:</em> ' + esc(f.result) + '</p>' : '') +
+        (f.quote ? '<p><em>Quote:</em> &ldquo;' + esc(f.quote) + '&rdquo;</p>' : '') +
+        '<p><select class="inline-select fb-status">' + opts + '</select> ' +
+        (usable ? '<button type="button" class="btn fb-copy">Copy proof snippet</button> ' : '<span class="dim">Private: not for the website.</span> ') +
+        '<button type="button" class="btn danger fb-delete">Remove</button></p></div>';
+    }).join("");
+  }
+  var feedbackListEl = document.getElementById("feedback-list");
+  if(feedbackListEl){
+    feedbackListEl.addEventListener("change", function(e){
+      if(!e.target.classList.contains("fb-status")) return;
+      var id = e.target.closest("[data-id]").getAttribute("data-id");
+      apiFetch("/api/feedback/" + id, { method: "PATCH", body: { status: e.target.value } }).then(refreshAndRender).catch(function(err){ console.error(err); });
+    });
+    feedbackListEl.addEventListener("click", function(e){
+      var box = e.target.closest("[data-id]");
+      if(!box) return;
+      var f = (state.feedback || []).filter(function(x){ return x.id === box.getAttribute("data-id"); })[0];
+      if(e.target.closest(".fb-copy") && f && navigator.clipboard){
+        var b = e.target.closest(".fb-copy");
+        navigator.clipboard.writeText(feedbackSnippet(f)).then(function(){ b.textContent = "Copied"; setTimeout(function(){ b.textContent = "Copy proof snippet"; }, 1800); });
+      }
+      if(e.target.closest(".fb-delete") && confirm("Remove this feedback?")){
+        apiFetch("/api/feedback/" + box.getAttribute("data-id"), { method: "DELETE" }).then(refreshAndRender).catch(function(err){ console.error(err); });
+      }
+    });
+  }
+
+  // ---------- Systems check (website <-> FIOS <-> InstitutionalOS) ----------
+  var RECONCILE_LABELS = {
+    websiteLeads: "Website leads reached FIOS",
+    diagnosticDealsLinked: "Diagnostic deals have an InstitutionalOS client",
+    resultsFlowing: "InstitutionalOS results are flowing back",
+    iosClients: "InstitutionalOS clients match FIOS deals",
+    rechecksDue: "Reassessments on schedule"
+  };
+  var RECONCILE_STATUS = { ok:"OK", mismatch:"Mismatch", warn:"Check", due:"Due", error:"Could not check", skipped:"Not set up" };
+  function reconcileDetail(key, c){
+    var list = [];
+    if(c.error) list.push(c.error);
+    (c.missingInFios || []).forEach(function(l){ list.push("Missing lead " + l.sourceRef + " (" + l.kind + ")"); });
+    (c.feedbackMissingInFios || []).forEach(function(l){ list.push("Missing feedback " + l.sourceRef); });
+    (c.unlinked || []).forEach(function(d){ list.push((d.org || "A deal") + (d.error ? ": " + d.error : "")); });
+    (c.neverSynced || []).forEach(function(d){ list.push((d.org || "A deal") + " (client #" + d.orgId + ") has no results yet"); });
+    (c.notInFios || []).forEach(function(o){ list.push("InstitutionalOS client " + o.name + " has no FIOS deal"); });
+    (c.linkDisagrees || []).forEach(function(o){ list.push("InstitutionalOS client " + o.name + " points at a different deal"); });
+    (c.dealPointsToMissingClient || []).forEach(function(d){ list.push("A deal points at missing client #" + d.orgId); });
+    (c.overdue || []).forEach(function(o){ list.push(o.name + " was due " + fmtDate(o.reassessOn)); });
+    if(key === "websiteLeads" && c.status === "ok") list.push(c.websiteLeads + " leads and " + c.feedback + " feedback in the window, all in FIOS");
+    if(key === "iosClients" && c.clients !== undefined && c.status === "ok") list.push(c.clients + " clients, all linked");
+    return list.map(esc).join("<br>");
+  }
+  var reconcileBtn = document.getElementById("reconcile-run");
+  if(reconcileBtn) reconcileBtn.addEventListener("click", function(){
+    var st = document.getElementById("reconcile-status"), out = document.getElementById("reconcile-out");
+    reconcileBtn.disabled = true; st.textContent = "Checking (InstitutionalOS can take a minute to wake)...";
+    apiFetch("/api/reconcile").then(function(r){
+      st.textContent = r.ok ? "Everything agrees." : r.issues + " issue" + (r.issues === 1 ? "" : "s") + " found.";
+      var hp = r.hiddenProblemRate || {};
+      out.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody>' +
+        Object.keys(RECONCILE_LABELS).filter(function(k){ return r.checks[k]; }).map(function(k){
+          var c = r.checks[k];
+          return '<tr><td>' + RECONCILE_LABELS[k] + '</td><td>' + (c.status === "ok" ? "OK" : '<span class="overdue-tag">' + esc(RECONCILE_STATUS[c.status] || c.status) + '</span>') + '</td><td class="dim">' + reconcileDetail(k, c) + '</td></tr>';
+        }).join("") + '</tbody></table></div>' +
+        '<p><strong>Hidden-problem rate across Diagnostics:</strong> ' + (hp.rate === null || hp.rate === undefined ? "not enough data yet" : hp.rate + "% (" + hp.hidden + " of " + hp.diagnostics + ")") + '</p>';
+    }).catch(function(err){ st.textContent = "Could not run: " + err.message; })
+      .then(function(){ reconcileBtn.disabled = false; });
   });
 
   // ---------- Portfolio Analysis (LYBUNT/SYBUNT, gift tiers, retention) ----------
@@ -3732,6 +3869,7 @@
     renderDelivery();
     renderEncounters();
     renderProblemLog();
+    renderFeedback();
     renderVision();
     renderIssues();
     renderRocks();

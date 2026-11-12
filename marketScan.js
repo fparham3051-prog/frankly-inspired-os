@@ -263,7 +263,7 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
 
   async function run({ rebuild, filters, max }) {
     if (state.running) return;
-    Object.assign(state, { running: true, stopRequested: false, done: 0, errors: 0, lastError: "", startedAt: new Date().toISOString() });
+    Object.assign(state, { running: true, stopRequested: false, phase: "starting", done: 0, total: 0, errors: 0, lastError: "", startedAt: new Date().toISOString() });
     try {
       const settings = await getSettings();
       const stale = !settings.rosterBuiltAt || Date.now() - Date.parse(settings.rosterBuiltAt) > 30 * 864e5;
@@ -379,9 +379,20 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
   });
   app.post("/api/market-scan/stop", requireAuth, (req, res) => { state.stopRequested = true; res.json({ ok: true }); });
   // For a scheduled task: keep the scan fresh. Starts a run if none is going.
+  // Each call reports progress; when no scan is running and organizations
+  // still need filings (or the IRS list is due), it starts the next batch.
+  // "pending" = organizations still to read; 0 with running:false = done.
   app.post("/api/admin/market-scan/step", requireAdminScope("status"), async (req, res) => {
-    if (!state.running) run({ rebuild: false, max: Math.min(parseInt((req.body || {}).max, 10) || 400, 2000) });
-    res.json({ ok: true, progress: state });
+    const cutoff = new Date(Date.now() - 45 * 864e5).toISOString();
+    const { rows: [{ n }] } = await pool.query("SELECT count(*)::int AS n FROM market_orgs WHERE enriched_at IS NULL OR enriched_at < $1", [cutoff]);
+    const settings = await getSettings();
+    const rosterDue = !settings.rosterBuiltAt || Date.now() - Date.parse(settings.rosterBuiltAt) > 30 * 864e5;
+    let started = false;
+    if (!state.running && (n > 0 || rosterDue)) {
+      run({ rebuild: false, max: Math.min(parseInt((req.body || {}).max, 10) || 400, 2000) });
+      started = true;
+    }
+    res.json({ ok: true, started, pending: n, progress: { ...state } });
   });
 
   app.patch("/api/market-scan/orgs/:ein", requireAuth, async (req, res) => {

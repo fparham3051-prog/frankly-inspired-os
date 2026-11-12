@@ -36,6 +36,10 @@ const NTEE_GROUPS = {
   L: "Housing", N: "Recreation and sports", R: "Civil rights", S: "Community improvement", T: "Philanthropy", W: "Public benefit",
   C: "Environment", D: "Animals", G: "Diseases", H: "Medical research", M: "Public safety", Q: "International", U: "Science", V: "Social science", X: "Religion", Y: "Mutual benefit", Z: "Unknown",
 };
+// Schools, colleges, and parent groups are institutions of a different kind
+// than the youth, education-access, and workforce nonprofits the practice
+// serves; hidden by default in the views (charter schools stay).
+const SCHOOL_CODES_SQL = "(left(ntee, 3) IN ('B20','B21','B24','B25','B28','B40','B41','B42','B43','B50','B94') OR ntee IN ('B2','B4'))";
 const DEFAULT_FILTERS = { minRevenue: 500000, maxRevenue: 20000000, ntee: ["B", "O", "J", "P"] };
 
 const SITUATIONS = {
@@ -136,7 +140,13 @@ function computeSignals(pp, now = new Date()) {
   // Franklin's thesis: programs growing faster than the institution can carry them.
   let growth = "steady";
   if (revenueChange !== null && revenueChange >= 0.2 && span >= 2) {
-    const strained = (reserveMonths !== null && reserveMonths < 3) || (expenseChange !== null && expenseChange > revenueChange) || (margin !== null && margin < 0);
+    // Strained = thin reserves, or spending outrunning revenue badly enough
+    // to show up as a deficit. Expenses simply growing a bit faster than
+    // revenue is common and on its own isn't flagged.
+    const thin = reserveMonths !== null && reserveMonths < 3;
+    const overspend = expenseChange !== null && expenseChange > revenueChange && margin !== null && margin < 0;
+    const fallingReserves = reserveMonths !== null && prevReserve !== null && reserveMonths < prevReserve * 0.6 && reserveMonths < 6;
+    const strained = thin || overspend || fallingReserves;
     growth = strained ? "outpacing" : "growing";
   } else if (revenueChange !== null && revenueChange <= -0.1) growth = "declining";
 
@@ -148,7 +158,7 @@ function computeSignals(pp, now = new Date()) {
   const usd = (n) => "$" + Math.round(n).toLocaleString("en-US");
   const pct = (n) => Math.round(n * 100) + "%";
   const obs = [];
-  if (growth === "outpacing") obs.push({ text: `Revenue grew ${pct(revenueChange)} from ${first.year} to ${last.year}${expenseChange !== null ? ` while expenses grew ${pct(expenseChange)}` : ""}${reserveMonths !== null ? `; reserves now cover ${reserveMonths.toFixed(1)} months` : ""}.`, question: "What has that growth done to your leadership team's bandwidth? Which decisions still route to the executive director?" });
+  if (growth === "outpacing") obs.push({ text: `Revenue grew ${pct(revenueChange)} from ${first.year} to ${last.year}${expenseChange !== null ? ` while expenses grew ${pct(expenseChange)}` : ""}${reserveMonths !== null ? `; reserves now cover ${reserveMonths.toFixed(1)} months${prevReserve !== null ? ` (down from ${prevReserve.toFixed(1)})` : ""}` : ""}.`, question: "What has that growth done to your leadership team's bandwidth? Which decisions still route to the executive director?" });
   else if (growth === "growing") obs.push({ text: `Revenue grew ${pct(revenueChange)} from ${first.year} to ${last.year} with reserves holding${reserveMonths !== null ? ` at ${reserveMonths.toFixed(1)} months` : ""}.`, question: "What's the next big move: a new site, a larger grant, a leadership change?" });
   else if (growth === "declining") obs.push({ text: `Revenue fell ${pct(-revenueChange)} from ${first.year} to ${last.year}.`, question: "Was that a grant ending or a planned change? What replaces it?" });
   if (deficitYears >= 2) obs.push({ text: `Expenses exceeded revenue in ${deficitYears} of the last ${recent.length} filed years.`, question: "Are the deficits a planned investment or a structural gap?" });
@@ -290,7 +300,8 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
     }
   }
 
-  async function summary() {
+  async function summary(includeSchools) {
+    const W = includeSchools ? "" : "WHERE NOT " + SCHOOL_CODES_SQL;
     const settings = await getSettings();
     const { rows: [t] } = await pool.query(`SELECT count(*)::int AS orgs,
         count(*) FILTER (WHERE enriched_at IS NOT NULL)::int AS enriched,
@@ -301,13 +312,14 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
         count(*) FILTER (WHERE (nullif(signals, '')::jsonb->>'reserveMonths')::float < 3)::int AS thin_reserves,
         percentile_cont(0.5) WITHIN GROUP (ORDER BY (nullif(signals, '')::jsonb->>'reserveMonths')::float) AS median_reserves,
         percentile_cont(0.5) WITHIN GROUP (ORDER BY public_score) AS median_score
-      FROM market_orgs`);
+      FROM market_orgs ${W}`);
+    const { rows: [sc] } = await pool.query(`SELECT count(*) FILTER (WHERE ${SCHOOL_CODES_SQL})::int AS schools FROM market_orgs`);
     const { rows: byArea } = await pool.query(`SELECT area, count(*)::int AS orgs, count(*) FILTER (WHERE growth_flag = 'outpacing')::int AS outpacing,
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY public_score) AS median_score FROM market_orgs GROUP BY area ORDER BY orgs DESC`);
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY public_score) AS median_score FROM market_orgs ${W} GROUP BY area ORDER BY orgs DESC`);
     const { rows: byType } = await pool.query(`SELECT left(coalesce(nullif(ntee, ''), 'Z'), 1) AS grp, count(*)::int AS orgs, count(*) FILTER (WHERE growth_flag = 'outpacing')::int AS outpacing
-        FROM market_orgs GROUP BY grp ORDER BY orgs DESC`);
+        FROM market_orgs ${W} GROUP BY grp ORDER BY orgs DESC`);
     return {
-      settings, totals: t, byArea, byType: byType.map((r) => ({ ...r, label: NTEE_GROUPS[r.grp] || r.grp })),
+      settings, totals: t, schoolsHidden: includeSchools ? 0 : sc.schools, byArea, byType: byType.map((r) => ({ ...r, label: NTEE_GROUPS[r.grp] || r.grp })),
       progress: { ...state }, nteeGroups: NTEE_GROUPS, situations: SITUATIONS,
     };
   }
@@ -326,7 +338,7 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
 
   // ---------- routes ----------
   app.get("/api/market-scan", requireAuth, async (req, res) => {
-    try { res.json(await summary()); } catch (e) { console.error(e); res.status(500).json({ error: "could not load the market scan" }); }
+    try { res.json(await summary(req.query.schools === "1")); } catch (e) { console.error(e); res.status(500).json({ error: "could not load the market scan" }); }
   });
   app.get("/api/market-scan/orgs", requireAuth, async (req, res) => {
     const q = req.query || {};
@@ -338,6 +350,7 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
     if (q.status) add("status = $?", String(q.status));
     if (q.situation) add("situation = $?", String(q.situation));
     if (q.q) add("name ILIKE $?", "%" + String(q.q).slice(0, 80) + "%");
+    if (q.schools !== "1") where.push("NOT " + SCHOOL_CODES_SQL);
     if (q.minRev) add("coalesce((nullif(signals, '')::jsonb->>'revenue')::numeric, bmf_revenue) >= $?", Number(q.minRev) || 0);
     if (q.maxRev) add("coalesce((nullif(signals, '')::jsonb->>'revenue')::numeric, bmf_revenue) <= $?", Number(q.maxRev) || 1e12);
     const sorts = { fit: "fit DESC NULLS LAST, bmf_revenue DESC", score: "public_score ASC NULLS LAST", revenue: "bmf_revenue DESC", name: "name ASC" };
@@ -352,7 +365,7 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
     } catch (e) { console.error(e); res.status(500).json({ error: "could not load organizations" }); }
   });
   app.get("/api/market-scan/export.csv", requireAuth, async (req, res) => {
-    const { rows } = await pool.query("SELECT * FROM market_orgs ORDER BY fit DESC NULLS LAST, bmf_revenue DESC");
+    const { rows } = await pool.query(`SELECT * FROM market_orgs ${req.query.schools === "1" ? "" : "WHERE NOT " + SCHOOL_CODES_SQL} ORDER BY fit DESC NULLS LAST, bmf_revenue DESC`);
     const q = (v) => '"' + String(v === null || v === undefined ? "" : v).replace(/"/g, '""') + '"';
     const head = ["EIN", "Name", "City", "State", "Area", "NTEE", "Program area", "Latest revenue", "Latest filed year", "Public financial score", "Reserve months", "Deficit years (last 3)", "Revenue change", "Growth signal", "Likely situation", "Fit", "Status", "Notes", "ProPublica"];
     const lines = [head.map(q).join(",")].concat(rows.map((r) => {
@@ -376,6 +389,24 @@ function setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent, newId, 
     };
     run({ rebuild: b.rebuild === true, filters, max: b.max ? Number(b.max) : 0 });
     res.json({ ok: true, started: true });
+  });
+  // Re-derive signals from the figures already stored (after a rule change),
+  // without re-reading any filings.
+  app.post("/api/market-scan/recompute", requireAuth, async (req, res) => {
+    const { rows } = await pool.query("SELECT * FROM market_orgs WHERE signals IS NOT NULL AND signals <> ''");
+    let n = 0;
+    for (const r of rows) {
+      const old = JSON.parse(r.signals);
+      if (!old.years || !old.years.length) continue;
+      const pp = { organization: { ruling_date: old.ruling, ntee_code: old.nteeCode }, filings_with_data: old.years.map((y) => ({
+        tax_prd_yr: y.year, totrevenue: y.revenue, totfuncexpns: y.expenses, totassetsend: y.assets, totliabend: y.liabilities,
+        totnetassetend: y.netAssets, totcntrbgfts: y.contributions, totprgmrevnue: y.programRevenue, formtype: y.formType })) };
+      const sig = computeSignals(pp, r.enriched_at ? new Date(r.enriched_at) : new Date());
+      await pool.query("UPDATE market_orgs SET signals = $1, public_score = $2, growth_flag = $3, situation = $4, fit = $5 WHERE ein = $6",
+        [JSON.stringify(sig), sig.publicScore, sig.growth || "", sig.situation || "checkup", fitScore(r, sig), r.ein]);
+      n++;
+    }
+    res.json({ ok: true, recomputed: n });
   });
   app.post("/api/market-scan/stop", requireAuth, (req, res) => { state.stopRequested = true; res.json({ ok: true }); });
   // For a scheduled task: keep the scan fresh. Starts a run if none is going.

@@ -1740,7 +1740,7 @@
     return "";
   }
   function loadMarketSummary(){
-    return apiFetch("/api/market-scan").then(function(d){
+    return apiFetch("/api/market-scan" + (document.getElementById("ms-schools") && document.getElementById("ms-schools").checked ? "?schools=1" : "")).then(function(d){
       var st = d.settings || {}, t = d.totals || {};
       if(!MS.summaryLoaded){
         document.getElementById("ms-min").value = st.minRevenue;
@@ -1758,7 +1758,7 @@
       var e = t.enriched || 0;
       document.getElementById("ms-summary").innerHTML = t.orgs ? (
         '<div class="ms-stats">' +
-          '<div class="ms-stat"><b>' + t.orgs.toLocaleString() + '</b>organizations in range</div>' +
+          '<div class="ms-stat"><b>' + t.orgs.toLocaleString() + '</b>organizations in range' + (d.schoolsHidden ? ' (plus ' + d.schoolsHidden.toLocaleString() + ' schools and colleges hidden)' : '') + '</div>' +
           '<div class="ms-stat"><b>' + e.toLocaleString() + '</b>with filings read</div>' +
           '<div class="ms-stat"><b>' + (e ? Math.round(100 * t.outpacing / e) + "%" : "–") + '</b>growth outpacing reserves (' + t.outpacing + ')</div>' +
           '<div class="ms-stat"><b>' + (e ? Math.round(100 * t.deficits / e) + "%" : "–") + '</b>deficits in 2 of last 3 years</div>' +
@@ -1768,7 +1768,7 @@
         '<div class="table-wrap"><table><thead><tr><th>Area</th><th>Organizations</th><th>Growth outpacing</th><th>Median public score</th></tr></thead><tbody>' +
           (d.byArea || []).map(function(a){ return '<tr><td>' + esc(a.area || "Other") + '</td><td>' + a.orgs + '</td><td>' + a.outpacing + '</td><td>' + (a.median_score === null ? "–" : Math.round(a.median_score)) + '</td></tr>'; }).join("") +
         '</tbody></table></div>' +
-        '<p class="dim">"Growth outpacing" = revenue up 20%+ over the filed years while reserves are under 3 months, expenses grew faster, or the latest year ran a deficit. The public score (0–100) covers revenue and financial health only: reserves, margin, deficit years, debt, and revenue trend.</p>'
+        '<p class="dim">"Growth outpacing" = revenue up 20%+ over the filed years while reserves are under 3 months, reserves fell by 40%+ to under 6 months, or spending grew faster and the latest year ran a deficit. The public score (0–100) covers revenue and financial health only: reserves, margin, deficit years, debt, and revenue trend.</p>'
       ) : "";
       if(d.progress && d.progress.running && !MS.poll){ MS.poll = setInterval(function(){ loadMarketSummary(); }, 8000); }
       if(d.progress && !d.progress.running && MS.poll){ clearInterval(MS.poll); MS.poll = null; MS.offset = 0; loadMarketRows(); }
@@ -1776,7 +1776,7 @@
   }
   function msQuery(){
     var v = function(id){ return document.getElementById(id).value; };
-    var q = { q: v("ms-q"), area: v("ms-area"), type: v("ms-type"), growth: v("ms-growth"), status: v("ms-status"), sort: v("ms-sort"), offset: MS.offset, limit: 100 };
+    var q = { schools: document.getElementById("ms-schools").checked ? "1" : "", q: v("ms-q"), area: v("ms-area"), type: v("ms-type"), growth: v("ms-growth"), status: v("ms-status"), sort: v("ms-sort"), offset: MS.offset, limit: 100 };
     return Object.keys(q).filter(function(k){ return q[k] !== "" && q[k] !== null; }).map(function(k){ return k + "=" + encodeURIComponent(q[k]); }).join("&");
   }
   function msRowHtml(o){
@@ -1843,6 +1843,8 @@
     document.getElementById("ms-stop").addEventListener("click", function(){ apiFetch("/api/market-scan/stop", { method: "POST" }).then(loadMarketSummary); });
     var reload = function(){ MS.offset = 0; MS.open = null; loadMarketRows(); };
     ["ms-area", "ms-type", "ms-growth", "ms-status", "ms-sort"].forEach(function(id){ document.getElementById(id).addEventListener("change", reload); });
+    document.getElementById("ms-schools").addEventListener("change", function(){ reload(); loadMarketSummary(); });
+    document.getElementById("ms-export").addEventListener("click", function(e){ e.preventDefault(); location.href = "/api/market-scan/export.csv" + (document.getElementById("ms-schools").checked ? "?schools=1" : ""); });
     var t; document.getElementById("ms-q").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(reload, 300); });
     document.getElementById("ms-more").addEventListener("click", function(){ MS.offset = MS.rows.length; loadMarketRows(); });
     var rows = document.getElementById("ms-rows");

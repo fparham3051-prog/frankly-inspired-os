@@ -777,6 +777,15 @@
       if(p.ios.overall !== null && p.ios.overall !== undefined) bits.push("verified " + Math.round(p.ios.overall) + (p.ios.decision ? " (" + p.ios.decision + ")" : ""));
       if(p.ios.constraint) bits.push("constraint: " + p.ios.constraint);
       if(p.ios.nextSession) bits.push("next session " + fmtDate(String(p.ios.nextSession).slice(0, 10)));
+      var pl = p.ios.plan;
+      if(pl && pl.startDate){
+        var pbits = [pl.actionsDone + " of " + pl.actionsTotal + " actions done"];
+        if(pl.actionsBlocked) pbits.push(pl.actionsBlocked + " blocked");
+        if(pl.actionsOverdue) pbits.push(pl.actionsOverdue + " past due");
+        if(pl.weeklyReviewDue) pbits.push("weekly check-in due");
+        if(pl.review90On) pbits.push("90-day review " + fmtDate(pl.review90On) + (pl.review90Done ? " (held)" : ""));
+        out += '<div class="dim">90-day plan: ' + esc(pbits.join(" · ")) + (pl.nextAction && pl.nextAction.text ? '<br>Next: ' + esc(pl.nextAction.text) : '') + '</div>';
+      }
       out += '<div class="dim">InstitutionalOS client #' + esc(String(p.ios.orgId)) + (bits.length ? ' · ' + esc(bits.join(" · ")) : ' · no results yet') +
         (p.ios.portalUrl ? ' · <a href="' + esc(p.ios.portalUrl) + '" target="_blank" rel="noopener">client portal</a> <button type="button" class="btn pl-copy-portal" data-url="' + esc(p.ios.portalUrl) + '">Copy link</button>' : '') + '</div>';
     } else if(p.stage === "assessment" || p.track === "institutionalos"){
@@ -1673,7 +1682,8 @@
     diagnosticDealsLinked: "Diagnostic deals have an InstitutionalOS client",
     resultsFlowing: "InstitutionalOS results are flowing back",
     iosClients: "InstitutionalOS clients match FIOS deals",
-    rechecksDue: "Reassessments on schedule"
+    rechecksDue: "Reassessments on schedule",
+    improvementPlans: "90-day plans moving (check-ins, blocked actions, 90-day review)"
   };
   var RECONCILE_STATUS = { ok:"OK", mismatch:"Mismatch", warn:"Check", due:"Due", error:"Could not check", skipped:"Not set up" };
   function reconcileDetail(key, c){
@@ -1687,6 +1697,11 @@
     (c.linkDisagrees || []).forEach(function(o){ list.push("InstitutionalOS client " + o.name + " points at a different deal"); });
     (c.dealPointsToMissingClient || []).forEach(function(d){ list.push("A deal points at missing client #" + d.orgId); });
     (c.overdue || []).forEach(function(o){ list.push(o.name + " was due " + fmtDate(o.reassessOn)); });
+    (c.constraintButNoPlan || []).forEach(function(d){ list.push((d.org || "A client") + ": constraint confirmed, no 90-day plan yet"); });
+    (c.checkinDue || []).forEach(function(d){ list.push((d.org || "A client") + ": weekly check-in due" + (d.lastReviewOn ? " (last " + fmtDate(d.lastReviewOn) + ")" : "")); });
+    (c.blocked || []).forEach(function(d){ list.push((d.org || "A client") + ": " + d.blocked + " action(s) blocked" + (d.nextAction ? " (" + d.nextAction + ")" : "")); });
+    (c.review90Due || []).forEach(function(d){ list.push((d.org || "A client") + ": 90-day review was due " + fmtDate(d.review90On)); });
+    if(key === "improvementPlans" && c.status === "ok") list.push((c.plans || 0) + " active plan" + (c.plans === 1 ? "" : "s") + ", all on track");
     if(key === "websiteLeads" && c.status === "ok") list.push(c.websiteLeads + " leads and " + c.feedback + " feedback in the window, all in FIOS");
     if(key === "iosClients" && c.clients !== undefined && c.status === "ok") list.push(c.clients + " clients, all linked");
     if(key === "iosClients" && c.actingAs) list.push("FIOS acts as the InstitutionalOS console login " + c.actingAs);

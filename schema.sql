@@ -484,3 +484,8 @@ CREATE TABLE IF NOT EXISTS feedback (
   created_at TEXT,
   archived_at TEXT
 );
+
+-- The InstitutionalOS 90-Day Improvement Plan status for a linked deal (JSON,
+-- pushed by InstitutionalOS): target, actions done/blocked/overdue, last
+-- check-in, 90-day review and reassessment dates, and the one next action.
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_plan TEXT DEFAULT '';

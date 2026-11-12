@@ -235,7 +235,8 @@ function rowToPipeline(r) {
     ios: r.ios_org_id ? {
       orgId: r.ios_org_id, portalUrl: r.ios_portal_url || "", overall: r.ios_overall === null || r.ios_overall === undefined ? null : Number(r.ios_overall),
       decision: r.ios_decision || "", constraint: r.ios_constraint || "", nextSession: r.ios_next_session || "",
-      record: safeJsonParse(r.ios_record || "", null), syncedAt: r.ios_synced_at || null
+      record: safeJsonParse(r.ios_record || "", null), syncedAt: r.ios_synced_at || null,
+      plan: safeJsonParse(r.ios_plan || "", null)
     } : null,
     iosLinkError: r.ios_link_error || "" };
 }
@@ -829,10 +830,11 @@ app.post("/api/admin/ios-sync", requireAdminScope("ios"), async (req, res) => {
   if (deal) {
     await pool.query(
       `UPDATE pipeline SET ios_org_id = $1, ios_overall = $2, ios_decision = $3, ios_constraint = $4, ios_next_session = $5,
-         ios_record = $6, ios_synced_at = $7, ios_link_error = '' WHERE id = $8`,
+         ios_record = $6, ios_synced_at = $7, ios_link_error = '', ios_plan = $9 WHERE id = $8`,
       [orgId, Number.isFinite(Number(b.overall)) ? Number(b.overall) : null, clip(b.decision, 120),
        clip(rec.verifiedConstraint || b.lowestDimension, 300), clip(b.nextSessionAt, 40),
-       JSON.stringify({ ...rec, dimensions: b.dimensions || null, lowestDimension: b.lowestDimension || "" }).slice(0, 20000), now, deal.id]
+       JSON.stringify({ ...rec, dimensions: b.dimensions || null, lowestDimension: b.lowestDimension || "" }).slice(0, 20000), now, deal.id,
+       b.plan && typeof b.plan === "object" ? JSON.stringify(b.plan).slice(0, 8000) : ""]
     );
   }
   // Problem Log: only once there's something to log.
@@ -959,6 +961,27 @@ async function buildReconcile(hours) {
   } else {
     out.checks.iosClients = { status: "skipped", error: "GRANTPASS_INTEGRATION_KEY not set" };
   }
+  // 5. The second half of the loop: each linked Diagnostic has a 90-Day
+  // Improvement Plan, check-ins are happening, nothing is stuck, and the
+  // 90-day review is held on time. These are follow-ups, not faults.
+  const linked = (await pool.query("SELECT id, org, name, ios_org_id, ios_plan, ios_record FROM pipeline WHERE archived_at IS NULL AND ios_org_id IS NOT NULL")).rows;
+  const today = new Date().toISOString().slice(0, 10);
+  const noPlan = [], checkinDue = [], blockedDeals = [], review90Due = [];
+  for (const d of linked) {
+    const plan = safeJsonParse(d.ios_plan || "", null);
+    const rec = safeJsonParse(d.ios_record || "", {}) || {};
+    const who = { id: d.id, org: d.org || d.name, orgId: d.ios_org_id };
+    if (!plan || !plan.startDate) { if (rec.verifiedConstraint) noPlan.push(who); continue; }
+    if (!plan.active) continue;
+    if (plan.weeklyReviewDue) checkinDue.push({ ...who, lastReviewOn: plan.lastReviewOn || "" });
+    if (plan.actionsBlocked) blockedDeals.push({ ...who, blocked: plan.actionsBlocked, nextAction: (plan.nextAction || {}).text || "" });
+    if (plan.review90On && plan.review90On <= today && !plan.review90Done) review90Due.push({ ...who, review90On: plan.review90On });
+  }
+  out.checks.improvementPlans = {
+    status: noPlan.length || checkinDue.length || blockedDeals.length || review90Due.length ? "due" : "ok",
+    plans: linked.filter((d) => (safeJsonParse(d.ios_plan || "", null) || {}).startDate).length,
+    constraintButNoPlan: noPlan, checkinDue, blocked: blockedDeals, review90Due
+  };
   const pr = (await pool.query("SELECT count(*) FILTER (WHERE differs IS TRUE) AS hidden, count(*) FILTER (WHERE differs IS NOT NULL) AS judged FROM problem_log WHERE archived_at IS NULL AND kind = 'diagnostic'")).rows[0];
   out.hiddenProblemRate = { diagnostics: Number(pr.judged), hidden: Number(pr.hidden), rate: Number(pr.judged) ? Math.round((100 * Number(pr.hidden)) / Number(pr.judged)) : null };
   out.ok = out.issues === 0;

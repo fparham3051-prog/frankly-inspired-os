@@ -265,7 +265,7 @@
   US_REGIONS.forEach(function(r){ r.states.forEach(function(s){ STATE_NAME_BY_ABBR[s[0]] = s[1]; }); });
 
   var PROSPECT_STATUS_LABELS = {"new":"New", researching:"Researching", contacted:"Contacted", responded:"Responded", meeting:"Meeting booked", "not-fit":"Not a fit"};
-  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", other:"Other"};
+  var PROSPECT_SOURCE_LABELS = {linkedin:"LinkedIn", referral:"Referral", conference:"Conference / event", warm:"Warm network", inbound:"Inbound", giving:"Giving Landscape", "market-scan":"DMV market scan", other:"Other"};
 
   // ---------- nav ----------
   var navButtons = document.querySelectorAll("#app-nav .rail-btn");
@@ -1723,6 +1723,153 @@
     }).catch(function(err){ st.textContent = "Could not run: " + err.message; })
       .then(function(){ reconcileBtn.disabled = false; });
   });
+
+  // ---------- DMV market scan ----------
+  var MS = { offset: 0, rows: [], open: null, summaryLoaded: false, poll: null };
+  var MS_SIGNAL = { outpacing: "Growth outpacing", growing: "Growing", steady: "Steady", declining: "Declining" };
+  var MS_STATUS = { "new": "New", watch: "Watch", prospect: "In Prospecting", not_fit: "Not a fit", client: "Client" };
+  function msUsd(n){ if(n === null || n === undefined || n === "") return "–"; n = Number(n); var neg = n < 0; n = Math.abs(n); return (neg ? "−" : "") + (n >= 1e6 ? "$" + (n / 1e6).toFixed(1) + "M" : "$" + Math.round(n / 1000) + "K"); }
+  function msCity(c){ return String(c || "").toLowerCase().replace(/\b([a-z])/g, function(m){ return m.toUpperCase(); }); }
+  function msPct(n){ return n === null || n === undefined ? "–" : Math.round(n * 100) + "%"; }
+  function msProgressText(p){
+    if(!p) return "";
+    if(p.running) return (p.phase === "roster" ? "Reading the IRS lists for DC, Maryland, and Virginia..." : "Pulling filings: " + p.done + " of " + p.total + (p.errors ? " (" + p.errors + " could not be read; they'll be retried)" : "") + ". About " + Math.max(1, Math.round((p.total - p.done) * 1.3 / 60)) + " minutes left. Keep this tab open, or come back and press Continue.");
+    if(p.phase === "error") return "Stopped with an error: " + p.lastError;
+    if(p.phase === "stopped") return "Paused at " + p.done + " of " + p.total + ". Press Continue to pick up where it left off.";
+    if(p.phase === "done") return "Up to date.";
+    return "";
+  }
+  function loadMarketSummary(){
+    return apiFetch("/api/market-scan").then(function(d){
+      var st = d.settings || {}, t = d.totals || {};
+      if(!MS.summaryLoaded){
+        document.getElementById("ms-min").value = st.minRevenue;
+        document.getElementById("ms-max").value = st.maxRevenue;
+        var picked = st.ntee || [];
+        document.getElementById("ms-ntee").innerHTML = Object.keys(d.nteeGroups).filter(function(k){ return "BOJPAEFIKLNRSTWC".indexOf(k) >= 0; }).map(function(k){
+          return '<label><input type="checkbox" value="' + k + '"' + (picked.indexOf(k) >= 0 ? " checked" : "") + '> ' + esc(d.nteeGroups[k]) + '</label>';
+        }).join("");
+        var area = document.getElementById("ms-area"), type = document.getElementById("ms-type");
+        (d.byArea || []).forEach(function(a){ if(a.area) area.insertAdjacentHTML("beforeend", '<option value="' + esc(a.area) + '">' + esc(a.area) + '</option>'); });
+        (d.byType || []).forEach(function(a){ type.insertAdjacentHTML("beforeend", '<option value="' + esc(a.grp) + '">' + esc(a.label) + '</option>'); });
+        MS.summaryLoaded = (d.byArea || []).length > 0;
+      }
+      document.getElementById("ms-progress").textContent = msProgressText(d.progress) || (st.rosterBuiltAt ? "List built " + fmtDate(st.rosterBuiltAt.slice(0, 10)) + " from " + Number(st.rosterScanned || 0).toLocaleString() + " IRS records." : "Not built yet. Pick the revenue range and program areas, then build the list (about a minute), and pulling filings takes about 1 second per organization.");
+      var e = t.enriched || 0;
+      document.getElementById("ms-summary").innerHTML = t.orgs ? (
+        '<div class="ms-stats">' +
+          '<div class="ms-stat"><b>' + t.orgs.toLocaleString() + '</b>organizations in range</div>' +
+          '<div class="ms-stat"><b>' + e.toLocaleString() + '</b>with filings read</div>' +
+          '<div class="ms-stat"><b>' + (e ? Math.round(100 * t.outpacing / e) + "%" : "–") + '</b>growth outpacing reserves (' + t.outpacing + ')</div>' +
+          '<div class="ms-stat"><b>' + (e ? Math.round(100 * t.deficits / e) + "%" : "–") + '</b>deficits in 2 of last 3 years</div>' +
+          '<div class="ms-stat"><b>' + (e ? Math.round(100 * t.thin_reserves / e) + "%" : "–") + '</b>under 3 months of reserves</div>' +
+          '<div class="ms-stat"><b>' + (t.median_reserves === null ? "–" : Number(t.median_reserves).toFixed(1)) + '</b>median months of reserves</div>' +
+        '</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Area</th><th>Organizations</th><th>Growth outpacing</th><th>Median public score</th></tr></thead><tbody>' +
+          (d.byArea || []).map(function(a){ return '<tr><td>' + esc(a.area || "Other") + '</td><td>' + a.orgs + '</td><td>' + a.outpacing + '</td><td>' + (a.median_score === null ? "–" : Math.round(a.median_score)) + '</td></tr>'; }).join("") +
+        '</tbody></table></div>' +
+        '<p class="dim">"Growth outpacing" = revenue up 20%+ over the filed years while reserves are under 3 months, expenses grew faster, or the latest year ran a deficit. The public score (0–100) covers revenue and financial health only: reserves, margin, deficit years, debt, and revenue trend.</p>'
+      ) : "";
+      if(d.progress && d.progress.running && !MS.poll){ MS.poll = setInterval(function(){ loadMarketSummary(); }, 8000); }
+      if(d.progress && !d.progress.running && MS.poll){ clearInterval(MS.poll); MS.poll = null; MS.offset = 0; loadMarketRows(); }
+    }).catch(function(err){ document.getElementById("ms-progress").textContent = "Could not load: " + err.message; });
+  }
+  function msQuery(){
+    var v = function(id){ return document.getElementById(id).value; };
+    var q = { q: v("ms-q"), area: v("ms-area"), type: v("ms-type"), growth: v("ms-growth"), status: v("ms-status"), sort: v("ms-sort"), offset: MS.offset, limit: 100 };
+    return Object.keys(q).filter(function(k){ return q[k] !== "" && q[k] !== null; }).map(function(k){ return k + "=" + encodeURIComponent(q[k]); }).join("&");
+  }
+  function msRowHtml(o){
+    var s = o.signals || {};
+    return '<tr class="ms-row" data-ein="' + esc(o.ein) + '" tabindex="0"><td><strong>' + esc(o.name) + '</strong><div class="dim">' + esc([msCity(o.city), o.nteeGroup].filter(Boolean).join(" · ")) + '</div></td>' +
+      '<td class="dim">' + esc(o.area) + '</td><td>' + msUsd(s.revenue !== undefined ? s.revenue : o.bmfRevenue) + (s.latestYear ? '<div class="dim">' + s.latestYear + '</div>' : '') + '</td>' +
+      '<td>' + (o.publicScore === null ? (o.enrichedAt ? "–" : '<span class="dim">not read yet</span>') : o.publicScore) + '</td>' +
+      '<td>' + (o.growth ? '<span class="ms-sig-' + o.growth + (o.growth === "outpacing" ? ' overdue-tag' : '') + '">' + esc(MS_SIGNAL[o.growth] || o.growth) + '</span>' : '') + '</td>' +
+      '<td>' + esc(o.situationLabel || "") + '</td><td>' + esc(MS_STATUS[o.status] || o.status) + '</td></tr>';
+  }
+  function msDetailHtml(o){
+    var s = o.signals || {}, yrs = s.years || [];
+    var opts = Object.keys(MS_STATUS).map(function(k){ return '<option value="' + k + '"' + (o.status === k ? " selected" : "") + '>' + MS_STATUS[k] + '</option>'; }).join("");
+    return '<tr class="ms-detail" data-ein="' + esc(o.ein) + '"><td colspan="7">' +
+      '<p><strong>' + esc(o.name) + '</strong> · EIN ' + esc(o.ein.slice(0, 2) + "-" + o.ein.slice(2)) + ' · ' + esc(msCity(o.city) + ", " + o.state) + (o.ruling ? ' · exempt since ' + esc(String(o.ruling).slice(0, 4)) : '') + ' · <a href="' + esc(o.propublica) + '" target="_blank" rel="noopener">990s on ProPublica</a></p>' +
+      (yrs.length ? '<div class="table-wrap"><table><thead><tr><th>Year</th><th>Revenue</th><th>Expenses</th><th>Surplus</th><th>Net assets</th><th>Contributions share</th></tr></thead><tbody>' +
+        yrs.slice().reverse().map(function(y){ return '<tr><td>' + y.year + '</td><td>' + msUsd(y.revenue) + '</td><td>' + msUsd(y.expenses) + '</td><td>' + msUsd(y.revenue - y.expenses) + '</td><td>' + msUsd(y.netAssets) + '</td><td>' + (y.revenue ? msPct(y.contributions / y.revenue) : "–") + '</td></tr>'; }).join("") +
+        '</tbody></table></div>' : '') +
+      (s.observations && s.observations.length ? '<p><strong>What the public record shows, and what to ask</strong></p><ul class="ms-obs">' + s.observations.map(function(x){ return '<li>' + esc(x.text) + '<br><span class="dim">Ask: ' + esc(x.question) + '</span></li>'; }).join("") + '</ul>' : '') +
+      '<p class="dim">Public filings can\'t show strategy, program evidence, leadership, operations, partnerships, or governance practice. Ask about those; the Diagnostic verifies them.' + (s.reserveMonths != null ? ' Reserves use net assets, which include restricted funds.' : '') + '</p>' +
+      '<div class="form-grid" style="grid-template-columns:1fr 3fr;"><div class="field"><label>Status</label><select class="inline-select ms-status">' + opts + '</select></div>' +
+      '<div class="field"><label>Your notes</label><textarea class="ms-notes" rows="2">' + esc(o.notes) + '</textarea></div></div>' +
+      '<p><button type="button" class="btn ms-save">Save notes</button> ' +
+        (o.prospectId ? '<span class="dim">In Prospecting.</span> ' : '<button type="button" class="btn ms-prospect">Add to Prospecting</button> ') +
+        '<button type="button" class="btn ms-demo">' + (o.iosOrgId ? "Refresh the InstitutionalOS demo" : "Build an InstitutionalOS demo") + '</button> ' +
+        '<button type="button" class="btn ms-refresh">Re-read filings</button> <button type="button" class="btn ms-brief">Print a one-page brief</button> <span class="dim ms-msg"></span></p>' +
+    '</td></tr>';
+  }
+  function loadMarketRows(){
+    apiFetch("/api/market-scan/orgs?" + msQuery()).then(function(d){
+      MS.rows = MS.offset ? MS.rows.concat(d.orgs) : d.orgs;
+      var body = document.getElementById("ms-rows");
+      body.innerHTML = MS.rows.length ? MS.rows.map(function(o){ return msRowHtml(o) + (MS.open === o.ein ? msDetailHtml(o) : ""); }).join("") : '<tr><td colspan="7" class="empty-note">No organizations match. Build the list first, or widen the filters.</td></tr>';
+      document.getElementById("ms-count").textContent = d.total ? "Showing " + MS.rows.length + " of " + d.total.toLocaleString() + "." : "";
+      document.getElementById("ms-more").hidden = MS.rows.length >= d.total;
+    }).catch(function(err){ document.getElementById("ms-count").textContent = "Could not load: " + err.message; });
+  }
+  function msBrief(o){
+    var s = o.signals || {}, yrs = (s.years || []).slice().reverse();
+    var w = window.open("", "_blank");
+    if(!w) return;
+    w.document.write('<!doctype html><title>' + esc(o.name) + ' · conversation brief</title><style>body{font:14px/1.5 Georgia,serif;max-width:720px;margin:32px auto;color:#222}h1{font-size:22px;margin:0}table{border-collapse:collapse;width:100%;margin:12px 0}td,th{border-bottom:1px solid #ddd;padding:4px 6px;text-align:left;font-family:Arial,sans-serif;font-size:12px}.m{color:#666;font-size:12px;font-family:Arial,sans-serif}li{margin-bottom:8px}</style>' +
+      '<p class="m">Frankly Inspired · internal conversation brief · public records only · ' + new Date().toLocaleDateString() + '</p><h1>' + esc(o.name) + '</h1><p class="m">' + esc([msCity(o.city) + ", " + o.state, o.nteeGroup, "EIN " + o.ein, o.area].join(" · ")) + '</p>' +
+      '<p><strong>Public financial score:</strong> ' + (o.publicScore === null ? "n/a" : o.publicScore + " / 100") + ' &nbsp; <strong>Signal:</strong> ' + esc(MS_SIGNAL[o.growth] || "–") + ' &nbsp; <strong>Likely situation:</strong> ' + esc(o.situationLabel || "–") + '</p>' +
+      (yrs.length ? '<table><tr><th>Year</th><th>Revenue</th><th>Expenses</th><th>Surplus</th><th>Net assets</th></tr>' + yrs.map(function(y){ return '<tr><td>' + y.year + '</td><td>' + msUsd(y.revenue) + '</td><td>' + msUsd(y.expenses) + '</td><td>' + msUsd(y.revenue - y.expenses) + '</td><td>' + msUsd(y.netAssets) + '</td></tr>'; }).join("") + '</table>' : '') +
+      '<h3>What the record shows, and what to ask</h3><ul>' + (s.observations || []).map(function(x){ return '<li>' + esc(x.text) + '<br><em>Ask: ' + esc(x.question) + '</em></li>'; }).join("") + '</ul>' +
+      '<h3>What the record can\'t show</h3><p>Strategy, program evidence, leadership depth, operations, partnerships, and governance practice. Questions: What decision is coming in the next year? Which decisions still route to the executive director? What would a funder ask that you can\'t yet show?</p>' +
+      (o.notes ? '<h3>Notes</h3><p>' + esc(o.notes).replace(/\n/g, "<br>") + '</p>' : '') +
+      '<p class="m">Source: IRS Exempt Organizations Business Master File; e-filed Form 990 data via ProPublica Nonprofit Explorer. Net assets include restricted funds. For preparation only; not shared with the organization.</p>');
+    w.document.close(); w.focus(); w.print();
+  }
+  (function wireMarket(){
+    var tabBtn = document.querySelector('[data-rp-tab="market"]');
+    if(!tabBtn) return;
+    tabBtn.addEventListener("click", function(){ loadMarketSummary(); if(!MS.rows.length) loadMarketRows(); });
+    var start = function(rebuild){
+      var ntee = Array.prototype.map.call(document.querySelectorAll("#ms-ntee input:checked"), function(i){ return i.value; });
+      document.getElementById("ms-progress").textContent = rebuild ? "Starting: reading the IRS lists..." : "Continuing...";
+      apiFetch("/api/market-scan/run", { method: "POST", body: { rebuild: rebuild, minRevenue: document.getElementById("ms-min").value, maxRevenue: document.getElementById("ms-max").value, ntee: ntee } })
+        .then(function(){ setTimeout(loadMarketSummary, 1500); }).catch(function(err){ document.getElementById("ms-progress").textContent = "Could not start: " + err.message; });
+    };
+    document.getElementById("ms-run").addEventListener("click", function(){ start(true); });
+    document.getElementById("ms-continue").addEventListener("click", function(){ start(false); });
+    document.getElementById("ms-stop").addEventListener("click", function(){ apiFetch("/api/market-scan/stop", { method: "POST" }).then(loadMarketSummary); });
+    var reload = function(){ MS.offset = 0; MS.open = null; loadMarketRows(); };
+    ["ms-area", "ms-type", "ms-growth", "ms-status", "ms-sort"].forEach(function(id){ document.getElementById(id).addEventListener("change", reload); });
+    var t; document.getElementById("ms-q").addEventListener("input", function(){ clearTimeout(t); t = setTimeout(reload, 300); });
+    document.getElementById("ms-more").addEventListener("click", function(){ MS.offset = MS.rows.length; loadMarketRows(); });
+    var rows = document.getElementById("ms-rows");
+    var msRender = function(){ rows.innerHTML = MS.rows.map(function(o){ return msRowHtml(o) + (MS.open === o.ein ? msDetailHtml(o) : ""); }).join(""); };
+    var toggle = function(tr){ if(!tr) return; var ein = tr.getAttribute("data-ein"); MS.open = MS.open === ein ? null : ein; msRender(); };
+    rows.addEventListener("click", function(e){
+      var tr = e.target.closest(".ms-row");
+      if(tr && !e.target.closest("a")) return toggle(tr);
+      var box = e.target.closest(".ms-detail"); if(!box) return;
+      var ein = box.getAttribute("data-ein"), o = MS.rows.filter(function(x){ return x.ein === ein; })[0], msg = box.querySelector(".ms-msg");
+      var done = function(text){ msg.textContent = text; };
+      if(e.target.closest(".ms-save")){
+        var notes = box.querySelector(".ms-notes").value, status = box.querySelector(".ms-status").value;
+        apiFetch("/api/market-scan/orgs/" + ein, { method: "PATCH", body: { notes: notes, status: status } }).then(function(){ o.notes = notes; o.status = status; done("Saved."); }).catch(function(err){ done(err.message); });
+      } else if(e.target.closest(".ms-prospect")){
+        done("Adding...");
+        apiFetch("/api/market-scan/orgs/" + ein + "/prospect", { method: "POST" }).then(function(r){ o.prospectId = r.prospectId; o.status = o.status === "new" || o.status === "watch" ? "prospect" : o.status; msRender(); var m = rows.querySelector('.ms-detail .ms-msg'); if(m) m.textContent = "Added to Prospecting."; return refreshAndRender(); }).catch(function(err){ done(err.message); });
+      } else if(e.target.closest(".ms-demo")){
+        done("Building the demo in InstitutionalOS (can take a minute)...");
+        apiFetch("/api/market-scan/orgs/" + ein + "/demo", { method: "POST" }).then(function(r){ o.iosOrgId = r.orgId; msg.innerHTML = 'Demo ready: <a href="' + esc(r.view) + '" target="_blank" rel="noopener">open the demo report</a> · it\'s also in your InstitutionalOS console as client #' + r.orgId + '.'; }).catch(function(err){ done(err.message); });
+      } else if(e.target.closest(".ms-refresh")){
+        done("Reading...");
+        apiFetch("/api/market-scan/orgs/" + ein + "/refresh", { method: "POST" }).then(function(n){ MS.rows = MS.rows.map(function(x){ return x.ein === ein ? n : x; }); msRender(); }).catch(function(err){ done(err.message); });
+      } else if(e.target.closest(".ms-brief")){ msBrief(o); }
+    });
+    rows.addEventListener("keydown", function(e){ var tr = e.target.closest(".ms-row"); if(tr && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); toggle(tr); } });
+  })();
 
   // ---------- Portfolio Analysis (LYBUNT/SYBUNT, gift tiers, retention) ----------
   // Deliberately client-side only, start to finish: nothing typed or

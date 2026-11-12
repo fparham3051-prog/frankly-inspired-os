@@ -463,11 +463,11 @@ app.post("/api/prospects/:id/promote", requireAuth, async (req, res) => {
   const id = newId();
   const now = new Date().toISOString();
   await pool.query(
-    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, diagnostic_stage, created_at, updated_at, trigger_key, self_scores)
-     VALUES ($1,$2,$3,$4,$5,'lead',$6,'',$7,$8,$9,$9,$10,$11)`,
+    `INSERT INTO pipeline (id, name, org, source, track, stage, next_step, next_step_date, notes, diagnostic_stage, created_at, updated_at, trigger_key, self_scores, scan_ein)
+     VALUES ($1,$2,$3,$4,$5,'lead',$6,'',$7,$8,$9,$9,$10,$11,$12)`,
     [id, p.name || "", p.org || "", "Prospecting: " + (p.source || ""), INTEREST_TO_TRACK[p.interest] || "undecided",
      p.interest ? "Discovery call" : "First outreach", p.notes || "", DIAGNOSTIC_STAGES.has(p.org_stage) ? p.org_stage : "", now,
-     p.trigger_key || "", p.self_scores || ""]
+     p.trigger_key || "", p.self_scores || "", String(p.source_ref || "").startsWith("scan-") ? String(p.source_ref).slice(5) : ""]
   );
   // A dedicated update rather than the shared archiveRow() helper, so this
   // archival is tagged 'promoted' - distinct from an ordinary manual Remove
@@ -792,6 +792,8 @@ async function linkToIOS(pipelineId) {
       body: {
         externalRef: d.id,
         name: orgName,
+        ein: d.scan_ein || undefined,
+        adoptRef: d.scan_ein ? "scan-" + d.scan_ein : undefined,
         stage: DIAGNOSTIC_STAGES.has(d.diagnostic_stage) ? d.diagnostic_stage.toUpperCase() : "",
         trigger: d.trigger_key || "",
         presentingProblem: pl.rows[0] ? pl.rows[0].presenting_problem : "",
@@ -833,7 +835,7 @@ app.post("/api/admin/ios-sync", requireAdminScope("ios"), async (req, res) => {
          ios_record = $6, ios_synced_at = $7, ios_link_error = '', ios_plan = $9 WHERE id = $8`,
       [orgId, Number.isFinite(Number(b.overall)) ? Number(b.overall) : null, clip(b.decision, 120),
        clip(rec.verifiedConstraint || b.lowestDimension, 300), clip(b.nextSessionAt, 40),
-       JSON.stringify({ ...rec, dimensions: b.dimensions || null, lowestDimension: b.lowestDimension || "" }).slice(0, 20000), now, deal.id,
+       JSON.stringify({ ...rec, dimensions: b.dimensions || null, lowestDimension: b.lowestDimension || "", perception: b.perception || null }).slice(0, 20000), now, deal.id,
        b.plan && typeof b.plan === "object" ? JSON.stringify(b.plan).slice(0, 8000) : ""]
     );
   }
@@ -939,7 +941,7 @@ async function buildReconcile(hours) {
       const deals = (await pool.query("SELECT id, ios_org_id FROM pipeline WHERE ios_org_id IS NOT NULL")).rows;
       const byOrg = new Map(deals.map((d) => [Number(d.ios_org_id), d.id]));
       const dealIds = new Set(deals.map((d) => d.id));
-      const orphanOrgs = orgs.filter((o) => !byOrg.has(Number(o.orgId)) && !(o.externalRef && dealIds.has(o.externalRef)));
+      const orphanOrgs = orgs.filter((o) => !String(o.externalRef || "").startsWith("scan-") && !byOrg.has(Number(o.orgId)) && !(o.externalRef && dealIds.has(o.externalRef)));
       const brokenLinks = orgs.filter((o) => o.externalRef && byOrg.has(Number(o.orgId)) && byOrg.get(Number(o.orgId)) !== o.externalRef);
       const orgIds = new Set(orgs.map((o) => Number(o.orgId)));
       const missingOrgs = deals.filter((d) => !orgIds.has(Number(d.ios_org_id)));
@@ -1551,6 +1553,10 @@ app.get("/api/org-financials/structural-summary", requireAuth, async (req, res) 
     res.status(500).json({ error: "Could not load structural summary right now. Try again in a moment." });
   }
 });
+
+// ---------- DMV market scan (public records research) ----------
+require("./marketScan").setup(app, { pool, requireAuth, requireAdminScope, ppUserAgent: PP_USER_AGENT, newId, iosFetch,
+  grantpassDashboard: GRANTPASS_DASHBOARD, grantpassApi: GRANTPASS_API });
 
 // ---------- full backup / restore (admin-only) ----------
 // GET returns every row from every table, including archived ones, as plain

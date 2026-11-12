@@ -489,3 +489,42 @@ CREATE TABLE IF NOT EXISTS feedback (
 -- pushed by InstitutionalOS): target, actions done/blocked/overdue, last
 -- check-in, 90-day review and reassessment dates, and the one next action.
 ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_plan TEXT DEFAULT '';
+
+-- DMV market scan (marketScan.js): public charities in the DC, Maryland and
+-- Northern Virginia market from the IRS Business Master File, with signals
+-- from their e-filed 990s (ProPublica). Internal research only.
+CREATE TABLE IF NOT EXISTS market_orgs (
+  ein TEXT PRIMARY KEY,
+  name TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  area TEXT DEFAULT '',
+  ntee TEXT DEFAULT '',
+  bmf_revenue NUMERIC,
+  bmf_assets NUMERIC,
+  ruling TEXT DEFAULT '',
+  tax_period TEXT DEFAULT '',
+  roster_seen_at TEXT,
+  enriched_at TEXT,
+  enrich_error TEXT DEFAULT '',
+  signals TEXT,
+  public_score NUMERIC,
+  growth_flag TEXT DEFAULT '',
+  situation TEXT DEFAULT '',
+  fit INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'new',
+  notes TEXT DEFAULT '',
+  prospect_id TEXT,
+  ios_org_id INTEGER,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS market_orgs_fit ON market_orgs (fit DESC, bmf_revenue DESC);
+CREATE TABLE IF NOT EXISTS market_scan_state (
+  id TEXT PRIMARY KEY,
+  data TEXT
+);
+
+-- A deal that started in the market scan keeps its EIN, so linking it to
+-- InstitutionalOS adopts the demo client made from public data.
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS scan_ein TEXT DEFAULT '';

@@ -703,3 +703,14 @@ body.login-body{min-height:100vh;display:flex;align-items:center;justify-content
   .profile-link{font-family:'IBM Plex Mono', monospace;font-size:0.72rem;color:var(--accent-2);text-decoration:none;}
 
   .quiz-pick-history{font-size:0.76rem;color:var(--ink-soft);margin-top:2px;}
+
+/* DMV market scan */
+.ms-checks { display:flex; flex-wrap:wrap; gap:6px 14px; margin:6px 0 10px; font-size:13px; }
+.ms-checks label { display:flex; gap:6px; align-items:center; }
+.ms-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin:10px 0; }
+.ms-stat { border:1px solid var(--line, #e2e6ea); border-radius:10px; padding:10px 12px; }
+.ms-stat b { display:block; font-size:22px; }
+.ms-detail td { background: rgba(255,255,255,.03); }
+.ms-detail .ms-obs li { margin-bottom:6px; }
+.ms-sig-outpacing, .ms-sig-declining { font-weight:700; }
+.ms-row { cursor:pointer; }

@@ -384,6 +384,7 @@
         <button type="button" class="filter-btn" data-rp-tab="problems" role="tab" aria-selected="false">Problem Log</button>
         <button type="button" class="filter-btn" data-rp-tab="feedback" role="tab" aria-selected="false">Feedback</button>
         <button type="button" class="filter-btn" data-rp-tab="systems" role="tab" aria-selected="false">Systems Check</button>
+        <button type="button" class="filter-btn" data-rp-tab="market" role="tab" aria-selected="false">DMV Market Scan</button>
       </div>
 
       <div class="fw-card" data-panel="01 · Pipeline records" data-rp-tab="pipeline">
@@ -798,6 +799,37 @@
         <h3>Client Feedback</h3>
         <p style="margin-top:-2px;">What clients sent through franklyinspired.associates/feedback. Only feedback marked <em>named</em> or <em>anonymous</em> can be used as proof on the website; <em>private</em> stays here. Approve one, then copy its snippet into the website's proof list.</p>
         <div id="feedback-list"><p class="empty-note">Loading...</p></div>
+      </div>
+
+      <div class="fw-card" data-panel="21 · Your backyard" data-rp-tab="market" hidden>
+        <h3>DMV Market Scan</h3>
+        <p style="margin-top:-2px;">Every active public charity in DC, Maryland, and Northern Virginia that files a Form 990, read from public records only: the IRS list of exempt organizations and each one's e-filed 990s (ProPublica). Public filings show revenue and financial health; the other six dimensions need the Diagnostic. This is your private research: nothing here is shown publicly or sent to anyone.</p>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
+          <div class="field"><label for="ms-min">Revenue from ($)</label><input id="ms-min" type="number" step="50000" min="0"></div>
+          <div class="field"><label for="ms-max">Revenue up to ($)</label><input id="ms-max" type="number" step="500000" min="0"></div>
+        </div>
+        <div id="ms-ntee" class="ms-checks" aria-label="Program areas"></div>
+        <p><button type="button" class="btn" id="ms-run">Build the list and pull filings</button> <button type="button" class="btn" id="ms-continue">Continue pulling filings</button> <button type="button" class="btn danger" id="ms-stop">Stop</button></p>
+        <p class="dim" id="ms-progress" aria-live="polite"></p>
+        <div id="ms-summary"></div>
+      </div>
+
+      <div class="fw-card" data-panel="22 · Organizations" data-rp-tab="market" hidden>
+        <h3>Organizations</h3>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+          <div class="field"><label for="ms-q">Name</label><input id="ms-q" type="search" placeholder="Search"></div>
+          <div class="field"><label for="ms-area">Area</label><select id="ms-area"><option value="">All</option></select></div>
+          <div class="field"><label for="ms-type">Program area</label><select id="ms-type"><option value="">All</option></select></div>
+          <div class="field"><label for="ms-growth">Signal</label><select id="ms-growth"><option value="">All</option><option value="outpacing">Growth outpacing</option><option value="growing">Growing</option><option value="steady">Steady</option><option value="declining">Declining</option></select></div>
+          <div class="field"><label for="ms-status">Status</label><select id="ms-status"><option value="">All</option><option value="new">New</option><option value="watch">Watch</option><option value="prospect">In Prospecting</option><option value="not_fit">Not a fit</option><option value="client">Client</option></select></div>
+          <div class="field"><label for="ms-sort">Sort</label><select id="ms-sort"><option value="fit">Best fit first</option><option value="score">Weakest finances first</option><option value="revenue">Largest first</option><option value="name">Name</option></select></div>
+        </div>
+        <p class="dim" id="ms-count"></p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Organization</th><th>Area</th><th>Revenue</th><th>Public score</th><th>Signal</th><th>Likely situation</th><th>Status</th></tr></thead>
+          <tbody id="ms-rows"><tr><td colspan="7" class="empty-note">Build the list to begin.</td></tr></tbody>
+        </table></div>
+        <p><button type="button" class="btn" id="ms-more" hidden>Show more</button> <a class="btn" href="/api/market-scan/export.csv">Download all as a spreadsheet</a></p>
       </div>
 
       <div class="fw-card" data-panel="20 · Do the systems agree?" data-rp-tab="systems" hidden>

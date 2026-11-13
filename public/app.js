@@ -67,7 +67,7 @@
   // step every 90-day plan includes.
   var MODULE_NAME_SUGGESTIONS = [
     "Governing Foundation", "Build Before the Ask", "Fundraising Fluency", "Zero to Portfolio", "Funding Pathway Finder",
-    "Diagnostic: evidence review (all seven dimensions)", "Diagnostic: binding-constraint memo", "Diagnostic: 90-day plan with Candid Seal step", "Diagnostic: readout session", "90-day reassessment",
+    "Diagnostic: evidence review (all seven dimensions)", "Diagnostic: binding-constraint memo", "Diagnostic: 90-Day Improvement Plan with Candid Seal step", "Diagnostic: readout session", "90-day reassessment",
     "Strategy and Positioning", "Program and Impact Evidence", "Revenue and Financial Health", "Leadership and Organizational Capacity", "Operations and Infrastructure", "Partnerships and Ecosystem", "Governance and Risk",
     "Candid Seal: next level"
   ];

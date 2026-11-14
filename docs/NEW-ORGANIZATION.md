@@ -45,6 +45,7 @@ identical copy: `frankly-inspired-os/org.config.json`,
 | `myDesk` (owner's personal development) | on | per person |
 | `grantmaking` (programs, applications, reviews, awards, payments, reports) | optional | on |
 | `fundraising` (donors, gifts, pledges, campaigns, thank-you letters) | optional | on |
+| `governance` (board roster, meetings and minutes, conflict-of-interest statements, Form 990 checklist, policies) | optional | on |
 
 Areas can also be switched on or off in **Settings > Areas** without editing the file.
 
@@ -78,8 +79,16 @@ Built and ready (Grants and Fundraising in the left menu, under Foundation):
 - First Choice Construction's own gifts to the foundation: record the company
   as a donor (type Company) and use a campaign such as "Corporate match" so they
   are tracked separately from community gifts.
+- **Board & Governance**: the board roster with roles and terms; a year of
+  meetings planned in one step, each with an agenda, attendance and quorum
+  (a majority of voting members unless `governance.quorum` says otherwise),
+  conflicts declared, minutes, motions and votes, and printable agenda and
+  minutes; calendar files for every meeting; yearly conflict-of-interest
+  statements that each member signs from a private link (no account needed);
+  a Form 990 checklist with due dates from the fiscal year (the 990 is due the
+  15th day of the fifth month after year-end); and a policy register with
+  review dates. Set the foundation's own conflict-of-interest wording in
+  `governance.coiStatement` once the board adopts its policy.
 
-Still to build:
-- Governance: board meeting calendar, minutes, policy register, conflict-of-
-  interest forms, and the Form 990 checklist (the compliance calendar in
-  InstitutionalOS already covers part of this).
+Still to build: nothing in this list. Accounts-dependent items (e-signature,
+online payments, accounting sync) are tracked separately.

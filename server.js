@@ -1742,6 +1742,11 @@ require("./report").mountLetter(app, { pool, requireAuth });
 
 // ---------- foundation areas: grantmaking and fundraising (foundation.js) ----------
 require("./foundation").mount(app, { pool, requireAuth });
+require("./governance").mount(app, { pool, requireAuth });
+app.get("/governance.js", (req, res) => {
+  if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
+  res.sendFile(path.join(__dirname, "public", "governance.js"));
+});
 app.get("/foundation.js", (req, res) => {
   if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
   res.sendFile(path.join(__dirname, "public", "foundation.js"));

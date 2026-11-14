@@ -61,6 +61,7 @@
     <div class="rail-label" data-module-group="foundation">Foundation</div>
     <button type="button" class="rail-btn" data-view="grants" data-module="grantmaking">Grants</button>
     <button type="button" class="rail-btn" data-view="fundraising" data-module="fundraising">Fundraising</button>
+    <button type="button" class="rail-btn" data-view="board" data-module="governance">Board &amp; Governance</button>
     <div class="rail-label">Research</div>
     <button type="button" class="rail-btn" data-view="landscape" data-module="givingLandscape">Giving Landscape</button>
     <button type="button" class="rail-btn" data-view="fieldintel" data-module="fieldIntelligence">Field Intelligence</button>
@@ -1450,6 +1451,27 @@
       <div class="fd-panel" data-fd-panel="fr-detail" hidden></div>
     </section>
 
+    <!-- ================= BOARD & GOVERNANCE (governance.js) ================= -->
+    <section class="view" data-view="board" hidden>
+      <div class="view-head"><h2>Board &amp; Governance</h2><span class="tag" id="gv-year"></span></div>
+      <p class="view-intro">The board's own records: who serves, when you meet, what was decided, who has signed this year's conflict-of-interest statement, and what the Form 990 will ask about.</p>
+      <div class="filter-row fd-tabs" role="tablist">
+        <button type="button" class="filter-btn is-active" data-gv-tab="gv-overview" role="tab">Overview</button>
+        <button type="button" class="filter-btn" data-gv-tab="gv-meetings" role="tab">Meetings</button>
+        <button type="button" class="filter-btn" data-gv-tab="gv-members" role="tab">Board members</button>
+        <button type="button" class="filter-btn" data-gv-tab="gv-coi" role="tab">Conflict of interest</button>
+        <button type="button" class="filter-btn" data-gv-tab="gv-990" role="tab">Form 990</button>
+        <button type="button" class="filter-btn" data-gv-tab="gv-policies" role="tab">Policies</button>
+      </div>
+      <div class="fd-panel" data-gv-panel="gv-overview"></div>
+      <div class="fd-panel" data-gv-panel="gv-meetings" hidden></div>
+      <div class="fd-panel" data-gv-panel="gv-members" hidden></div>
+      <div class="fd-panel" data-gv-panel="gv-coi" hidden></div>
+      <div class="fd-panel" data-gv-panel="gv-990" hidden></div>
+      <div class="fd-panel" data-gv-panel="gv-policies" hidden></div>
+      <div class="fd-panel" data-gv-panel="gv-meeting" hidden></div>
+    </section>
+
     <!-- ================= SETTINGS ================= -->
     <section class="view" data-view="settings" hidden>
       <div class="view-head"><h2>Settings</h2><span class="tag" id="settings-who"></span></div>
@@ -1523,6 +1545,7 @@
 <script src="/org.js" defer></script>
 <script src="/app.js" defer></script>
 <script src="/foundation.js" defer></script>
+<script src="/governance.js" defer></script>
 <script>
 // ---------- InstitutionalOS embed + two-way sync with Prospecting ----------
 // The nav button below opens InstitutionalOS's live scorecard in an iframe.

@@ -29,6 +29,13 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   import or download CSV), Donors (profiles with history and next steps),
   Pledges, Campaigns. Thank every donor within 48 hours: the Overview's "Print
   all letters" button, then "Mark as thanked" on the letter page.
+- **Board & Governance** (Foundation): Overview (next meeting, what needs
+  attention), Meetings (plan a year, open one to take attendance, write
+  minutes, record motions; print the agenda and minutes; download calendar
+  files), Board members, Conflict of interest (create the year's statements,
+  then copy or email each member their private signing link), Form 990 (start
+  a year's checklist; tick items off), Policies (add the standard set, record
+  adoption and reviews).
 
 ## InstitutionalOS (grantpass-backend)
 - Console: each client in five tabs (Home, Health, Priority, 90-Day Plan,

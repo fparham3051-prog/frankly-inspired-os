@@ -712,3 +712,90 @@ CREATE TABLE IF NOT EXISTS fr_touches (
   done BOOLEAN DEFAULT false,
   created_at TEXT
 );
+
+-- =====================================================================
+-- Governance (governance.js): board roster, meetings with agendas, attendance,
+-- motions and minutes; yearly conflict-of-interest statements; the Form 990
+-- checklist; and the board policy register. Module key: governance.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS gov_members (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT DEFAULT '',
+  role TEXT DEFAULT 'member',            -- chair | vice-chair | treasurer | secretary | member | staff
+  voting BOOLEAN DEFAULT true,
+  committees TEXT DEFAULT '',
+  term_start TEXT DEFAULT '',
+  term_end TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS gov_meetings (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  kind TEXT DEFAULT 'regular',           -- regular | annual | special | committee
+  starts_at TEXT DEFAULT '',             -- YYYY-MM-DDTHH:MM, local time
+  duration_min INTEGER DEFAULT 90,
+  location TEXT DEFAULT '',
+  agenda TEXT DEFAULT '',                -- one item per line
+  status TEXT DEFAULT 'scheduled',       -- scheduled | held | cancelled
+  attendance TEXT DEFAULT '{}',          -- JSON {memberId: present | absent | excused}
+  guests TEXT DEFAULT '',
+  conflicts_declared TEXT DEFAULT '',
+  minutes TEXT DEFAULT '',
+  minutes_approved_on TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS gov_motions (
+  id TEXT PRIMARY KEY,
+  meeting_id TEXT NOT NULL REFERENCES gov_meetings(id),
+  motion TEXT NOT NULL,
+  moved_by TEXT DEFAULT '',
+  seconded_by TEXT DEFAULT '',
+  result TEXT DEFAULT 'passed',          -- passed | failed | tabled
+  yes_votes INTEGER DEFAULT 0,
+  no_votes INTEGER DEFAULT 0,
+  abstain_votes INTEGER DEFAULT 0,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS gov_coi (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL REFERENCES gov_members(id),
+  year INTEGER NOT NULL,
+  token TEXT UNIQUE NOT NULL,            -- private link the member signs from
+  sent_on TEXT DEFAULT '',
+  signed_on TEXT DEFAULT '',
+  signed_name TEXT DEFAULT '',
+  no_conflicts BOOLEAN DEFAULT false,
+  disclosures TEXT DEFAULT '',
+  created_at TEXT,
+  UNIQUE (member_id, year)
+);
+CREATE TABLE IF NOT EXISTS gov_checklist (
+  id TEXT PRIMARY KEY,
+  fiscal_year TEXT NOT NULL,             -- label, e.g. "2026" or "FY27"
+  item_key TEXT DEFAULT '',
+  label TEXT NOT NULL,
+  detail TEXT DEFAULT '',
+  due_on TEXT DEFAULT '',
+  done_on TEXT DEFAULT '',
+  owner TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  sort INTEGER DEFAULT 0,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS gov_policies (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  adopted_on TEXT DEFAULT '',
+  last_reviewed TEXT DEFAULT '',
+  review_every_months INTEGER DEFAULT 24,
+  link TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);

@@ -575,7 +575,7 @@
 
   // ---------- Settings > Areas ----------
   var AREA_LABEL = { consulting: "Consulting practice (pipeline, money, delivery)", institutionalos: "InstitutionalOS (client diagnostics)", marketScan: "DMV market scan", donorAnalysis: "Donor analysis",
-    givingLandscape: "Giving landscape", fieldIntelligence: "Field intelligence", myDesk: "My Desk", grantmaking: "Grants (give money out)", fundraising: "Fundraising (donors and gifts)" };
+    givingLandscape: "Giving landscape", fieldIntelligence: "Field intelligence", myDesk: "My Desk", grantmaking: "Grants (give money out)", fundraising: "Fundraising (donors and gifts)", governance: "Board & governance" };
   function renderAreas() {
     var box = document.getElementById("areas-list");
     if (!box) return;
@@ -598,7 +598,7 @@
   function applyModules(cfg) {
     var m = (cfg && cfg.modules) || {};
     var label = document.querySelector('[data-module-group="foundation"]');
-    if (label) label.hidden = m.grantmaking === false && m.fundraising === false;
+    if (label) label.hidden = m.grantmaking === false && m.fundraising === false && m.governance === false;
   }
   document.addEventListener("org:ready", function (e) { applyModules(e.detail); });
   if (window.ORG) applyModules(window.ORG);

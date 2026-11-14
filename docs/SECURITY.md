@@ -46,6 +46,7 @@ restored row-for-row into empty databases).
 
 ## Public pages
 The only pages open without sign-in are the sign-in page, the public Giving
-Landscape, and grant application forms (`/apply/<program>`, only while a program
+Landscape, conflict-of-interest signing pages (`/coi/<private link>`, one per
+member per year; a new link can be issued from the app), and grant application forms (`/apply/<program>`, only while a program
 is Open with online applications on). The form limits each connection to five
 submissions an hour and quietly drops bot submissions.

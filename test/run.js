@@ -278,8 +278,85 @@ async function t(name, fn) {
   });
   await t("foundation: new tables are in the full backup", async () => {
     const r = await req("anon", "GET", "/api/admin/backup-all", null, { "X-Admin-Token": "test-token" });
-    for (const tbl of ["gm_programs", "gm_applications", "gm_reviews", "gm_payments", "gm_reports", "fr_donors", "fr_gifts", "fr_pledges", "fr_campaigns", "fr_touches"]) assert.ok(Array.isArray(r.data.operations.tables[tbl]), tbl);
+    for (const tbl of ["gov_members", "gov_meetings", "gov_coi", "gov_checklist", "gov_policies", "gm_programs", "gm_applications", "gm_reviews", "gm_payments", "gm_reports", "fr_donors", "fr_gifts", "fr_pledges", "fr_campaigns", "fr_touches"]) assert.ok(Array.isArray(r.data.operations.tables[tbl]), tbl);
     assert.ok(r.data.operations.tables.fr_gifts.length >= 7);
+  });
+
+  // ---------------- Governance ----------------
+  const V = {};
+  await t("board: members, a year of meetings, and the calendar file", async () => {
+    for (const [name, role, voting] of [["Avery Chair", "chair", true], ["Blake Treasurer", "treasurer", true], ["Casey Secretary", "secretary", true], ["Drew Member", "member", true], ["Ellis Staff", "staff", false]]) {
+      const r = await req("owner1", "POST", "/api/gov/members", { name, role, voting, email: name.split(" ")[0].toLowerCase() + "@board.org" });
+      assert.strictEqual(r.status, 201, JSON.stringify(r.data));
+    }
+    V.members = (await req("owner1", "GET", "/api/gov/members")).data.items;
+    const plan = await req("owner1", "POST", "/api/gov/meetings/plan", { firstDate: "2027-01-14", time: "18:30", everyMonths: 3, location: "Zoom" });
+    assert.strictEqual(plan.data.created, 4);
+    assert.strictEqual((await req("owner1", "POST", "/api/gov/meetings/plan", { firstDate: "2027-01-14", everyMonths: 3 })).data.created, 0, "no duplicates");
+    const list = (await req("owner1", "GET", "/api/gov/meetings")).data.items;
+    assert.deepStrictEqual(list.map((m) => m.startsAt.slice(0, 10)).sort(), ["2027-01-14", "2027-04-14", "2027-07-14", "2027-10-14"]);
+    assert.match(list[0].agenda, /Conflicts of interest/);
+    V.meeting = list.find((m) => m.startsAt.startsWith("2027-01-14"));
+    const ics = await (await fetch(BASE + "/api/gov/calendar.ics", { headers: { Cookie: jar.owner1 } })).text();
+    assert.match(ics, /BEGIN:VCALENDAR/); assert.strictEqual((ics.match(/BEGIN:VEVENT/g) || []).length, 4); assert.match(ics, /DTSTART;TZID=America\/New_York:20270114T183000/);
+  });
+  await t("board: attendance sets quorum (a majority of voting members), motions and minutes print", async () => {
+    const [a, b, c, d] = V.members.filter((m) => m.role !== "staff").map((m) => m.id);
+    await req("owner1", "PATCH", "/api/gov/meetings/" + V.meeting.id, { attendance: { [a]: "present", [b]: "present" }, status: "held" });
+    let m = (await req("owner1", "GET", "/api/gov/meetings/" + V.meeting.id)).data;
+    assert.deepStrictEqual([m.quorum.voting, m.quorum.present, m.quorum.needed, m.quorum.met], [4, 2, 3, false]);
+    await req("owner1", "PATCH", "/api/gov/meetings/" + V.meeting.id, { attendance: { [a]: "present", [b]: "present", [c]: "present", [d]: "absent" }, conflictsDeclared: "Blake Treasurer on item 7; stepped out.", minutes: "Treasurer reported a balanced budget." });
+    m = (await req("owner1", "GET", "/api/gov/meetings/" + V.meeting.id)).data;
+    assert.strictEqual(m.quorum.met, true);
+    assert.strictEqual((await req("owner1", "POST", "/api/gov/motions", { meetingId: V.meeting.id, motion: "Approve the 2027 budget", movedBy: "Avery Chair", secondedBy: "Casey Secretary", yes: 3, result: "passed" })).status, 201);
+    const html = await (await fetch(BASE + "/print/minutes/" + V.meeting.id, { headers: { Cookie: jar.owner1 } })).text();
+    assert.match(html, /A quorum was present \(3 of 4/); assert.match(html, /Approve the 2027 budget/); assert.match(html, /DRAFT/); assert.match(html, /stepped out/);
+    const ag = await (await fetch(BASE + "/print/agenda/" + V.meeting.id, { headers: { Cookie: jar.owner1 } })).text();
+    assert.match(ag, /Treasurer&#39;s report|Treasurer's report/);
+  });
+  await t("board: conflict-of-interest statements are signed from a private link", async () => {
+    const start = await req("owner1", "POST", "/api/gov/coi/start", { year: 2026 });
+    assert.strictEqual(start.data.created, 5);
+    const list = (await req("owner1", "GET", "/api/gov/coi?year=2026")).data;
+    const row = list.items[0];
+    assert.ok(row.token.length > 20);
+    const page = await fetch(BASE + "/coi/" + row.token); assert.strictEqual(page.status, 200); assert.match(await page.text(), /Sign statement/);
+    const bad = await fetch(BASE + "/coi/" + row.token, { method: "POST", body: new URLSearchParams({ signedName: "" }), redirect: "manual" });
+    assert.strictEqual(bad.status, 400);
+    const ok = await fetch(BASE + "/coi/" + row.token, { method: "POST", body: new URLSearchParams({ signedName: row.name, disclosures: "I sit on the board of a likely applicant." }), redirect: "manual" });
+    assert.strictEqual(ok.status, 303);
+    assert.strictEqual((await fetch(BASE + "/coi/not-a-real-token")).status, 404);
+    const after = (await req("owner1", "GET", "/api/gov/coi?year=2026")).data.items.find((x) => x.id === row.id);
+    assert.ok(after.signedOn); assert.strictEqual(after.noConflicts, false); assert.match(after.disclosures, /likely applicant/);
+  });
+  await t("board: Form 990 checklist due dates follow the fiscal year", async () => {
+    const tpl = require("../governance").checklistTemplate({ from: "2026-07-01", to: "2027-07-01", label: "FY27" });
+    const file = tpl.find((x) => x.itemKey === "file");
+    assert.strictEqual(file.dueOn, "2027-11-15", "15th day of the 5th month after a June 30 year-end");
+    assert.match(file.detail, /May 15, 2028/, "extension date");
+    assert.strictEqual(tpl.find((x) => x.itemKey === "1099").dueOn, "2027-01-31");
+    const cal = require("../governance").checklistTemplate({ from: "2026-01-01", to: "2027-01-01", label: "2026" });
+    assert.strictEqual(cal.find((x) => x.itemKey === "file").dueOn, "2027-05-15");
+    const r = await req("owner1", "POST", "/api/gov/checklist/start", { offset: -1 });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual((await req("owner1", "POST", "/api/gov/checklist/start", { offset: -1 })).status, 409);
+    const items = (await req("owner1", "GET", "/api/gov/checklist")).data.items;
+    assert.strictEqual(items.length, 14);
+    await req("owner1", "PATCH", "/api/gov/checklist/" + items[0].id, { doneOn: "2026-11-14" });
+  });
+  await t("board: policies and the summary of what needs attention", async () => {
+    assert.strictEqual((await req("owner1", "POST", "/api/gov/policies/seed", {})).data.created, 7);
+    assert.strictEqual((await req("owner1", "POST", "/api/gov/policies/seed", {})).data.created, 0);
+    const s = (await req("owner1", "GET", "/api/gov/summary")).data;
+    assert.strictEqual(s.members, 5); assert.strictEqual(s.voting, 4);
+    assert.strictEqual(s.policiesToReview.length, 7, "none adopted yet");
+    assert.strictEqual(s.checklist[0].done, 1); assert.strictEqual(s.checklist[0].total, 14);
+    assert.ok(s.nextMeeting && s.nextMeeting.quorumNeeded === 3);
+  });
+  await t("board: board accounts read governance but can't change it", async () => {
+    assert.strictEqual((await req("board2", "GET", "/api/gov/summary")).status, 200);
+    assert.strictEqual((await req("board2", "POST", "/api/gov/members", { name: "X" })).status, 403);
+    assert.strictEqual((await req("board2", "PATCH", "/api/gov/meetings/" + V.meeting.id, { minutes: "x" })).status, 403);
   });
 
   srv.kill();

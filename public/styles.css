@@ -844,3 +844,5 @@ a.btn{text-decoration:none;display:inline-block}
 .role-board .fd-table select{pointer-events:none;opacity:.8}
 @media (max-width:640px){.fd-dl{grid-template-columns:1fr}.fd-dl dt{margin-top:6px}.fd-kpi-v{font-size:1.2rem}.fd-toolbar select,.fd-toolbar input{min-width:0;width:100%}.fd-toolbar label{flex:1 1 100%}}
 .fd-more>summary{cursor:pointer;color:var(--accent-strong);font-size:.85rem;font-weight:600}.fd-more .fd-form{margin-top:8px}
+.role-board [data-gv-done]{pointer-events:none}
+.fd-list li>span:first-child{text-align:left}

@@ -825,4 +825,6 @@ async function reviewerName(pool, session) {
   return u ? (u.name || u.email) : "User " + session.userId;
 }
 
-module.exports = { mount, parseCsv, fiscalYear, normalizeList, addMonths };
+module.exports = { mount, parseCsv, fiscalYear, normalizeList, addMonths,
+  // shared with governance.js
+  SPECS, HAS_UPDATED, crud, insertRow, updateRow, toApi, coerce, parseJson, letterPage, letterhead, esc, money, longDate, isDate, todayIso, nowIso, newId, brand };

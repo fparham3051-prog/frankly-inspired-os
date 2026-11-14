@@ -17,53 +17,51 @@
 </head>
 <body>
 <a class="skip-link" href="#main-content">Skip to main content</a>
+<!-- One front door: the same three-way switcher sits at the top of the
+     operations app, the InstitutionalOS console, and (as links) the site. -->
+<nav class="fi-switcher" aria-label="Frankly Inspired apps">
+  <div class="wrap fi-switcher-inner">
+    <span class="fi-switcher-brand">Frankly Inspired</span>
+    <a href="/" aria-current="page">Operations</a>
+    <a href="https://grantpass-dashboard.onrender.com/">Clients <span class="fi-sw-sub">InstitutionalOS</span></a>
+    <a href="https://franklyinspired.associates/" target="_blank" rel="noopener">Website</a>
+  </div>
+</nav>
 <div class="brandbar">
   <div class="wrap brandbar-inner">
     <div class="brandmark"><span class="brandmark-f">F</span><span class="brandmark-word">Frankly Inspired <span class="brandmark-tail">and Associates</span></span></div>
     <div class="brandbar-actions">
-      <div class="brandbar-tag">The Frankly Inspired Operating System</div>
-      <a class="brandbar-link" href="https://franklyinspired.associates" target="_blank" rel="noopener">Visit Site</a>
+      <button type="button" class="brandbar-link" id="open-desk-btn" title="Your personal development space, kept apart from the practice">My Desk</button>
       <button type="button" class="brandbar-link" id="logout-btn" style="background:none;cursor:pointer;">Log Out</button>
     </div>
   </div>
 </div>
 
-<div class="masthead">
+<div class="masthead masthead-slim">
   <div class="wrap masthead-inner">
-    <div class="eyebrow">Internal Operating System &middot; Frankly Inspired and Associates</div>
-    <h1 class="title">The Frankly Inspired Operating System</h1>
-    <p class="dek">One live tool for running the practice itself, not a client deliverable. Open it each morning for a spoken briefing, then work the pipeline from first call to graduation, a prospecting list, a weekly scorecard with trend forecasts, the standing vision, the open issues list, and the priorities for the quarter, all in one place, all saved as you go.</p>
-    <div class="stat-row">
-      <button type="button" class="stat is-clickable" id="stat-tile-active" title="Open Pipeline"><span class="num mono" id="stat-active">...</span><span class="cap">active pipeline records</span></button>
-      <button type="button" class="stat is-clickable" id="stat-tile-issues" title="Open Issues List, filtered to open"><span class="num mono" id="stat-issues">...</span><span class="cap">open issues</span></button>
-      <button type="button" class="stat is-clickable" id="stat-tile-rocks" title="Open Priorities"><span class="num mono" id="stat-rocks">...</span><span class="cap">priorities on track this quarter</span></button>
-      <button type="button" class="stat is-clickable" id="stat-tile-weeks" title="Open Scorecard"><span class="num mono" id="stat-weeks">...</span><span class="cap">scorecard weeks logged</span></button>
-    </div>
+    <h1 class="title" id="masthead-title">Operations</h1>
   </div>
 </div>
 
 <div class="wrap layout">
   <nav class="rail" aria-label="Section navigation" id="app-nav">
-    <div class="rail-label">Command Center</div>
-    <button type="button" class="rail-btn" data-view="command-center">Command Center</button>
-    <div class="rail-label">Landing</div>
-    <button type="button" class="rail-btn is-active" data-view="landscape">Giving Landscape</button>
-    <div class="rail-label">Morning</div>
+    <div class="rail-label">Today</div>
+    <button type="button" class="rail-btn is-active" data-view="today">Today</button>
     <button type="button" class="rail-btn" data-view="briefing">Daily Briefing</button>
-    <button type="button" class="rail-btn" data-view="session">Weekly Session</button>
+    <button type="button" class="rail-btn" data-view="command-center">Overview</button>
     <div class="rail-label">Run the practice</div>
-    <button type="button" class="rail-btn" data-view="practice">Run the Practice</button>
-    <div class="rail-label">Client Tools</div>
-    <button type="button" class="rail-btn" data-view="portfolio">Portfolio Analysis</button>
+    <button type="button" class="rail-btn" data-view="practice">Pipeline &amp; Money</button>
+    <button type="button" class="rail-btn" data-view="session">Weekly Meeting</button>
+    <button type="button" class="rail-btn" data-view="direction">Priorities &amp; Vision</button>
+    <div class="rail-label">Clients</div>
     <button type="button" class="rail-btn" data-view="institutionalos">InstitutionalOS</button>
-    <div class="rail-label">Direction</div>
-    <button type="button" class="rail-btn" data-view="direction">Direction</button>
-    <div class="rail-label">Reference</div>
+    <button type="button" class="rail-btn" data-view="portfolio">Donor Analysis</button>
+    <div class="rail-label">Research</div>
+    <button type="button" class="rail-btn" data-view="landscape">Giving Landscape</button>
     <button type="button" class="rail-btn" data-view="fieldintel">Field Intelligence</button>
-    <button type="button" class="rail-btn" data-view="playbook">Playbook Library</button>
-    <button type="button" class="rail-btn" data-view="process">Process Library</button>
-    <div class="rail-label">Personal</div>
-    <button type="button" class="rail-btn" data-view="advancement">The President's Desk</button>
+    <div class="rail-label">Library</div>
+    <button type="button" class="rail-btn" data-view="playbook">Playbooks</button>
+    <button type="button" class="rail-btn" data-view="process">Processes</button>
   </nav>
 
   <main id="main-content" tabindex="-1">
@@ -73,9 +71,41 @@
     <p class="load-note" id="load-note" aria-live="polite">Connecting to your data...</p>
     <div class="chart-tooltip" id="chart-tooltip" hidden></div>
 
+    <!-- ================= TODAY ================= -->
+    <section class="view" data-view="today">
+      <div class="view-head"><h2 id="today-greeting">Today</h2><span class="tag" id="today-date"></span></div>
+      <div class="today-grid">
+        <div class="fw-card today-card">
+          <h3>Your next steps</h3>
+          <p class="today-sub">Overdue first, then the next seven days.</p>
+          <ul class="action-list" id="today-steps"><li class="empty-note" style="border:none;">Loading...</li></ul>
+          <a href="#" class="today-more" data-go-view="practice" data-go-tab="pipeline">All pipeline records &rarr;</a>
+        </div>
+        <div class="fw-card today-card">
+          <h3>Money due</h3>
+          <p class="today-sub" id="today-money-sub">Invoices sent and not yet paid.</p>
+          <ul class="action-list" id="today-money"><li class="empty-note" style="border:none;">Loading...</li></ul>
+          <a href="#" class="today-more" data-go-view="practice" data-go-tab="finance">All invoices &rarr;</a>
+        </div>
+        <div class="fw-card today-card">
+          <h3>Clients who need you</h3>
+          <p class="today-sub">Weekly check-ins due, blocked actions, 90-day reviews, and confirmed constraints still without a plan.</p>
+          <ul class="action-list" id="today-clients"><li class="empty-note" style="border:none;">Loading...</li></ul>
+          <a href="https://grantpass-dashboard.onrender.com/" class="today-more">Open client records &rarr;</a>
+        </div>
+      </div>
+      <p class="today-foot"><a href="#" data-go-view="briefing">Hear the morning briefing</a> &middot; <a href="#" data-go-view="command-center">See the full overview</a></p>
+    </section>
+
     <!-- ================= COMMAND CENTER ================= -->
     <section class="view" data-view="command-center" hidden>
-      <div class="view-head"><h2>Command Center</h2><span class="tag">everything, one glance</span></div>
+      <div class="view-head"><h2>Overview</h2><span class="tag">the numbers, one glance</span></div>
+      <div class="stat-row overview-stats">
+        <button type="button" class="stat is-clickable" id="stat-tile-active" title="Open Pipeline"><span class="num mono" id="stat-active">...</span><span class="cap">active pipeline records</span></button>
+        <button type="button" class="stat is-clickable" id="stat-tile-issues" title="Open Issues, filtered to open"><span class="num mono" id="stat-issues">...</span><span class="cap">open issues</span></button>
+        <button type="button" class="stat is-clickable" id="stat-tile-rocks" title="Open Priorities"><span class="num mono" id="stat-rocks">...</span><span class="cap">priorities on track this quarter</span></button>
+        <button type="button" class="stat is-clickable" id="stat-tile-weeks" title="Open Weekly Log"><span class="num mono" id="stat-weeks">...</span><span class="cap">weekly logs</span></button>
+      </div>
       <p class="view-intro">One synthesized view across Pipeline, Priorities, Automation, and the practice's own trend lines, rebuilt fresh every time this loads. Nothing is entered here directly, it is a different lens on the same records kept in Pipeline, Priorities, Scorecard, and Forecasting.</p>
 
       <div class="fw-card" data-panel="01 · Engagements in motion">
@@ -92,7 +122,7 @@
 
       <div class="fw-card" data-panel="03 · Priorities this quarter">
         <h3>Priorities This Quarter</h3>
-        <p style="margin-top:-2px;">The quarter's rocks, off-track surfaced first. <a href="#" id="cc-rocks-link">Open Priorities &rarr;</a></p>
+        <p style="margin-top:-2px;">This quarter's priorities, off-track first <span class="eos">(EOS: Rocks)</span>. <a href="#" id="cc-rocks-link">Open Priorities &rarr;</a></p>
         <p style="margin-top:-2px;" id="cc-rocks-summary">Loading...</p>
         <ul class="action-list" id="cc-rocks-list"><li class="empty-note" style="border:none;">Loading...</li></ul>
       </div>
@@ -105,7 +135,7 @@
 
       <div class="fw-card" data-panel="04b · Open issues, oldest first">
         <h3>Open Issues, Oldest First</h3>
-        <p style="margin-top:-2px;">Anything logged in Issues that is not yet solved. The Identify, Discuss, Solve discipline works only if this list stays short. <a href="#" id="cc-issues-link">Open Issues &rarr;</a></p>
+        <p style="margin-top:-2px;">Anything logged in Issues that is not yet solved. Name it, talk it through, solve it; this list works only if it stays short <span class="eos">(EOS: IDS)</span>. <a href="#" id="cc-issues-link">Open Issues &rarr;</a></p>
         <ul class="action-list" id="cc-open-issues"><li class="empty-note" style="border:none;">Loading...</li></ul>
       </div>
 
@@ -136,7 +166,7 @@
     </section>
 
     <!-- ================= GIVING LANDSCAPE (landing page) ================= -->
-    <section class="view" data-view="landscape">
+    <section class="view" data-view="landscape" hidden>
       <div class="view-head"><h2>Giving Landscape</h2><span class="tag">the market, live</span></div>
       <p class="view-intro">Where the philanthropic dollar is going nationally, and where Frankly Inspired's own tracked gifts are showing up, state by state. The national chart is reference data from Giving USA. The ticker and the state breakdown are this practice's own log of publicly announced major gifts, refreshed weekly alongside Field Intelligence, and built by hand here whenever one comes up in conversation.</p>
 
@@ -305,7 +335,7 @@
 
     <!-- ================= WEEKLY SESSION ================= -->
     <section class="view" data-view="session" hidden>
-      <div class="view-head"><h2>Weekly Session</h2><span class="tag">the L10, sized for one</span></div>
+      <div class="view-head"><h2>Weekly Meeting</h2><span class="tag">numbers, priorities, issues, vision <span class="eos">(EOS: Level 10)</span></span></div>
       <p class="view-intro">A short guided pass through the same four things a good EOS Level 10 meeting covers: this week's numbers, the quarter's priorities, the open issues list, and a gut check against Vision. Run it end to end once a week, or jump straight to whichever step the practice needs today.</p>
 
       <div class="fw-card session-card">
@@ -320,7 +350,7 @@
         <div class="session-panel" data-panel="0">
           <h3>This week's numbers</h3>
           <div id="session-scorecard-logged" hidden>
-            <p class="session-empty" style="padding-top:0;">Already logged for the week of <strong id="session-week-label"></strong>: <span id="session-week-summary"></span>. Edit it from Run the Practice's Weekly Log tab if a number needs correcting.</p>
+            <p class="session-empty" style="padding-top:0;">Already logged for the week of <strong id="session-week-label"></strong>: <span id="session-week-summary"></span>. Edit it from Pipeline &amp; Money > Insights > Weekly Log if a number needs correcting.</p>
           </div>
           <form id="session-scorecard-form">
             <div class="form-grid">
@@ -370,21 +400,27 @@
 
     <!-- ================= PIPELINE ================= -->
     <section class="view" data-view="practice" hidden>
-      <div class="view-head"><h2>Run the Practice</h2><span class="tag">pipeline to cash, one view</span></div>
-      <p class="view-intro">Every stage of running the practice week to week: prospecting before the first call, the pipeline from lead to graduation, the weekly numbers and the trend they're forming, and the money and delivery work once an engagement is signed. All one dataset, tabbed the way Giving Landscape is.</p>
+      <div class="view-head"><h2>Pipeline &amp; Money</h2><span class="tag">from first call to paid invoice</span></div>
+      <p class="view-intro">Four areas. <strong>Pipeline</strong>: who you're talking to. <strong>Money</strong>: invoices and what's owed. <strong>Delivery</strong>: the work for signed clients. <strong>Insights</strong>: the numbers and patterns, when you want them.</p>
 
-      <div class="toolbar" id="rp-tabs" role="tablist" aria-label="Run the Practice sections">
-        <button type="button" class="filter-btn is-active" data-rp-tab="pipeline" role="tab" aria-selected="true">Pipeline</button>
-        <button type="button" class="filter-btn" data-rp-tab="prospecting" role="tab" aria-selected="false">Prospecting</button>
-        <button type="button" class="filter-btn" data-rp-tab="scorecard" role="tab" aria-selected="false">Weekly Log</button>
-        <button type="button" class="filter-btn" data-rp-tab="trends" role="tab" aria-selected="false">Trends</button>
-        <button type="button" class="filter-btn" data-rp-tab="finance" role="tab" aria-selected="false">Finance</button>
-        <button type="button" class="filter-btn" data-rp-tab="delivery" role="tab" aria-selected="false">Delivery</button>
-        <button type="button" class="filter-btn" data-rp-tab="encounters" role="tab" aria-selected="false">Prospect Reports</button>
-        <button type="button" class="filter-btn" data-rp-tab="problems" role="tab" aria-selected="false">Problem Log</button>
-        <button type="button" class="filter-btn" data-rp-tab="feedback" role="tab" aria-selected="false">Feedback</button>
-        <button type="button" class="filter-btn" data-rp-tab="systems" role="tab" aria-selected="false">Systems Check</button>
-        <button type="button" class="filter-btn" data-rp-tab="market" role="tab" aria-selected="false">DMV Market Scan</button>
+      <div class="toolbar rp-groups" id="rp-groups" role="tablist" aria-label="Pipeline and money areas">
+        <button type="button" class="group-btn is-active" data-rp-group="pipeline" role="tab" aria-selected="true">Pipeline</button>
+        <button type="button" class="group-btn" data-rp-group="money" role="tab" aria-selected="false">Money</button>
+        <button type="button" class="group-btn" data-rp-group="delivery" role="tab" aria-selected="false">Delivery</button>
+        <button type="button" class="group-btn" data-rp-group="insights" role="tab" aria-selected="false">Insights</button>
+      </div>
+      <div class="toolbar" id="rp-tabs" role="tablist" aria-label="Sections in this area">
+        <button type="button" class="filter-btn is-active" data-rp-tab="pipeline" data-rp-group="pipeline" role="tab" aria-selected="true">Pipeline</button>
+        <button type="button" class="filter-btn" data-rp-tab="prospecting" data-rp-group="pipeline" role="tab" aria-selected="false">Prospecting</button>
+        <button type="button" class="filter-btn" data-rp-tab="encounters" data-rp-group="pipeline" role="tab" aria-selected="false">Prospect Reports</button>
+        <button type="button" class="filter-btn" data-rp-tab="market" data-rp-group="pipeline" role="tab" aria-selected="false">DMV Market Scan</button>
+        <button type="button" class="filter-btn" data-rp-tab="finance" data-rp-group="money" role="tab" aria-selected="false">Finance</button>
+        <button type="button" class="filter-btn" data-rp-tab="delivery" data-rp-group="delivery" role="tab" aria-selected="false">Delivery</button>
+        <button type="button" class="filter-btn" data-rp-tab="feedback" data-rp-group="delivery" role="tab" aria-selected="false">Feedback</button>
+        <button type="button" class="filter-btn" data-rp-tab="scorecard" data-rp-group="insights" role="tab" aria-selected="false">Weekly Log</button>
+        <button type="button" class="filter-btn" data-rp-tab="trends" data-rp-group="insights" role="tab" aria-selected="false">Trends</button>
+        <button type="button" class="filter-btn" data-rp-tab="problems" data-rp-group="insights" role="tab" aria-selected="false">Problem Log</button>
+        <button type="button" class="filter-btn" data-rp-tab="systems" data-rp-group="insights" role="tab" aria-selected="false">Systems Check</button>
       </div>
 
       <div class="fw-card" data-panel="01 · Pipeline records" data-rp-tab="pipeline">
@@ -843,7 +879,7 @@
 
     <!-- ================= PORTFOLIO ANALYSIS ================= -->
     <section class="view" data-view="portfolio" hidden>
-      <div class="view-head"><h2>Portfolio Analysis</h2><span class="tag">LYBUNT, SYBUNT, retention, and gift tiers</span></div>
+      <div class="view-head"><h2>Donor Analysis</h2><span class="tag">who stopped giving, who stays, and gift sizes <span class="eos">(LYBUNT, SYBUNT)</span></span></div>
       <p class="view-intro">A working tool for a client's own gift history, not a stored record: paste or upload one client's donor and gift data, get tier segmentation, lapsed-donor flags, and retention back. Nothing here is saved &mdash; the data lives in this browser tab only, and is gone the moment you leave or refresh this page.</p>
 
       <div class="fw-card" data-panel="01 · Load gift data">
@@ -913,8 +949,8 @@
 
     <!-- ================= DIRECTION (Priorities, Issues, Vision) ================= -->
     <section class="view" data-view="direction" hidden>
-      <div class="view-head"><h2>Direction</h2><span class="tag">rocks, issues, and the V/TO behind them</span></div>
-      <p class="view-intro">The EOS-style accountability loop that keeps this a practice with a direction, not just a queue: the quarter's priorities, what's blocking them, and the standing answers they roll up to. All one dataset, tabbed the way Giving Landscape and Run the Practice are &mdash; and the same three things the Weekly Session already walks through in guided form, here to check or edit any time between sessions.</p>
+      <div class="view-head"><h2>Priorities &amp; Vision</h2><span class="tag">quarterly priorities, open issues, and the vision <span class="eos">(EOS: Rocks, Issues, V/TO)</span></span></div>
+      <p class="view-intro">What the practice is working on this quarter, what is in the way, and where it is headed. The Weekly Meeting walks through the same three things.</p>
 
       <div class="toolbar" id="dir-tabs" role="tablist" aria-label="Direction sections">
         <button type="button" class="filter-btn is-active" data-dir-tab="priorities" role="tab" aria-selected="true">Priorities</button>
@@ -1062,8 +1098,9 @@
     </section>
 
     <section class="view" data-view="advancement" hidden>
-      <div class="view-head"><h2>The President's Desk</h2><span class="tag">personal professional development</span></div>
-      <p class="view-intro">A one-person university in the field you practice: a term of the day with real examples behind it, the certifications worth earning, a practice-test bank with real history, the chapters worth showing up to, a running read on the sector's news, the people setting the bar, the open roles worth watching, and the policy and legal ground shifting under nonprofit leadership and higher education. Ported over from the standalone Advancement Desk page into FIOS itself, so it lives in one place with everything else and its state saves to this account, not just this browser.</p>
+      <p class="desk-back"><button type="button" class="btn secondary" id="desk-back-btn">&larr; Back to the practice</button></p>
+      <div class="view-head"><h2>My Desk</h2><span class="tag">personal professional development, kept apart from the practice</span></div>
+      <p class="view-intro">A one-person university in the field you practice: a term of the day with real examples behind it, the certifications worth earning, a practice-test bank with real history, the chapters worth showing up to, a running read on the sector's news, the people setting the bar, the open roles worth watching, and the policy and legal ground shifting under nonprofit leadership and higher education. Your progress saves to this account.</p>
 
       <div class="stat-row">
         <div class="stat"><span class="num mono" id="stat-terms">...</span><span class="cap">terms in the glossary</span></div>

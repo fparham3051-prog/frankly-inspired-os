@@ -270,15 +270,39 @@
   // ---------- nav ----------
   var navButtons = document.querySelectorAll("#app-nav .rail-btn");
   var views = document.querySelectorAll(".view");
+  // Shows one view. Views without a rail button (My Desk) still open here,
+  // so the personal space can live outside the practice's navigation.
+  function showView(target){
+    navButtons.forEach(function(b){ b.classList.toggle("is-active", b.getAttribute("data-view") === target); });
+    views.forEach(function(v){ v.hidden = (v.getAttribute("data-view") !== target); });
+    document.body.classList.toggle("is-desk", target === "advancement");
+    var mt = document.getElementById("masthead-title");
+    if(mt) mt.textContent = target === "advancement" ? "My Desk" : "Operations";
+    if(target !== "fieldintel") stopReadAloud();
+    try { sessionStorage.setItem("fios_view", target); } catch(e) {}
+  }
   navButtons.forEach(function(btn){
-    btn.addEventListener("click", function(){
-      navButtons.forEach(function(b){ b.classList.remove("is-active"); });
-      btn.classList.add("is-active");
-      var target = btn.getAttribute("data-view");
-      views.forEach(function(v){ v.hidden = (v.getAttribute("data-view") !== target); });
-      if(target !== "fieldintel") stopReadAloud();
-    });
+    btn.addEventListener("click", function(){ showView(btn.getAttribute("data-view")); });
   });
+  var deskOpenBtn = document.getElementById("open-desk-btn");
+  if(deskOpenBtn) deskOpenBtn.addEventListener("click", function(){ showView("advancement"); window.scrollTo(0, 0); });
+  var deskBackBtn = document.getElementById("desk-back-btn");
+  if(deskBackBtn) deskBackBtn.addEventListener("click", function(){ showView("today"); window.scrollTo(0, 0); });
+  // Plain links that jump to a view (and optionally a Pipeline & Money tab).
+  document.addEventListener("click", function(e){
+    var a = e.target.closest("[data-go-view]");
+    if(!a) return;
+    e.preventDefault();
+    goToView(a.getAttribute("data-go-view"));
+    var tab = a.getAttribute("data-go-tab");
+    if(tab) goToTab("rp-tabs", "data-rp-tab", tab);
+    window.scrollTo(0, 0);
+  });
+  (function(){
+    var last = null;
+    try { last = sessionStorage.getItem("fios_view"); } catch(e) {}
+    showView(last && document.querySelector('.view[data-view="' + last + '"]') ? last : "today");
+  })();
 
   // ---------- logout ----------
   var logoutBtn = document.getElementById("logout-btn");
@@ -633,6 +657,66 @@
     }).join("");
   }
 
+  // ---------- Today: the three things that need Franklin now ----------
+  function renderToday(){
+    var now = new Date();
+    var g = document.getElementById("today-greeting");
+    if(!g) return;
+    g.textContent = now.getHours() < 12 ? "Good morning" : (now.getHours() < 17 ? "Good afternoon" : "Good evening");
+    document.getElementById("today-date").textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    var today = todayStr();
+    var in7 = new Date(now.getTime() + 7 * 864e5).toISOString().slice(0, 10);
+    var in14 = new Date(now.getTime() + 14 * 864e5).toISOString().slice(0, 10);
+
+    // 1. Next steps: overdue, then due in the next seven days.
+    var steps = state.pipeline
+      .filter(function(p){ return p.nextStepDate && !CLOSED_STAGES[p.stage] && p.nextStepDate <= in7; })
+      .sort(function(a, b){ return a.nextStepDate.localeCompare(b.nextStepDate); })
+      .slice(0, 8);
+    var stepsEl = document.getElementById("today-steps");
+    stepsEl.innerHTML = steps.length ? steps.map(function(p){
+      var overdue = p.nextStepDate < today;
+      return '<li' + (overdue ? ' class="row-overdue"' : '') + '><span><span class="who">' + esc(p.org || p.name || "Untitled") + '</span><br>' + esc(p.nextStep || "Next step not set") + '</span>' +
+        '<span class="when">' + (p.nextStepDate === today ? "Today" : fmtDate(p.nextStepDate)) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span></li>';
+    }).join("") : '<li class="empty-note" style="border:none;">Nothing due this week. Add a next step and a date to any pipeline record.</li>';
+
+    // 2. Money due: overdue invoices, then sent invoices due in two weeks.
+    var open = state.invoices.filter(function(inv){ return inv.status === "sent"; });
+    var soon = open.filter(function(inv){ return isOverdueInvoice(inv) || (inv.dueDate && inv.dueDate <= in14); })
+      .sort(function(a, b){ return (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); }).slice(0, 6);
+    var openTotal = open.reduce(function(t, inv){ return t + (Number(inv.amount) || 0); }, 0);
+    var overdueTotal = open.filter(isOverdueInvoice).reduce(function(t, inv){ return t + (Number(inv.amount) || 0); }, 0);
+    document.getElementById("today-money-sub").textContent = open.length
+      ? (fmtMoneyShort(openTotal) + " outstanding" + (overdueTotal ? ", " + fmtMoneyShort(overdueTotal) + " overdue." : ", nothing overdue."))
+      : "No invoices waiting on payment.";
+    document.getElementById("today-money").innerHTML = soon.length ? soon.map(function(inv){
+      var overdue = isOverdueInvoice(inv);
+      return '<li' + (overdue ? ' class="row-overdue"' : '') + '><span><span class="who">' + esc(pipelineLabelById(inv.pipelineId)) + '</span><br>' + fmtMoneyShort(Number(inv.amount) || 0) + '</span>' +
+        '<span class="when">' + (inv.dueDate ? "Due " + fmtDate(inv.dueDate) : "No due date") + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</span></li>';
+    }).join("") : '<li class="empty-note" style="border:none;">Nothing due in the next two weeks.</li>';
+
+    // 3. Clients who need you, from the InstitutionalOS plan on each deal.
+    var items = [];
+    state.pipeline.forEach(function(p){
+      if(!p.ios || CLOSED_STAGES[p.stage]) return;
+      var who = p.org || p.name || "A client";
+      var pl = p.ios.plan || null;
+      var rec = p.ios.record || {};
+      if(!pl || !pl.startDate){
+        if(rec.verifiedConstraint) items.push({ rank: 2, who: who, what: "Constraint confirmed; write the 90-Day Improvement Plan" });
+        return;
+      }
+      if(pl.active === false) return;
+      if(pl.review90On && pl.review90On <= today && !pl.review90Done) items.push({ rank: 0, who: who, what: "90-day review due (" + fmtDate(pl.review90On) + ")" });
+      if(pl.actionsBlocked) items.push({ rank: 0, who: who, what: pl.actionsBlocked + " action" + (pl.actionsBlocked === 1 ? "" : "s") + " blocked" + (pl.nextAction && pl.nextAction.text ? ": " + pl.nextAction.text : "") });
+      if(pl.weeklyReviewDue) items.push({ rank: 1, who: who, what: "Weekly check-in due" + (pl.lastReviewOn ? " (last " + fmtDate(pl.lastReviewOn) + ")" : "") });
+    });
+    items.sort(function(a, b){ return a.rank - b.rank; });
+    document.getElementById("today-clients").innerHTML = items.length ? items.slice(0, 8).map(function(it){
+      return '<li' + (it.rank === 0 ? ' class="row-overdue"' : '') + '><span><span class="who">' + esc(it.who) + '</span><br>' + esc(it.what) + '</span></li>';
+    }).join("") : '<li class="empty-note" style="border:none;">No client follow-ups due.</li>';
+  }
+
   function renderCommandCenter(){
     renderCcEngagements();
     renderCcStageStats();
@@ -645,7 +729,7 @@
   // ---------- masthead stat tiles + cross-links (clickable, jump to the relevant view/tab) ----------
   function goToView(view){
     var btn = document.querySelector('#app-nav .rail-btn[data-view="' + view + '"]');
-    if(btn) btn.click();
+    if(btn) btn.click(); else showView(view);
   }
   function goToTab(tabsId, dataAttr, target){
     var btn = document.querySelector('#' + tabsId + ' [' + dataAttr + '="' + target + '"]');
@@ -2962,6 +3046,40 @@
       });
     }
     wireTabToolbar("rp-tabs", "practice", "data-rp-tab", ".fw-card, .example-box");
+    // Four areas on top (Pipeline, Money, Delivery, Insights); each shows
+    // only its own section buttons. Any jump straight to a section (from
+    // Today, the Overview, or a link) moves the area along with it.
+    (function(){
+      var groupsEl = document.getElementById("rp-groups");
+      var tabsEl = document.getElementById("rp-tabs");
+      if(!groupsEl || !tabsEl) return;
+      var lastInGroup = {};
+      function setGroup(group){
+        groupsEl.querySelectorAll("[data-rp-group]").forEach(function(b){
+          var on = b.getAttribute("data-rp-group") === group;
+          b.classList.toggle("is-active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        var mine = tabsEl.querySelectorAll('[data-rp-group="' + group + '"]');
+        tabsEl.querySelectorAll("[data-rp-tab]").forEach(function(b){ b.hidden = b.getAttribute("data-rp-group") !== group; });
+        tabsEl.classList.toggle("is-single", mine.length < 2);
+      }
+      tabsEl.addEventListener("click", function(e){
+        var btn = e.target.closest("[data-rp-tab]");
+        if(!btn) return;
+        var g = btn.getAttribute("data-rp-group");
+        lastInGroup[g] = btn.getAttribute("data-rp-tab");
+        setGroup(g);
+      });
+      groupsEl.addEventListener("click", function(e){
+        var btn = e.target.closest("[data-rp-group]");
+        if(!btn) return;
+        var g = btn.getAttribute("data-rp-group");
+        var target = tabsEl.querySelector('[data-rp-tab="' + (lastInGroup[g] || "") + '"]') || tabsEl.querySelector('[data-rp-group="' + g + '"]');
+        if(target) target.click();
+      });
+      setGroup("pipeline");
+    })();
     wireTabToolbar("dir-tabs", "direction", "data-dir-tab", ".fw-card, .example-box");
     wireTabToolbar("adv-tabs", "advancement", "data-adv-tab", ".adv-panel");
 
@@ -4021,6 +4139,7 @@
 
   // ---------- bootstrap ----------
   function renderAll(){
+    renderToday();
     renderGivingLandscape();
     renderBriefing();
     renderSessionPanel();

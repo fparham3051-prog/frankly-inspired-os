@@ -35,3 +35,7 @@ year, and right away if one is ever pasted into an email, a chat, or a document.
 Nightly full-system backup to Google Drive (see docs/MANUAL.md > Backups). Restore
 steps are in docs/MANUAL.md and were tested on Nov 14, 2026 (all three databases
 restored row-for-row into empty databases).
+
+## Key change log
+- **Nov 14, 2026:** changed the Operations ↔ InstitutionalOS key, the InstitutionalOS → Operations results key, and the Operations ↔ website/reminder key (they had appeared in a working chat). Updated the daily reminders scheduled task. Verified with a full-system backup and the reconciliation (0 issues).
+- **Still to change:** the scoped tokens written into the scheduled tasks (automation log, prospects, gifts, digest, gift patterns, backup). Change them together with their tasks, one row of the table above at a time.

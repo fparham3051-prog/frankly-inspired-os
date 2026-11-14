@@ -18,6 +18,17 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 - **Settings**: your password and two-step sign-in; for the owner, People
   (owner, staff, board), sign-in rules, and the organization profile.
 - **My Desk**: the owner's personal development space, opened from the top bar.
+- **Settings > Areas** (owner): turn whole areas on or off.
+- **Grants** (Foundation): Overview (budget, committed, paid, what's due),
+  Applications (filter, open one to review, decide, and track it), Active
+  grants, Programs (set up a program; tick "Take applications online" for a
+  public form at `/apply/<program>`). Letters print from each application.
+- **Fundraising** (Foundation): Overview (raised this year vs. last, donors,
+  retention, thank-yous waiting, pledges due, who to contact next, who gave last
+  year but not yet this year), Gifts (record a gift; print thank-you letters;
+  import or download CSV), Donors (profiles with history and next steps),
+  Pledges, Campaigns. Thank every donor within 48 hours: the Overview's "Print
+  all letters" button, then "Mark as thanked" on the letter page.
 
 ## InstitutionalOS (grantpass-backend)
 - Console: each client in five tabs (Home, Health, Priority, 90-Day Plan,

@@ -1740,6 +1740,13 @@ app.post("/api/admin/restore", requireAdminScope("restore"), async (req, res) =>
 require("./report").mount(app, { pool, requireAuth, WEBSITE_API_URL, WEBSITE_ADMIN_SECRET });
 require("./report").mountLetter(app, { pool, requireAuth });
 
+// ---------- foundation areas: grantmaking and fundraising (foundation.js) ----------
+require("./foundation").mount(app, { pool, requireAuth });
+app.get("/foundation.js", (req, res) => {
+  if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
+  res.sendFile(path.join(__dirname, "public", "foundation.js"));
+});
+
 // ---------- static assets (icons, css, js) always served ----------
 app.use("/icons", express.static(path.join(__dirname, "public", "icons"), { maxAge: "30d" }));
 app.get("/favicon.ico", (req, res) => res.sendFile(path.join(__dirname, "public", "icons", "favicon.ico")));

@@ -22,7 +22,10 @@
 | InstitutionalOS → Operations results | grantpass-backend `OS_IOS_TOKEN` | frankly-inspired-os `ADMIN_TOKEN_IOS` |
 | Operations ↔ website backend; reminder runs | frankly-inspired-api `REMINDER_SECRET` | frankly-inspired-os `WEBSITE_ADMIN_SECRET`; the reminder scheduled task |
 | Daily reconciliation (read-only) | frankly-inspired-os `ADMIN_TOKEN_STATUS` | the morning health-check scheduled task |
-| Nightly backup and retention | frankly-inspired-os `ADMIN_TOKEN_BACKUP` | the backup scheduled task |
+| Nightly backup and retention; read-only data pulls | frankly-inspired-os `ADMIN_TOKEN_BACKUP` | the backup, morning brief, pipeline review, and prospect research scheduled tasks |
+| Automation run log, market scan step | frankly-inspired-os `ADMIN_TOKEN_STATUS` | every scheduled task that logs its run |
+| New prospects | frankly-inspired-os `ADMIN_TOKEN_PROSPECTS` | frankly-inspired-api `OS_PROSPECTS_TOKEN`; lead import and prospect research tasks |
+| Gift ticker / gift patterns / digest / week events | frankly-inspired-os `ADMIN_TOKEN_GIFTS`, `ADMIN_TOKEN_GIFT_PATTERNS`, `ADMIN_TOKEN_DIGEST`, `ADMIN_TOKEN_CALENDAR` | the matching weekly scheduled tasks |
 | Sessions | each app's `SESSION_SECRET` / token secret | nothing else |
 
 ## Changing a key
@@ -39,3 +42,10 @@ restored row-for-row into empty databases).
 ## Key change log
 - **Nov 14, 2026:** changed the Operations ↔ InstitutionalOS key, the InstitutionalOS → Operations results key, and the Operations ↔ website/reminder key (they had appeared in a working chat). Updated the daily reminders scheduled task. Verified with a full-system backup and the reconciliation (0 issues).
 - **Still to change:** the scoped tokens written into the scheduled tasks (automation log, prospects, gifts, digest, gift patterns, backup). Change them together with their tasks, one row of the table above at a time.
+- **Nov 14, 2026 (evening):** changed the seven scoped keys the other scheduled tasks use (status, backup, prospects, gifts, gift patterns, digest, calendar) and the website's copy of the prospects key; updated all twelve scheduled tasks that carry them. Confirmed each new key works and each old key is refused.
+
+## Public pages
+The only pages open without sign-in are the sign-in page, the public Giving
+Landscape, and grant application forms (`/apply/<program>`, only while a program
+is Open with online applications on). The form limits each connection to five
+submissions an hour and quietly drops bot submissions.

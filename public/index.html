@@ -58,6 +58,9 @@
     <div class="rail-label">Clients</div>
     <button type="button" class="rail-btn" data-view="institutionalos" data-module="institutionalos">InstitutionalOS</button>
     <button type="button" class="rail-btn" data-view="portfolio" data-module="donorAnalysis">Donor Analysis</button>
+    <div class="rail-label" data-module-group="foundation">Foundation</div>
+    <button type="button" class="rail-btn" data-view="grants" data-module="grantmaking">Grants</button>
+    <button type="button" class="rail-btn" data-view="fundraising" data-module="fundraising">Fundraising</button>
     <div class="rail-label">Research</div>
     <button type="button" class="rail-btn" data-view="landscape" data-module="givingLandscape">Giving Landscape</button>
     <button type="button" class="rail-btn" data-view="fieldintel" data-module="fieldIntelligence">Field Intelligence</button>
@@ -1411,6 +1414,42 @@
 
     </section>
 
+    <!-- ================= GRANTS (foundation.js) ================= -->
+    <section class="view" data-view="grants" hidden>
+      <div class="view-head"><h2>Grants</h2><span class="tag" id="gm-fy"></span></div>
+      <p class="view-intro">Give money out well: set up a program, take applications (online or by hand), score them against the same criteria, decide, then track payments and reports until the grant closes.</p>
+      <div class="filter-row fd-tabs" role="tablist" id="gm-tabs">
+        <button type="button" class="filter-btn is-active" data-fd-tab="gm-overview" role="tab">Overview</button>
+        <button type="button" class="filter-btn" data-fd-tab="gm-apps" role="tab">Applications</button>
+        <button type="button" class="filter-btn" data-fd-tab="gm-awards" role="tab">Active grants</button>
+        <button type="button" class="filter-btn" data-fd-tab="gm-programs" role="tab">Programs</button>
+      </div>
+      <div class="fd-panel" data-fd-panel="gm-overview"></div>
+      <div class="fd-panel" data-fd-panel="gm-apps" hidden></div>
+      <div class="fd-panel" data-fd-panel="gm-awards" hidden></div>
+      <div class="fd-panel" data-fd-panel="gm-programs" hidden></div>
+      <div class="fd-panel" data-fd-panel="gm-detail" hidden></div>
+    </section>
+
+    <!-- ================= FUNDRAISING (foundation.js) ================= -->
+    <section class="view" data-view="fundraising" hidden>
+      <div class="view-head"><h2>Fundraising</h2><span class="tag" id="fr-fy"></span></div>
+      <p class="view-intro">Raise money well: every donor and gift in one place, a thank-you letter with receipt for each gift, pledges tracked to the last payment, and a short list of who to call next.</p>
+      <div class="filter-row fd-tabs" role="tablist" id="fr-tabs">
+        <button type="button" class="filter-btn is-active" data-fd-tab="fr-overview" role="tab">Overview</button>
+        <button type="button" class="filter-btn" data-fd-tab="fr-gifts" role="tab">Gifts</button>
+        <button type="button" class="filter-btn" data-fd-tab="fr-donors" role="tab">Donors</button>
+        <button type="button" class="filter-btn" data-fd-tab="fr-pledges" role="tab">Pledges</button>
+        <button type="button" class="filter-btn" data-fd-tab="fr-campaigns" role="tab">Campaigns</button>
+      </div>
+      <div class="fd-panel" data-fd-panel="fr-overview"></div>
+      <div class="fd-panel" data-fd-panel="fr-gifts" hidden></div>
+      <div class="fd-panel" data-fd-panel="fr-donors" hidden></div>
+      <div class="fd-panel" data-fd-panel="fr-pledges" hidden></div>
+      <div class="fd-panel" data-fd-panel="fr-campaigns" hidden></div>
+      <div class="fd-panel" data-fd-panel="fr-detail" hidden></div>
+    </section>
+
     <!-- ================= SETTINGS ================= -->
     <section class="view" data-view="settings" hidden>
       <div class="view-head"><h2>Settings</h2><span class="tag" id="settings-who"></span></div>
@@ -1461,6 +1500,13 @@
       </div>
 
       <div class="fw-card owner-only">
+        <h3>Areas</h3>
+        <p class="view-intro">Turn whole areas of the system on or off. Turning an area off hides it; nothing is deleted.</p>
+        <div id="areas-list" class="areas-list"></div>
+        <span class="form-msg" id="areas-msg" role="status"></span>
+      </div>
+
+      <div class="fw-card owner-only">
         <h3>Organization profile</h3>
         <p class="view-intro">Name, brand, links, offers, and which areas are on come from one file, <code>org.config.json</code>, shared with the InstitutionalOS console and the website. To set this system up for another organization, see the setup checklist in <code>docs/NEW-ORGANIZATION.md</code>.</p>
         <dl class="org-summary" id="org-summary"></dl>
@@ -1476,6 +1522,7 @@
 
 <script src="/org.js" defer></script>
 <script src="/app.js" defer></script>
+<script src="/foundation.js" defer></script>
 <script>
 // ---------- InstitutionalOS embed + two-way sync with Prospecting ----------
 // The nav button below opens InstitutionalOS's live scorecard in an iframe.

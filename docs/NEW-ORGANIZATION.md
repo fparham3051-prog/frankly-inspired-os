@@ -43,8 +43,10 @@ identical copy: `frankly-inspired-os/org.config.json`,
 | `donorAnalysis` (LYBUNT/SYBUNT, retention) | optional | on: the foundation's own donors |
 | `givingLandscape`, `fieldIntelligence` | on | on |
 | `myDesk` (owner's personal development) | on | per person |
-| `grantmaking` | off | **planned** |
-| `fundraising` | off | **planned** |
+| `grantmaking` (programs, applications, reviews, awards, payments, reports) | optional | on |
+| `fundraising` (donors, gifts, pledges, campaigns, thank-you letters) | optional | on |
+
+Areas can also be switched on or off in **Settings > Areas** without editing the file.
 
 ## For the First Choice Construction foundation (grants and fundraising)
 
@@ -57,13 +59,27 @@ What already maps over:
   monthly report is the board pack.
 - **Priorities & Vision** and the Weekly Meeting run the foundation's own work.
 
-What the `grantmaking` and `fundraising` modules will add (not built yet):
-- Grantmaking: application form, review and scoring by committee, award
-  letters, payment schedule, grantee reports due and received, and a docket for
-  board approval.
-- Fundraising: donor records with gift history, pledges and installments,
-  acknowledgment letters with tax language, a campaign view, and the corporate
-  match from First Choice Construction tracked separately.
+Built and ready (Grants and Fundraising in the left menu, under Foundation):
+- **Grants**: programs with a budget, dates, scoring criteria, and extra
+  questions; a public application form at `/apply/<program>` (or enter
+  applications by hand); each reviewer scores 1 to 5 per criterion and can
+  declare a conflict of interest; approve with an amount, period, payment
+  schedule, and interim/final reports; award and decline letters with standard
+  conditions (`grantmaking.conditions` in the profile); budget, committed,
+  paid, and what's due on the Overview.
+- **Fundraising**: donors (with stage, possible ask, and relationship owner),
+  gifts with receipt numbers, pledges paid in installments, campaigns and funds
+  with goals, conversations and next steps, thank-you letters with IRS receipt
+  wording (set `fundraising.ein` once the foundation has its 501(c)(3)
+  determination), year-over-year totals, donor retention, "gave last year, not
+  yet this year," CSV import from a spreadsheet and CSV export.
+- Set `fundraising.fiscalYearStartMonth` if the foundation's year isn't
+  January to December.
+- First Choice Construction's own gifts to the foundation: record the company
+  as a donor (type Company) and use a campaign such as "Corporate match" so they
+  are tracked separately from community gifts.
+
+Still to build:
 - Governance: board meeting calendar, minutes, policy register, conflict-of-
   interest forms, and the Form 990 checklist (the compliance calendar in
   InstitutionalOS already covers part of this).

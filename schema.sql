@@ -549,3 +549,166 @@ CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- =====================================================================
+-- Foundation areas (foundation.js). Switched on per organization in
+-- org.config.json "modules" (grantmaking, fundraising) or in Settings.
+-- Dates are YYYY-MM-DD text like the rest of this schema; money is NUMERIC.
+-- =====================================================================
+
+-- Grantmaking: programs -> applications -> reviews -> award (payments, reports).
+CREATE TABLE IF NOT EXISTS gm_programs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE,
+  purpose TEXT DEFAULT '',
+  eligibility TEXT DEFAULT '',
+  budget NUMERIC DEFAULT 0,
+  max_award NUMERIC DEFAULT 0,
+  opens_on TEXT DEFAULT '',
+  closes_on TEXT DEFAULT '',
+  status TEXT DEFAULT 'draft',          -- draft | open | closed
+  accepts_online BOOLEAN DEFAULT false, -- public form at /apply/<slug>
+  criteria TEXT DEFAULT '[]',           -- JSON [{key,label}], each scored 1-5
+  questions TEXT DEFAULT '[]',          -- JSON [{key,label}] asked on the form
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS gm_applications (
+  id TEXT PRIMARY KEY,
+  program_id TEXT REFERENCES gm_programs(id),
+  org_name TEXT NOT NULL,
+  ein TEXT DEFAULT '',
+  contact_name TEXT DEFAULT '',
+  contact_email TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  website TEXT DEFAULT '',
+  annual_budget NUMERIC DEFAULT 0,
+  project_title TEXT DEFAULT '',
+  summary TEXT DEFAULT '',
+  amount_requested NUMERIC DEFAULT 0,
+  answers TEXT DEFAULT '{}',             -- JSON {questionKey: text}
+  status TEXT DEFAULT 'received',        -- received | screening | in-review | approved | declined | withdrawn
+  source TEXT DEFAULT 'staff',           -- staff | online
+  decision_notes TEXT DEFAULT '',
+  decided_at TEXT DEFAULT '',
+  amount_awarded NUMERIC DEFAULT 0,
+  award_start TEXT DEFAULT '',
+  award_end TEXT DEFAULT '',
+  agreement_signed_on TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS gm_applications_program ON gm_applications (program_id);
+CREATE TABLE IF NOT EXISTS gm_reviews (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL REFERENCES gm_applications(id),
+  reviewer TEXT NOT NULL,
+  scores TEXT DEFAULT '{}',              -- JSON {criterionKey: 1-5}
+  recommendation TEXT DEFAULT '',        -- fund | fund-with-changes | decline
+  comment TEXT DEFAULT '',
+  conflict BOOLEAN DEFAULT false,        -- reviewer declared a conflict of interest
+  created_at TEXT,
+  updated_at TEXT,
+  UNIQUE (application_id, reviewer)
+);
+CREATE TABLE IF NOT EXISTS gm_payments (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL REFERENCES gm_applications(id),
+  due_on TEXT DEFAULT '',
+  amount NUMERIC DEFAULT 0,
+  paid_on TEXT DEFAULT '',
+  reference TEXT DEFAULT '',
+  condition TEXT DEFAULT '',             -- e.g. "after interim report"
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS gm_reports (
+  id TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL REFERENCES gm_applications(id),
+  kind TEXT DEFAULT 'final',             -- interim | final | other
+  due_on TEXT DEFAULT '',
+  received_on TEXT DEFAULT '',
+  summary TEXT DEFAULT '',
+  created_at TEXT
+);
+
+-- Fundraising: donors, campaigns (funds), pledges, gifts, and touches.
+CREATE TABLE IF NOT EXISTS fr_campaigns (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  goal NUMERIC DEFAULT 0,
+  fund_type TEXT DEFAULT 'unrestricted', -- unrestricted | restricted | capital | endowment | event
+  starts_on TEXT DEFAULT '',
+  ends_on TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS fr_donors (
+  id TEXT PRIMARY KEY,
+  kind TEXT DEFAULT 'individual',        -- individual | family | foundation | corporation | government | daf | other
+  name TEXT NOT NULL,
+  salutation TEXT DEFAULT '',            -- "Dear Ms. Lee"
+  email TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  owner TEXT DEFAULT '',                 -- who manages the relationship
+  stage TEXT DEFAULT '',                 -- identify | qualify | cultivate | solicit | steward
+  capacity NUMERIC DEFAULT 0,            -- estimated ask amount
+  notes TEXT DEFAULT '',
+  no_solicit BOOLEAN DEFAULT false,
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS fr_donors_email ON fr_donors (lower(email));
+CREATE TABLE IF NOT EXISTS fr_pledges (
+  id TEXT PRIMARY KEY,
+  donor_id TEXT NOT NULL REFERENCES fr_donors(id),
+  campaign_id TEXT REFERENCES fr_campaigns(id),
+  total NUMERIC DEFAULT 0,
+  pledged_on TEXT DEFAULT '',
+  frequency TEXT DEFAULT 'one-time',     -- one-time | monthly | quarterly | annual
+  installments INTEGER DEFAULT 1,
+  first_due TEXT DEFAULT '',
+  status TEXT DEFAULT 'open',            -- open | fulfilled | written-off
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);
+CREATE SEQUENCE IF NOT EXISTS fr_receipt_seq START 1001;
+CREATE TABLE IF NOT EXISTS fr_gifts (
+  id TEXT PRIMARY KEY,
+  donor_id TEXT NOT NULL REFERENCES fr_donors(id),
+  campaign_id TEXT REFERENCES fr_campaigns(id),
+  pledge_id TEXT REFERENCES fr_pledges(id),
+  amount NUMERIC NOT NULL DEFAULT 0,
+  received_on TEXT DEFAULT '',
+  method TEXT DEFAULT 'check',           -- check | cash | card | ach | wire | stock | daf | in-kind | other
+  reference TEXT DEFAULT '',             -- check number, transaction id
+  restriction TEXT DEFAULT '',
+  in_kind_description TEXT DEFAULT '',
+  goods_services_value NUMERIC DEFAULT 0,
+  receipt_no INTEGER UNIQUE DEFAULT nextval('fr_receipt_seq'),
+  ack_sent_on TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS fr_gifts_donor ON fr_gifts (donor_id);
+CREATE TABLE IF NOT EXISTS fr_touches (
+  id TEXT PRIMARY KEY,
+  donor_id TEXT NOT NULL REFERENCES fr_donors(id),
+  on_date TEXT DEFAULT '',
+  kind TEXT DEFAULT 'note',              -- meeting | call | email | event | ask | note
+  summary TEXT DEFAULT '',
+  next_step TEXT DEFAULT '',
+  next_on TEXT DEFAULT '',
+  done BOOLEAN DEFAULT false,
+  created_at TEXT
+);

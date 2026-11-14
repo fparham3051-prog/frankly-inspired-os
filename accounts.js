@@ -240,8 +240,21 @@ function mount(app, ctx) {
   });
 
   // ---- settings (owner only) ----
+  // Areas (modules) can be switched on or off here without editing
+  // org.config.json; the file stays the default for a fresh copy.
+  async function effectiveModules() {
+    const over = (() => { try { return JSON.parse(cache.modules || "{}"); } catch (e) { return {}; } })();
+    const out = {};
+    for (const [k, v] of Object.entries(ORG.modules || {})) if (k.charAt(0) !== "_") out[k] = k in over ? !!over[k] : !!v;
+    return out;
+  }
+  const cache = { modules: null, at: 0 };
+  async function loadModules() {
+    if (cache.modules == null || Date.now() - cache.at > 30000) { cache.modules = await getSetting("modules", "{}").catch(() => "{}"); cache.at = Date.now(); }
+    return effectiveModules();
+  }
   app.get("/api/settings", requireAuth, requireOwner, async (req, res) => {
-    res.json({ sharedPasswordOff: (await getSetting("shared_password_off")) === "1" });
+    res.json({ sharedPasswordOff: (await getSetting("shared_password_off")) === "1", modules: await loadModules() });
   });
   app.post("/api/settings", requireAuth, requireOwner, async (req, res) => {
     const { sharedPasswordOff } = req.body || {};
@@ -252,11 +265,21 @@ function mount(app, ctx) {
       }
       await setSetting("shared_password_off", sharedPasswordOff ? "1" : "0");
     }
-    res.json({ ok: true, sharedPasswordOff: (await getSetting("shared_password_off")) === "1" });
+    if (req.body && req.body.modules && typeof req.body.modules === "object") {
+      const current = JSON.parse((await getSetting("modules", "{}")) || "{}");
+      for (const [k, v] of Object.entries(req.body.modules)) if (k in (ORG.modules || {}) && k.charAt(0) !== "_") current[k] = !!v;
+      await setSetting("modules", JSON.stringify(current));
+      cache.modules = null;
+    }
+    res.json({ ok: true, sharedPasswordOff: (await getSetting("shared_password_off")) === "1", modules: await loadModules() });
   });
 
   // ---- organization profile (the same file the console and website use) ----
-  app.get("/org.config.json", (req, res) => res.json(ORG));
+  app.get("/org.config.json", async (req, res) => {
+    let modules = ORG.modules;
+    try { modules = Object.assign({ _about: (ORG.modules || {})._about }, await loadModules()); } catch (e) {}
+    res.json(Object.assign({}, ORG, { modules }));
+  });
   app.get("/org.js", (req, res) => res.sendFile(path.join(__dirname, "public", "org.js")));
 
   // ---- one sign-in into the InstitutionalOS console ----

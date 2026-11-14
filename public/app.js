@@ -304,6 +304,176 @@
     showView(last && document.querySelector('.view[data-view="' + last + '"]') ? last : "today");
   })();
 
+  // ---------- who's signed in, roles, organization profile ----------
+  var ME = { role: "owner", shared: true };
+  function applyRole(){
+    var role = ME.role || "owner";
+    document.body.classList.remove("role-owner", "role-staff", "role-board");
+    document.body.classList.add("role-" + role);
+    document.querySelectorAll(".owner-only").forEach(function(el){
+      if(role !== "owner") { el.hidden = true; el.setAttribute("data-role-hidden", ""); }
+    });
+    var badge = document.getElementById("role-badge");
+    if(badge){
+      badge.hidden = role === "owner";
+      badge.textContent = role === "board" ? "Board · view only" : (role === "staff" ? "Staff" : "");
+    }
+  }
+  fetch("/api/me").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+    if(!d) return;
+    ME = Object.assign({}, d.user, { sharedPasswordOff: d.sharedPasswordOff, ownerAccounts: d.ownerAccounts });
+    applyRole();
+  }).catch(function(){});
+  // Offers and labels follow the organization profile (org.config.json).
+  document.addEventListener("org:ready", function(e){
+    var cfg = e.detail || {};
+    (cfg.offers || []).forEach(function(o){
+      if(!o || !o.key) return;
+      OFFERING_LABELS[o.key] = o.name || OFFERING_LABELS[o.key];
+      if(o.short) INTEREST_LABELS[o.key] = o.short;
+      if(o.price && typeof o.price === "object"){
+        PRICE_BOOK[o.key] = { build: o.price.build || 0, fund: o.price.fund || 0, sustain: o.price.sustain || 0, "": o.price["default"] || 0 };
+      } else if(typeof o.price === "number") {
+        PRICE_BOOK[o.key] = o.price;
+      }
+    });
+    renderOrgSummary(cfg);
+  });
+  if(window.ORG) document.dispatchEvent(new CustomEvent("org:ready", { detail: window.ORG }));
+
+  // ---------- Funnel (Pipeline & Money > Insights > Funnel) ----------
+  function renderFunnel(){
+    var body = document.getElementById("funnel-body");
+    var monthEl = document.getElementById("funnel-month");
+    if(!body || !monthEl) return;
+    if(!monthEl.value) monthEl.value = new Date().toISOString().slice(0, 7);
+    document.getElementById("funnel-report").href = "/report/monthly?month=" + monthEl.value;
+    body.innerHTML = '<p class="empty-note">Loading...</p>';
+    apiFetch("/api/funnel?month=" + monthEl.value).then(function(d){
+      var c = d.current;
+      var steps = [["Website visits", c.visits], ["Free check-ups started", c.checkupsStarted], ["Leads", c.leads], ["Conversations logged", c.conversations], ["Diagnostics invoiced", c.diagnostics]];
+      var max = Math.max.apply(null, steps.map(function(s){ return s[1] || 0; }).concat([1]));
+      var html = '<ol class="funnel">' + steps.map(function(s, i){
+        var v = s[1];
+        var share = i && v != null && steps[i - 1][1] && v <= steps[i - 1][1] ? Math.round(100 * v / steps[i - 1][1]) + "% of the step before" : "";
+        return '<li><span class="funnel-label">' + esc(s[0]) + '</span><span class="funnel-bar"><span style="width:' + (v ? Math.max(4, Math.round(100 * v / max)) : 0) + '%"></span></span><span class="funnel-num">' + (v == null ? "&mdash;" : v) + '</span><span class="funnel-share">' + share + '</span></li>';
+      }).join("") + '</ol>';
+      html += '<p class="funnel-money"><strong>' + fmtMoneyShort(c.revenue) + '</strong> collected &middot; ' + fmtMoneyShort(c.invoiced) + ' invoiced in ' + esc(d.label) + '</p>';
+      html += '<div class="table-wrap"><table class="prospect-table"><thead><tr><th>Month</th><th>Visits</th><th>Check-ups</th><th>Leads</th><th>Conversations</th><th>Diagnostics</th><th>Collected</th></tr></thead><tbody>' +
+        d.trend.slice().reverse().map(function(t){
+          var dash = function(x){ return x == null ? "&mdash;" : x; };
+          return "<tr><td>" + esc(t.month) + "</td><td>" + dash(t.visits) + "</td><td>" + dash(t.checkupsStarted) + "</td><td>" + t.leads + "</td><td>" + t.conversations + "</td><td>" + t.diagnostics + "</td><td>" + fmtMoneyShort(t.revenue) + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+      if(!d.websiteCounting) html += '<p class="view-intro">Website visit counts aren\'t connected yet; they appear once the website counter is live.</p>';
+      body.innerHTML = html;
+    }).catch(function(err){ body.innerHTML = '<p class="empty-note">' + esc(err.message) + '</p>'; });
+  }
+  document.addEventListener("click", function(e){ if(e.target.closest('[data-rp-tab="funnel"]')) renderFunnel(); });
+  document.addEventListener("change", function(e){ if(e.target.id === "funnel-month") renderFunnel(); });
+
+  // ---------- Settings: your account, people, sign-in rules ----------
+  var settingsBtn = document.getElementById("open-settings-btn");
+  if(settingsBtn) settingsBtn.addEventListener("click", function(){ goToView("settings"); renderSettings(); window.scrollTo(0, 0); });
+  function msg(id, text, bad){ var el = document.getElementById(id); if(el){ el.textContent = text; el.className = "form-msg" + (bad ? " is-bad" : ""); } }
+  function renderOrgSummary(cfg){
+    var dl = document.getElementById("org-summary");
+    if(!dl || !cfg.org) return;
+    var on = Object.keys(cfg.modules || {}).filter(function(k){ return k.charAt(0) !== "_" && cfg.modules[k]; });
+    var rows = [["Organization", cfg.org.name], ["Type", cfg.org.type], ["Leader", (cfg.org.leader || {}).name + ", " + (cfg.org.leader || {}).title],
+      ["Areas on", on.join(", ")], ["Offers", (cfg.offers || []).filter(function(o){ return o.key !== "other"; }).map(function(o){ return o.short || o.name; }).join(", ")]];
+    dl.innerHTML = rows.map(function(r){ return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1] || "") + "</dd>"; }).join("");
+  }
+  function renderSettings(){
+    document.getElementById("settings-who").textContent = ME.shared ? "signed in with the practice password" : ((ME.name || ME.email) + " · " + ME.role);
+    document.getElementById("acct-shared-note").hidden = !ME.shared;
+    document.getElementById("acct-own").hidden = !!ME.shared;
+    var on = !!ME.twoStep;
+    document.getElementById("twostep-status").textContent = on ? "On. You'll enter a 6-digit code after your password." : "Off. Turn it on so a stolen password isn't enough to get in.";
+    document.getElementById("twostep-start").hidden = on;
+    document.getElementById("twostep-off").hidden = !on;
+    document.getElementById("twostep-code-label").hidden = !on;
+    document.getElementById("twostep-confirm").hidden = true;
+    document.getElementById("twostep-setup").hidden = true;
+    if(ME.role !== "owner") return;
+    apiFetch("/api/users").then(function(d){
+      var tb = document.querySelector("#people-table tbody");
+      var users = d.users || [];
+      tb.innerHTML = users.length ? users.map(function(u){
+        return "<tr" + (u.disabled ? ' class="is-muted"' : "") + "><td>" + esc(u.name || "") + "</td><td>" + esc(u.email) + "</td><td>" +
+          '<select data-user-role="' + u.id + '" aria-label="Role for ' + esc(u.email) + '">' + ["owner", "staff", "board"].map(function(r){ return '<option value="' + r + '"' + (u.role === r ? " selected" : "") + ">" + r.charAt(0).toUpperCase() + r.slice(1) + "</option>"; }).join("") + "</select></td><td>" +
+          (u.twoStep ? 'On <button type="button" class="link-btn" data-user-reset2="' + u.id + '">reset</button>' : "Off") + "</td><td>" + (u.lastLoginAt ? esc(fmtDate(u.lastLoginAt.slice(0, 10))) : "Never") + "</td><td>" +
+          '<button type="button" class="link-btn" data-user-toggle="' + u.id + '" data-disabled="' + (u.disabled ? 1 : 0) + '">' + (u.disabled ? "Turn back on" : "Turn off") + "</button></td></tr>";
+      }).join("") : '<tr><td colspan="6" class="empty-note">No accounts yet. Add yourself first as Owner.</td></tr>';
+    }).catch(function(err){ msg("person-msg", err.message, true); });
+    apiFetch("/api/settings").then(function(d){ document.getElementById("shared-off").checked = !!d.sharedPasswordOff; }).catch(function(){});
+  }
+  document.addEventListener("change", function(e){
+    var sel = e.target.closest("[data-user-role]");
+    if(sel){
+      apiFetch("/api/users/" + sel.getAttribute("data-user-role"), { method: "PATCH", body: { role: sel.value } })
+        .then(function(){ msg("person-msg", "Role updated."); }).catch(function(err){ msg("person-msg", err.message, true); renderSettings(); });
+    }
+    if(e.target.id === "shared-off"){
+      apiFetch("/api/settings", { method: "POST", body: { sharedPasswordOff: e.target.checked } })
+        .then(function(d){ msg("shared-msg", d.sharedPasswordOff ? "The practice password no longer signs in." : "The practice password signs in as owner."); })
+        .catch(function(err){ e.target.checked = !e.target.checked; msg("shared-msg", err.message, true); });
+    }
+  });
+  document.addEventListener("click", function(e){
+    var t = e.target.closest("[data-user-toggle]");
+    if(t){
+      apiFetch("/api/users/" + t.getAttribute("data-user-toggle"), { method: "PATCH", body: { disabled: t.getAttribute("data-disabled") !== "1" } })
+        .then(renderSettings).catch(function(err){ msg("person-msg", err.message, true); });
+    }
+    var r2 = e.target.closest("[data-user-reset2]");
+    if(r2){
+      apiFetch("/api/users/" + r2.getAttribute("data-user-reset2"), { method: "PATCH", body: { resetTwoStep: true } })
+        .then(function(){ msg("person-msg", "Two-step sign-in reset. They can set it up again."); renderSettings(); }).catch(function(err){ msg("person-msg", err.message, true); });
+    }
+  });
+  var personForm = document.getElementById("person-form");
+  if(personForm) personForm.addEventListener("submit", function(e){
+    e.preventDefault();
+    apiFetch("/api/users", { method: "POST", body: {
+      name: document.getElementById("person-name").value, email: document.getElementById("person-email").value,
+      role: document.getElementById("person-role").value, password: document.getElementById("person-password").value
+    }}).then(function(){ personForm.reset(); msg("person-msg", "Added. Send them the address and their temporary password, separately."); renderSettings(); })
+      .catch(function(err){ msg("person-msg", err.message, true); });
+  });
+  var pwForm = document.getElementById("pw-form");
+  if(pwForm) pwForm.addEventListener("submit", function(e){
+    e.preventDefault();
+    apiFetch("/api/me/password", { method: "POST", body: { current: document.getElementById("pw-current").value, next: document.getElementById("pw-next").value } })
+      .then(function(){ pwForm.reset(); msg("pw-msg", "Password changed."); }).catch(function(err){ msg("pw-msg", err.message, true); });
+  });
+  var tsStart = document.getElementById("twostep-start");
+  if(tsStart) tsStart.addEventListener("click", function(){
+    apiFetch("/api/me/2fa", { method: "POST", body: { action: "start" } }).then(function(d){
+      document.getElementById("twostep-secret").textContent = d.secret.replace(/(.{4})/g, "$1 ").trim();
+      document.getElementById("twostep-link").href = d.otpauth;
+      document.getElementById("twostep-setup").hidden = false;
+      document.getElementById("twostep-code-label").hidden = false;
+      document.getElementById("twostep-confirm").hidden = false;
+      tsStart.hidden = true;
+      document.getElementById("twostep-code").focus();
+    }).catch(function(err){ msg("twostep-msg", err.message, true); });
+  });
+  var tsForm = document.getElementById("twostep-form");
+  if(tsForm) tsForm.addEventListener("submit", function(e){
+    e.preventDefault();
+    apiFetch("/api/me/2fa", { method: "POST", body: { action: "confirm", code: document.getElementById("twostep-code").value } }).then(function(d){
+      ME.twoStep = true; document.getElementById("twostep-code").value = "";
+      renderSettings();
+      msg("twostep-msg", d.sharedTurnedOff ? "Two-step sign-in is on. The old practice password is now turned off." : "Two-step sign-in is on.");
+    }).catch(function(err){ msg("twostep-msg", err.message, true); });
+  });
+  var tsOff = document.getElementById("twostep-off");
+  if(tsOff) tsOff.addEventListener("click", function(){
+    apiFetch("/api/me/2fa", { method: "POST", body: { action: "off", code: document.getElementById("twostep-code").value } }).then(function(){
+      ME.twoStep = false; renderSettings(); msg("twostep-msg", "Two-step sign-in is off.");
+    }).catch(function(err){ msg("twostep-msg", err.message, true); });
+  });
+
   // ---------- logout ----------
   var logoutBtn = document.getElementById("logout-btn");
   if(logoutBtn){
@@ -840,7 +1010,7 @@
         '<td>' + esc(p.nextStep || "") + '</td>' +
         '<td>' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</td>' +
         '<td class="dim">' + esc(p.source || "") + '</td>' +
-        '<td><button type="button" class="btn danger pl-delete">Remove</button></td>' +
+        '<td class="row-actions"><a class="btn secondary" href="/letter/engagement?pipeline=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener" title="Proposal and engagement letter for this record">Letter</a> <button type="button" class="btn danger pl-delete">Remove</button></td>' +
         '</tr>';
     }).join("");
   }

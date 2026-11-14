@@ -528,3 +528,24 @@ CREATE TABLE IF NOT EXISTS market_scan_state (
 -- A deal that started in the market scan keeps its EIN, so linking it to
 -- InstitutionalOS adopts the demo client made from public data.
 ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS scan_ein TEXT DEFAULT '';
+
+-- People who can sign in, with a role (owner, staff, board) and optional
+-- two-step sign-in. See accounts.js.
+CREATE TABLE IF NOT EXISTS app_users (
+  id SERIAL PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'staff',
+  pass_hash TEXT NOT NULL,
+  totp_secret TEXT DEFAULT '',
+  totp_on BOOLEAN DEFAULT false,
+  disabled BOOLEAN DEFAULT false,
+  created_at TEXT,
+  last_login_at TEXT
+);
+
+-- Small owner settings (shared password on/off, data-retention run log).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);

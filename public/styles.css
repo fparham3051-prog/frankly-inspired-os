@@ -584,7 +584,7 @@ body.login-body{min-height:100vh;display:flex;align-items:center;justify-content
 .login-word{font-family:'Playfair Display', Georgia, serif;font-weight:600;font-size:1.15rem;color:var(--ink);}
 .login-card h1{font-size:1.3rem;margin:0 0 6px;}
 .login-card p.sub{color:var(--ink-soft);font-size:0.88rem;margin:0 0 22px;}
-.login-card input[type=password]{width:100%;font-family:Inter, sans-serif;font-size:0.98rem;padding:11px 13px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-bottom:14px;}
+.login-card input[type=password],.login-card input[type=email],.login-card input[type=text]{width:100%;font-family:Inter, sans-serif;font-size:0.98rem;padding:11px 13px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-bottom:14px;}
 .login-card .btn{width:100%;justify-content:center;padding:11px 16px;font-size:0.84rem;}
 .login-error{color:var(--warn);font-size:0.84rem;margin:0 0 14px;min-height:1.2em;}
 .skip-link{position:absolute;top:-40px;left:8px;z-index:1000;background:#11233D;color:#fff;padding:8px 14px;border-radius:0 0 6px 6px;font-family:Inter,sans-serif;font-size:0.86rem;text-decoration:none;transition:top .15s ease;}
@@ -760,3 +760,38 @@ body.is-desk nav.rail{display:none;}
 .today-card .action-list li{flex-direction:column;align-items:flex-start;gap:4px;}
 .today-card .action-list li .when{text-align:left;white-space:normal;}
 button.brandbar-link{background:none;cursor:pointer;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+/* ---- Accounts, roles, settings ---- */
+.role-badge{font-family:Inter,sans-serif;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:#0B1A2D;background:#CBA869;border-radius:999px;padding:5px 10px;}
+.role-board form:not(.settings-form), .role-board .add-form{display:none !important;}
+.settings-form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:10px 0 6px;}
+.settings-form label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--ink-soft);min-width:220px;}
+.settings-form input,.settings-form select{font:inherit;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);}
+.settings-grid label{flex:1 1 200px;}
+.settings-h4{margin:22px 0 4px;font-family:'Playfair Display',Georgia,serif;font-size:1.05rem;color:var(--ink);}
+.form-msg{font-size:.88rem;color:var(--ink-soft);}
+.form-msg.is-bad{color:#E58F7B;}
+.secret-key{font-size:1rem;letter-spacing:.08em;background:var(--surface-2);padding:6px 10px;border-radius:6px;user-select:all;}
+.check-row{display:flex;gap:10px;align-items:center;font-size:.95rem;}
+.link-btn{background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit;font-size:.85rem;padding:0 4px;}
+.prospect-table select{font:inherit;font-size:.85rem;padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);}
+tr.is-muted td{opacity:.5;}
+.org-summary{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:8px 0 0;font-size:.92rem;}
+.org-summary dt{color:var(--ink-soft);}
+.org-summary dd{margin:0;}
+.role-board main table button, .role-board main .fw-card > .btn, .role-board main .card-actions{display:none !important;}
+.role-board main table select{pointer-events:none;appearance:none;-webkit-appearance:none;border-color:transparent;background:transparent;padding-left:0;}
+/* ---- Funnel ---- */
+.funnel-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;}
+.funnel-head h3{margin:0;}
+.funnel-month{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--ink-soft);}
+.funnel-month input{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);color-scheme:dark;}
+.funnel{list-style:none;margin:14px 0;padding:0;display:grid;gap:10px;}
+.funnel li{display:grid;grid-template-columns:200px 1fr 60px 170px;gap:12px;align-items:center;font-size:.92rem;}
+.funnel-bar{height:14px;background:var(--surface-2);border-radius:999px;overflow:hidden;}
+.funnel-bar span{display:block;height:100%;background:var(--accent);border-radius:999px;}
+.funnel-num{text-align:right;font-weight:600;font-variant-numeric:tabular-nums;}
+.funnel-share{color:var(--ink-soft);font-size:.82rem;}
+.funnel-money{margin:6px 0 14px;}
+@media (max-width:760px){.funnel li{grid-template-columns:1fr 50px;}.funnel-bar,.funnel-share{grid-column:1 / -1;}}

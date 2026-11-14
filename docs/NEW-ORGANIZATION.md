@@ -1,0 +1,69 @@
+# Setting this system up for another organization
+
+The system is three apps that share one organization profile:
+
+| App | Repository | What it is |
+|---|---|---|
+| Operations | frankly-inspired-os | The internal operating system: Today, pipeline and money, weekly meeting, priorities, research, people and roles |
+| InstitutionalOS | grantpass-backend (API + `dashboard/` pages) | Scoring, 90-day plans, client portal, funder report, leader survey |
+| Website | frankly-inspired-website (+ frankly-inspired-backend for forms and counts) | The public site and free check-up |
+
+Everything that names the organization, its brand, its links, its offers, and
+which areas are switched on lives in **`org.config.json`**. Each app keeps an
+identical copy: `frankly-inspired-os/org.config.json`,
+`grantpass-backend/dashboard/org.config.json`,
+`frankly-inspired-website/src/org.config.json`.
+
+## Checklist (about half a day)
+
+1. **Copy the repositories** on GitHub (use "Use this template" or fork), one set per organization.
+2. **Edit `org.config.json`** in all three copies (identical):
+   - `org`: type (`consulting` or `foundation`), names, leader, email, phone, region
+   - `brand`: colors and fonts
+   - `links`: the new addresses (website, operations, clients, booking)
+   - `modules`: turn areas on or off (see below)
+   - `offers`: what the organization offers, with prices and the scope lines the engagement letter prints
+   - `terms`: what to call the people and records (Client, Grantee, Donor...)
+   - `engagement`: payment, confidentiality, data, and ending terms for letters
+3. **Create the Render services** (two web services, one static site, one static site for the website, two Postgres databases) from the copied repositories. Use the same build and start commands as the originals.
+4. **Set the keys** listed in docs/SECURITY.md on each service. Generate new values; never reuse another organization's keys.
+5. **First sign-in:** open the operations app, sign in with `ADMIN_PASSWORD`, go to Settings > People, add yourself as Owner, sign in with your email, turn on two-step sign-in (this also turns off the shared password).
+6. **InstitutionalOS:** open the console, register the owner's email, and set `INTEGRATION_USER_EMAIL` on the InstitutionalOS API to that email.
+7. **Scheduled tasks:** copy the four tasks (morning health check, daily reminders, nightly backup and retention, weekly market scan if used), changing the addresses and keys.
+8. **Run the tests** in each repository (`npm test`, `python3 tests/run_tests.py`) against an empty test database, then deploy.
+9. **Custom addresses:** add the domain to each Render service and the CNAME records at the domain registrar.
+
+## Modules
+
+| Module | Consulting practice | Foundation |
+|---|---|---|
+| `consulting` (offers, engagement letters) | on | off |
+| `institutionalos` (scores, 90-day plans, portal) | on: clients | on: grantees (capacity building) |
+| `marketScan` (DMV nonprofit research) | on | on: finding grantees |
+| `donorAnalysis` (LYBUNT/SYBUNT, retention) | optional | on: the foundation's own donors |
+| `givingLandscape`, `fieldIntelligence` | on | on |
+| `myDesk` (owner's personal development) | on | per person |
+| `grantmaking` | off | **planned** |
+| `fundraising` | off | **planned** |
+
+## For the First Choice Construction foundation (grants and fundraising)
+
+What already maps over:
+- **Grantees** are InstitutionalOS organizations: intake, evidence-based scores,
+  a 90-day plan, a portal, and a funder report the foundation reads.
+- **The foundation's donors and gifts** fit the pipeline (prospect to gift) and
+  Donor Analysis; Money tracks pledges and receipts the way it tracks invoices.
+- **Board** members get Board accounts (view only) in the operations app; the
+  monthly report is the board pack.
+- **Priorities & Vision** and the Weekly Meeting run the foundation's own work.
+
+What the `grantmaking` and `fundraising` modules will add (not built yet):
+- Grantmaking: application form, review and scoring by committee, award
+  letters, payment schedule, grantee reports due and received, and a docket for
+  board approval.
+- Fundraising: donor records with gift history, pledges and installments,
+  acknowledgment letters with tax language, a campaign view, and the corporate
+  match from First Choice Construction tracked separately.
+- Governance: board meeting calendar, minutes, policy register, conflict-of-
+  interest forms, and the Form 990 checklist (the compliance calendar in
+  InstitutionalOS already covers part of this).

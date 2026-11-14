@@ -8,6 +8,7 @@ const cookieParser = require("cookie-parser");
 const compression = require("compression");
 const helmet = require("helmet");
 const { Pool } = require("pg");
+const accounts = require("./accounts");
 
 const PORT = process.env.PORT || 10000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
@@ -49,9 +50,8 @@ function verify(token) {
   const a = Buffer.from(sig, "hex");
   const b = Buffer.from(expected, "hex");
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
-  const expiry = Number(value);
-  if (!Number.isFinite(expiry) || Date.now() > expiry) return false;
-  return true;
+  // "<expiry>" (shared-password owner) or "<expiry>~<userId>~<role>".
+  return accounts.parseSessionValue(value);
 }
 function timingSafeStringEqual(a, b) {
   const bufA = Buffer.from(String(a));
@@ -63,10 +63,27 @@ function timingSafeStringEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+// Disabled accounts lose access within a minute even with a live cookie.
+const disabledCache = new Map(); // userId -> { disabled, at }
+async function userDisabled(userId) {
+  if (!userId) return false;
+  const hit = disabledCache.get(userId);
+  if (hit && Date.now() - hit.at < 60000) return hit.disabled;
+  const r = await pool.query("SELECT disabled FROM app_users WHERE id = $1", [userId]);
+  const disabled = !r.rows[0] || !!r.rows[0].disabled;
+  disabledCache.set(userId, { disabled, at: Date.now() });
+  return disabled;
+}
 function requireAuth(req, res, next) {
-  const token = req.cookies[COOKIE_NAME];
-  if (verify(token)) return next();
-  return res.status(401).json({ error: "not authenticated" });
+  const session = verify(req.cookies[COOKIE_NAME]);
+  if (!session) return res.status(401).json({ error: "not authenticated" });
+  userDisabled(session.userId).then((off) => {
+    if (off) return res.status(401).json({ error: "account disabled" });
+    const rule = accounts.roleAllows(session, req);
+    if (!rule.ok) return res.status(rule.status).json({ error: rule.error });
+    req.session = session;
+    next();
+  }).catch(next);
 }
 
 // Per-automation scoped tokens, layered on top of the one shared
@@ -102,7 +119,8 @@ function requireAdminScope(scope) {
     // session during a database migration without anyone having to type the
     // admin token anywhere.
     const sessionToken = req.cookies[COOKIE_NAME];
-    if (verify(sessionToken)) return next();
+    const s = verify(sessionToken);
+    if (s && s.role === "owner") return next();
     return res.status(401).json({ error: "invalid admin token" });
   };
 }
@@ -116,7 +134,7 @@ function requireAdminScope(scope) {
 // `app.set("trust proxy", 1)` below is what makes req.ip the real visitor
 // address rather than Render's edge proxy for every request.
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 8;
+const LOGIN_MAX_ATTEMPTS = Number(process.env.LOGIN_MAX_ATTEMPTS) || 8;
 const loginAttempts = new Map(); // ip -> { count, windowStart }
 function loginRateLimited(ip) {
   const now = Date.now();
@@ -148,25 +166,8 @@ app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-// ---------- auth routes ----------
-app.post("/api/login", (req, res) => {
-  if (loginRateLimited(req.ip)) {
-    return res.status(429).json({ error: "Too many attempts. Wait a few minutes and try again." });
-  }
-  const { password } = req.body || {};
-  if (!password || !timingSafeStringEqual(password, ADMIN_PASSWORD)) {
-    return res.status(401).json({ error: "incorrect password" });
-  }
-  const expiry = Date.now() + COOKIE_MAX_AGE_MS;
-  const token = sign(String(expiry));
-  res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: COOKIE_MAX_AGE_MS
-  });
-  res.json({ ok: true });
-});
+// ---------- auth routes (accounts.js: sign-in, people, roles, two-step, settings, one sign-in) ----------
+accounts.mount(app, { pool, sign, verifySession: verify, requireAuth, onUserChanged: (id) => disabledCache.delete(id), COOKIE_NAME, COOKIE_MAX_AGE_MS, ADMIN_PASSWORD, timingSafeStringEqual, loginRateLimited });
 
 app.post("/api/logout", (req, res) => {
   res.clearCookie(COOKIE_NAME);
@@ -175,7 +176,8 @@ app.post("/api/logout", (req, res) => {
 
 app.get("/api/session", (req, res) => {
   const token = req.cookies[COOKIE_NAME];
-  res.json({ authenticated: verify(token) });
+  const sess = verify(token);
+  res.json({ authenticated: !!sess, role: sess ? sess.role : null });
 });
 
 // ---------- bootstrap: everything the app needs in one call ----------
@@ -218,8 +220,9 @@ app.get("/api/state", requireAuth, async (req, res) => {
       encounters: encounters.rows.map(rowToEncounter),
       problemLog: problemLog.rows.map(rowToProblem),
       feedback: feedbackRes.rows.map(rowToFeedback),
-      advancementState: advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} },
-      quizAttempts: quizAttempts.rows.map(rowToQuizAttempt),
+      // My Desk is the owner's personal space: staff and board don't get it.
+      advancementState: req.session.role !== "owner" ? { weekProgress: {}, credPursuing: {} } : (advancementStateRes.rows[0] ? rowToAdvancementState(advancementStateRes.rows[0]) : { weekProgress: {}, credPursuing: {} }),
+      quizAttempts: req.session.role !== "owner" ? [] : quizAttempts.rows.map(rowToQuizAttempt),
       weekEvents: weekEventsRes.rows.map(rowToWeekEvent),
       giftPatterns: giftPatternsRes.rows[0] ? rowToGiftPatternDigest(giftPatternsRes.rows[0]) : null
     });
@@ -1590,6 +1593,86 @@ app.get("/api/admin/backup", requireAdminScope("backup"), async (req, res) => {
   }
 });
 
+// One backup of the whole system: every table in this app, plus the
+// InstitutionalOS and website databases (fetched server-side with their
+// integration keys). The nightly scheduled task saves this file off Render
+// (Google Drive). Restore with scripts/restore-backup.js (this app),
+// grantpass-backend scripts/restore_backup.py (InstitutionalOS), and the
+// website backend's scripts/restore-backup.js.
+async function exportAllTables(db) {
+  const t = await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name");
+  const tables = {};
+  for (const { table_name } of t.rows) {
+    tables[table_name] = (await db.query(`SELECT * FROM "${table_name}"`)).rows;
+  }
+  return tables;
+}
+app.get("/api/admin/backup-all", requireAdminScope("backup"), async (req, res) => {
+  const out = { kind: "full-system-backup", version: 1, exportedAt: new Date().toISOString(), counts: {}, errors: [] };
+  try {
+    out.operations = { app: "operations", tables: await exportAllTables(pool) };
+  } catch (err) {
+    out.errors.push("operations: " + err.message);
+  }
+  const remotes = [
+    ["institutionalos", (process.env.GRANTPASS_API || "https://grantpass-backend.onrender.com").replace(/\/$/, "") + "/integration/backup", { "X-Integration-Key": process.env.GRANTPASS_INTEGRATION_KEY || "" }],
+    ["website", (process.env.WEBSITE_API_URL || "https://frankly-inspired-api.onrender.com").replace(/\/$/, "") + "/api/admin/backup", { "X-Reminder-Secret": process.env.WEBSITE_ADMIN_SECRET || "" }],
+  ];
+  for (const [name, url, headers] of remotes) {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(90000) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.tables) throw new Error(d.error || ("HTTP " + r.status));
+      out[name] = d;
+    } catch (err) {
+      out.errors.push(name + ": " + err.message);
+    }
+  }
+  for (const k of ["operations", "institutionalos", "website"]) {
+    if (out[k] && out[k].tables) out.counts[k] = Object.fromEntries(Object.entries(out[k].tables).map(([t, rows]) => [t, rows.length]));
+  }
+  out.ok = out.errors.length === 0;
+  try {
+    await pool.query("INSERT INTO app_settings (key, value) VALUES ('last_backup', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+      [JSON.stringify({ at: out.exportedAt, ok: out.ok, errors: out.errors, rows: Object.values(out.counts).reduce((t, c) => t + Object.values(c).reduce((a, b) => a + b, 0), 0) })]);
+  } catch (e) {}
+  res.json(out);
+});
+
+// Data retention (docs/DATA-RETENTION.md). Deletes only logs that have no
+// business value after six months; everything else is listed for the owner
+// to review, never deleted automatically.
+app.post("/api/admin/retention", requireAdminScope("backup"), async (req, res) => {
+  const out = { at: new Date().toISOString(), deleted: {}, review: {}, errors: [] };
+  try {
+    const cutoff = new Date(Date.now() - 180 * 864e5).toISOString();
+    out.deleted.automationRuns = (await pool.query("DELETE FROM automation_runs WHERE COALESCE(logged_at, ran_at) < $1", [cutoff])).rowCount;
+    const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString();
+    for (const t of ["pipeline", "prospects", "invoices", "issues", "rocks", "encounters", "time_entries"]) {
+      const r = await pool.query(`SELECT count(*)::int AS n FROM ${t} WHERE archived_at IS NOT NULL AND archived_at < $1`, [yearAgo]);
+      if (r.rows[0].n) out.review["archived over a year: " + t] = r.rows[0].n;
+    }
+    const twoYears = new Date(Date.now() - 730 * 864e5).toISOString();
+    const stale = await pool.query("SELECT count(*)::int AS n FROM prospects WHERE archived_at IS NULL AND created_at < $1", [twoYears]);
+    if (stale.rows[0].n) out.review["prospects older than two years"] = stale.rows[0].n;
+  } catch (err) {
+    out.errors.push("operations: " + err.message);
+  }
+  if (WEBSITE_API_URL && WEBSITE_ADMIN_SECRET) {
+    try {
+      const r = await fetch(WEBSITE_API_URL + "/api/admin/retention", { method: "POST", headers: { "X-Reminder-Secret": WEBSITE_ADMIN_SECRET } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+      out.deleted.websiteLeadLog = d.leadLogDeleted || 0;
+    } catch (err) {
+      out.errors.push("website: " + err.message);
+    }
+  }
+  out.ok = out.errors.length === 0;
+  await pool.query("INSERT INTO app_settings (key, value) VALUES ('last_retention', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [JSON.stringify(out)]).catch(() => {});
+  res.json(out);
+});
+
 app.post("/api/admin/restore", requireAdminScope("restore"), async (req, res) => {
   const body = req.body || {};
   const client = await pool.connect();
@@ -1652,6 +1735,10 @@ app.post("/api/admin/restore", requireAdminScope("restore"), async (req, res) =>
     client.release();
   }
 });
+
+// ---------- funnel and monthly report (report.js) ----------
+require("./report").mount(app, { pool, requireAuth, WEBSITE_API_URL, WEBSITE_ADMIN_SECRET });
+require("./report").mountLetter(app, { pool, requireAuth });
 
 // ---------- static assets (icons, css, js) always served ----------
 app.use("/icons", express.static(path.join(__dirname, "public", "icons"), { maxAge: "30d" }));

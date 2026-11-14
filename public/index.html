@@ -21,17 +21,19 @@
      operations app, the InstitutionalOS console, and (as links) the site. -->
 <nav class="fi-switcher" aria-label="Frankly Inspired apps">
   <div class="wrap fi-switcher-inner">
-    <span class="fi-switcher-brand">Frankly Inspired</span>
+    <span class="fi-switcher-brand" data-org="shortName">Frankly Inspired</span>
     <a href="/" aria-current="page">Operations</a>
-    <a href="https://grantpass-dashboard.onrender.com/">Clients <span class="fi-sw-sub">InstitutionalOS</span></a>
-    <a href="https://franklyinspired.associates/" target="_blank" rel="noopener">Website</a>
+    <a href="/api/sso/clients" data-module="institutionalos" title="Opens the InstitutionalOS console, already signed in">Clients <span class="fi-sw-sub">InstitutionalOS</span></a>
+    <a href="https://franklyinspired.associates/" data-org-link="website" target="_blank" rel="noopener">Website</a>
   </div>
 </nav>
 <div class="brandbar">
   <div class="wrap brandbar-inner">
-    <div class="brandmark"><span class="brandmark-f">F</span><span class="brandmark-word">Frankly Inspired <span class="brandmark-tail">and Associates</span></span></div>
+    <div class="brandmark"><span class="brandmark-f">F</span><span class="brandmark-word" data-org="name">Frankly Inspired and Associates</span></div>
     <div class="brandbar-actions">
-      <button type="button" class="brandbar-link" id="open-desk-btn" title="Your personal development space, kept apart from the practice">My Desk</button>
+      <span class="role-badge" id="role-badge" hidden></span>
+      <button type="button" class="brandbar-link owner-only" id="open-desk-btn" data-module="myDesk" title="Your personal development space, kept apart from the practice">My Desk</button>
+      <button type="button" class="brandbar-link" id="open-settings-btn" title="Your account, two-step sign-in, and (for the owner) people and settings">Settings</button>
       <button type="button" class="brandbar-link" id="logout-btn" style="background:none;cursor:pointer;">Log Out</button>
     </div>
   </div>
@@ -54,11 +56,11 @@
     <button type="button" class="rail-btn" data-view="session">Weekly Meeting</button>
     <button type="button" class="rail-btn" data-view="direction">Priorities &amp; Vision</button>
     <div class="rail-label">Clients</div>
-    <button type="button" class="rail-btn" data-view="institutionalos">InstitutionalOS</button>
-    <button type="button" class="rail-btn" data-view="portfolio">Donor Analysis</button>
+    <button type="button" class="rail-btn" data-view="institutionalos" data-module="institutionalos">InstitutionalOS</button>
+    <button type="button" class="rail-btn" data-view="portfolio" data-module="donorAnalysis">Donor Analysis</button>
     <div class="rail-label">Research</div>
-    <button type="button" class="rail-btn" data-view="landscape">Giving Landscape</button>
-    <button type="button" class="rail-btn" data-view="fieldintel">Field Intelligence</button>
+    <button type="button" class="rail-btn" data-view="landscape" data-module="givingLandscape">Giving Landscape</button>
+    <button type="button" class="rail-btn" data-view="fieldintel" data-module="fieldIntelligence">Field Intelligence</button>
     <div class="rail-label">Library</div>
     <button type="button" class="rail-btn" data-view="playbook">Playbooks</button>
     <button type="button" class="rail-btn" data-view="process">Processes</button>
@@ -413,10 +415,11 @@
         <button type="button" class="filter-btn is-active" data-rp-tab="pipeline" data-rp-group="pipeline" role="tab" aria-selected="true">Pipeline</button>
         <button type="button" class="filter-btn" data-rp-tab="prospecting" data-rp-group="pipeline" role="tab" aria-selected="false">Prospecting</button>
         <button type="button" class="filter-btn" data-rp-tab="encounters" data-rp-group="pipeline" role="tab" aria-selected="false">Prospect Reports</button>
-        <button type="button" class="filter-btn" data-rp-tab="market" data-rp-group="pipeline" role="tab" aria-selected="false">DMV Market Scan</button>
+        <button type="button" class="filter-btn" data-rp-tab="market" data-rp-group="pipeline" data-module="marketScan" role="tab" aria-selected="false">DMV Market Scan</button>
         <button type="button" class="filter-btn" data-rp-tab="finance" data-rp-group="money" role="tab" aria-selected="false">Finance</button>
         <button type="button" class="filter-btn" data-rp-tab="delivery" data-rp-group="delivery" role="tab" aria-selected="false">Delivery</button>
         <button type="button" class="filter-btn" data-rp-tab="feedback" data-rp-group="delivery" role="tab" aria-selected="false">Feedback</button>
+        <button type="button" class="filter-btn" data-rp-tab="funnel" data-rp-group="insights" role="tab" aria-selected="false">Funnel</button>
         <button type="button" class="filter-btn" data-rp-tab="scorecard" data-rp-group="insights" role="tab" aria-selected="false">Weekly Log</button>
         <button type="button" class="filter-btn" data-rp-tab="trends" data-rp-group="insights" role="tab" aria-selected="false">Trends</button>
         <button type="button" class="filter-btn" data-rp-tab="problems" data-rp-group="insights" role="tab" aria-selected="false">Problem Log</button>
@@ -536,6 +539,16 @@
       </div>
 
       <!-- ---- Weekly Log tab ---- -->
+      <div class="fw-card" data-panel="Funnel" data-rp-tab="funnel" hidden>
+        <div class="funnel-head">
+          <h3>From first visit to revenue</h3>
+          <label class="funnel-month">Month <input type="month" id="funnel-month"></label>
+          <a class="btn" id="funnel-report" href="/report/monthly" target="_blank" rel="noopener">Open the monthly report</a>
+        </div>
+        <p class="view-intro">Each step and how many made it from the step before. Website numbers come from the site's cookie-free counter (page and date only).</p>
+        <div id="funnel-body"><p class="empty-note">Loading...</p></div>
+      </div>
+
       <div class="fw-card" data-panel="03 · Weekly log" data-rp-tab="scorecard" hidden>
         <form class="entry-form" id="scorecard-form">
           <div class="form-title">Log a week</div>
@@ -1396,16 +1409,72 @@
       <div id="glossary-body"></div>
     </div>
 
-  </main>
+    </section>
+
+    <!-- ================= SETTINGS ================= -->
+    <section class="view" data-view="settings" hidden>
+      <div class="view-head"><h2>Settings</h2><span class="tag" id="settings-who"></span></div>
+
+      <div class="fw-card">
+        <h3>Your account</h3>
+        <p class="view-intro" id="acct-shared-note" hidden>You're signed in with the original practice password. Create your own owner account under People, sign in with it, then turn on two-step sign-in.</p>
+        <div id="acct-own">
+          <form id="pw-form" class="settings-form">
+            <label>Current password<input type="password" id="pw-current" autocomplete="current-password" required></label>
+            <label>New password (10+ characters)<input type="password" id="pw-next" autocomplete="new-password" minlength="10" required></label>
+            <button type="submit" class="btn">Change password</button> <span class="form-msg" id="pw-msg" role="status"></span>
+          </form>
+          <h4 class="settings-h4">Two-step sign-in</h4>
+          <p class="view-intro" id="twostep-status"></p>
+          <div id="twostep-setup" hidden>
+            <p class="view-intro">In Google Authenticator, Microsoft Authenticator, 1Password, or a similar app, add an account with this key (or tap the link on your phone), then enter the 6-digit code it shows.</p>
+            <p><code id="twostep-secret" class="secret-key"></code> <a id="twostep-link" href="#">Open in authenticator app</a></p>
+          </div>
+          <form id="twostep-form" class="settings-form">
+            <label id="twostep-code-label" hidden>6-digit code<input type="text" id="twostep-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7"></label>
+            <button type="button" class="btn" id="twostep-start">Turn on two-step sign-in</button>
+            <button type="submit" class="btn" id="twostep-confirm" hidden>Confirm code</button>
+            <button type="button" class="btn secondary" id="twostep-off" hidden>Turn off</button>
+            <span class="form-msg" id="twostep-msg" role="status"></span>
+          </form>
+        </div>
+      </div>
+
+      <div class="fw-card owner-only">
+        <h3>People</h3>
+        <p class="view-intro"><strong>Owner</strong>: everything. <strong>Staff</strong>: runs the practice; no people, settings, or My Desk. <strong>Board</strong>: can see everything except My Desk, can't change anything.</p>
+        <div class="table-wrap"><table class="prospect-table" id="people-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Two-step</th><th>Last sign-in</th><th></th></tr></thead><tbody><tr><td colspan="6" class="empty-note">Loading...</td></tr></tbody></table></div>
+        <form id="person-form" class="settings-form settings-grid">
+          <label>Name<input type="text" id="person-name" maxlength="120"></label>
+          <label>Email<input type="email" id="person-email" required></label>
+          <label>Role<select id="person-role"><option value="staff">Staff</option><option value="board">Board (view only)</option><option value="owner">Owner</option></select></label>
+          <label>Temporary password<input type="text" id="person-password" minlength="10" required placeholder="10+ characters; they change it"></label>
+          <div><button type="submit" class="btn">Add person</button> <span class="form-msg" id="person-msg" role="status"></span></div>
+        </form>
+      </div>
+
+      <div class="fw-card owner-only">
+        <h3>Sign-in rules</h3>
+        <label class="check-row"><input type="checkbox" id="shared-off"> Turn off the original practice password (everyone signs in with their own email)</label>
+        <p class="view-intro">Turning on two-step sign-in for an owner account turns this off automatically, so the old password can't be used to skip the code.</p>
+        <span class="form-msg" id="shared-msg" role="status"></span>
+      </div>
+
+      <div class="fw-card owner-only">
+        <h3>Organization profile</h3>
+        <p class="view-intro">Name, brand, links, offers, and which areas are on come from one file, <code>org.config.json</code>, shared with the InstitutionalOS console and the website. To set this system up for another organization, see the setup checklist in <code>docs/NEW-ORGANIZATION.md</code>.</p>
+        <dl class="org-summary" id="org-summary"></dl>
+      </div>
     </section>
 
   </main>
 </div>
 
 <footer>
-  <div class="wrap">The Frankly Inspired Operating System &middot; internal tool, not for client distribution &middot; data stored here stays inside Frankly Inspired and Associates.</div>
+  <div class="wrap"><span data-org="name">Frankly Inspired and Associates</span> &middot; Operations &middot; internal tool, not for client distribution.</div>
 </footer>
 
+<script src="/org.js" defer></script>
 <script src="/app.js" defer></script>
 <script>
 // ---------- InstitutionalOS embed + two-way sync with Prospecting ----------

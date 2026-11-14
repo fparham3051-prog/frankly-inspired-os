@@ -13,15 +13,23 @@
 </head>
 <body class="login-body">
   <div class="login-card">
-    <div class="login-mark"><span class="login-f">F</span><span class="login-word">Frankly Inspired <span style="font-weight:500;color:var(--ink-soft);">and Associates</span></span></div>
-    <h1>The Operating System</h1>
-    <p class="sub">Enter the practice password to continue.</p>
-    <p class="login-error" id="login-error"></p>
+    <div class="login-mark"><span class="login-f">F</span><span class="login-word" data-org="name">Frankly Inspired and Associates</span></div>
+    <h1>Operations</h1>
+    <p class="sub">Sign in with your email and password. Using the original practice password? Leave email blank.</p>
+    <p class="login-error" id="login-error" role="alert"></p>
     <form id="login-form">
-      <input type="password" id="login-password" placeholder="Password" autofocus required>
-      <button type="submit" class="btn">Enter</button>
+      <label class="sr-only" for="login-email">Email</label>
+      <input type="email" id="login-email" placeholder="Email" autocomplete="username" autofocus>
+      <label class="sr-only" for="login-password">Password</label>
+      <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required>
+      <div id="code-row" hidden>
+        <label class="sr-only" for="login-code">6-digit code</label>
+        <input type="text" id="login-code" placeholder="6-digit code from your authenticator app" inputmode="numeric" autocomplete="one-time-code" maxlength="7">
+      </div>
+      <button type="submit" class="btn">Sign in</button>
     </form>
   </div>
+  <script src="/org.js" defer></script>
   <script src="/login.js"></script>
 </body>
 </html>

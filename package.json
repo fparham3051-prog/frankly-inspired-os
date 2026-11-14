@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "smoke": "node scripts/smoke-test.js"
+    "smoke": "node scripts/smoke-test.js",
+    "test": "node --check server.js && node --check accounts.js && node --check marketScan.js && node -e \"new Function(require('fs').readFileSync('public/app.js','utf8'))\" && node test/run.js",
+    "restore": "node scripts/restore-backup.js"
   },
   "engines": {
     "node": ">=18"

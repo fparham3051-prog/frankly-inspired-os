@@ -3945,28 +3945,7 @@
   }
   initGivingLandscapeStatic();
 
-  // ---------- process library (static reference) ----------
-  var PROCESS_DOCS = [
-    {title:"Fundraising Fluency", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/3685944c-47a2-43b8-9e43-5b5061caa685"},
-    {title:"The Build Before the Ask", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/f4a695e3-709c-418c-8b67-ba3401224b3a"},
-    {title:"Zero to Portfolio", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/f8bde11d-1bcc-4814-8cdb-2e53387fd63c"},
-    {title:"The Funding Pathway Finder", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/c82a297b-f31c-4235-88b5-50bb4ee4fe4c"},
-    {title:"The Governing Foundation", type:"Client curriculum, internal", feeds:"Delivery material", url:"https://claude.ai/code/artifact/8e82bfc1-080d-429c-8cce-4a859deb5ac8"},
-    {title:"Signal Before System", type:"Practice strategy", feeds:"Vision, packaging rules", url:"https://claude.ai/code/artifact/c12391ca-aa22-431a-9531-8002beca1626"},
-    {title:"Before Scale", type:"Practice strategy", feeds:"Data, the validation gate", url:"https://claude.ai/code/artifact/f9ef9433-9743-4044-86ea-d2272fcb4c09"},
-    {title:"Call Before You Build", type:"Practice playbook", feeds:"Data, Pipeline sourcing", url:"https://claude.ai/code/artifact/c934e1fd-4577-490c-a364-7a3d8e26c5b4"},
-    {title:"The InstitutionalOS Runbook", type:"Practice playbook", feeds:"Process, the run of show", url:"https://claude.ai/code/artifact/b971a0f8-1f32-4f84-a575-429b0430db4b"},
-    {title:"Your Governing Foundation", type:"Client curriculum, client safe", feeds:"Delivery material", url:"https://claude.ai/code/artifact/c96f2946-a928-47b3-b49e-cfbc554c523d"},
-    {title:"The InstitutionalOS Workbook", type:"Client workbook", feeds:"Process, the paper trail", url:"https://claude.ai/code/artifact/7b0513a3-678a-43f7-9e86-ba58b20909f6"},
-    {title:"Your Fundraising Fluency", type:"Client curriculum, client safe", feeds:"Delivery material", url:"https://claude.ai/code/artifact/057b68e9-111e-48b7-a0e7-44f2298f2209"},
-    {title:"Your Build Before the Ask", type:"Client curriculum, client safe", feeds:"Delivery material", url:"https://claude.ai/code/artifact/ae21622f-3a7f-42ba-a2e6-a828b3689197"},
-    {title:"Your Zero to Portfolio", type:"Client curriculum, client safe", feeds:"Delivery material", url:"https://claude.ai/code/artifact/99638d09-1324-4f56-a745-268d9d6a9d58"},
-    {title:"Your Funding Pathway Finder", type:"Client curriculum, client safe", feeds:"Delivery material", url:"https://claude.ai/code/artifact/85faf60e-ee5c-4f8c-b7d6-d16879100fe1"},
-    {title:"The Offering Map", type:"Practice strategy", feeds:"Vision, how it all connects", url:"https://claude.ai/code/artifact/d1094121-cd04-4ae1-b2d3-ab99be088102"}
-  ];
-  document.getElementById("process-rows").innerHTML = PROCESS_DOCS.map(function(d){
-    return '<tr><td><strong>' + esc(d.title) + '</strong></td><td class="dim">' + esc(d.type) + '</td><td><span class="pill">' + esc(d.feeds) + '</span></td><td><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Open</a></td></tr>';
-  }).join("") + '<tr><td><strong>The Frankly Inspired Operating System</strong></td><td class="dim">Operating system</td><td><span class="pill gold">All five components, live</span></td><td class="dim">You are here</td></tr>';
+  // Process library: see public/library.js (stored in the database now).
 
   // ---------- playbook library ----------
   // Every gift already carries its own case-study read (impact, trend

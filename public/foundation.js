@@ -601,12 +601,11 @@
     if (!card || !list) return;
     var m = (window.ORG && window.ORG.modules) || {};
     var on = { gm: m.grantmaking !== false, fr: m.fundraising !== false, gv: m.governance !== false };
-    card.hidden = !(on.gm || on.fr || on.gv);
-    var grid = card.parentElement; if (grid) grid.classList.toggle("has-four", !card.hidden);
-    if (card.hidden) return;
+    card.hidden = false; // checklists are always on; the foundation areas add to it when switched on
+    var grid = card.parentElement; if (grid) grid.classList.add("has-four");
     var skip = Promise.resolve(null);
-    Promise.all([on.gm ? api("/api/gm/summary").catch(function () { return null; }) : skip, on.fr ? api("/api/fr/summary").catch(function () { return null; }) : skip, on.gv ? api("/api/gov/summary").catch(function () { return null; }) : skip]).then(function (r) {
-      var gm = r[0], fr = r[1], gv = r[2], items = [], t = today();
+    Promise.all([on.gm ? api("/api/gm/summary").catch(function () { return null; }) : skip, on.fr ? api("/api/fr/summary").catch(function () { return null; }) : skip, on.gv ? api("/api/gov/summary").catch(function () { return null; }) : skip, api("/api/proc/summary").catch(function () { return null; })]).then(function (r) {
+      var gm = r[0], fr = r[1], gv = r[2], pr = r[3], items = [], t = today();
       var soon = new Date(); soon.setDate(soon.getDate() + 14); var in14 = soon.toISOString().slice(0, 10);
       function add(rank, area, text, go) { items.push({ rank: rank, area: area, text: text, go: go }); }
       if (gm) {
@@ -629,6 +628,12 @@
         if (gv.coi.started && gv.coi.unsigned.length) add(1, "Board", gv.coi.unsigned.length + " conflict statement" + (gv.coi.unsigned.length === 1 ? "" : "s") + " unsigned for " + gv.coi.year, "board:gv-coi");
         if (gv.minutesToApprove.length) add(2, "Board", gv.minutesToApprove.length + " set" + (gv.minutesToApprove.length === 1 ? "" : "s") + " of minutes to approve at the next meeting", "board:gv-meetings");
       }
+      if (pr) {
+        pr.stepsDue.slice(0, 4).forEach(function (x) { add(x.overdue ? 0 : 1, "Checklist: " + x.subjectLabel, x.text + (x.overdue ? "" : " (" + fmtDate(x.dueOn) + ")"), "run:" + x.runId); });
+        var mods = (window.ORG && window.ORG.modules) || {}, areaMod = { grants: "grantmaking", fundraising: "fundraising", board: "governance", institutionalos: "institutionalos", consulting: "consulting" };
+        var sug = pr.suggestions.filter(function (x) { return !areaMod[x.area] || mods[areaMod[x.area]] !== false; });
+        if (sug.length) add(2, "Process Library", sug.length === 1 ? "Ready to start: " + sug[0].processName + " for " + sug[0].subjectLabel : sug.length + " checklists ready to start", "lib:lb-work");
+      }
       items.sort(function (a, b) { return a.rank - b.rank; });
       var over = items.filter(function (i) { return i.rank === 0; }).length;
       var sub = document.getElementById("today-foundation-sub");
@@ -636,7 +641,7 @@
       list.innerHTML = items.length ? items.slice(0, 8).map(function (i) {
         return "<li" + (i.rank === 0 ? ' class="row-overdue"' : "") + '><span><span class="who">' + esc(i.area) + '</span><br><a href="#" data-today-go="' + esc(i.go) + '">' + esc(i.text) + "</a></span>" + (i.rank === 0 ? '<span class="when"><span class="overdue-tag">Overdue</span></span>' : "") + "</li>";
       }).join("") + (items.length > 8 ? '<li class="fd-small fd-dim" style="border:none">and ' + (items.length - 8) + " more</li>" : "")
-        : '<li class="empty-note fd-empty-art" style="border:none;">' + EMPTY_ART + "Nothing due for grants, gifts, or the board.</li>";
+        : '<li class="empty-note fd-empty-art" style="border:none;">' + EMPTY_ART + "Nothing else due.</li>";
     });
   }
   document.addEventListener("click", function (e) {
@@ -644,13 +649,15 @@
     if (b) {
       e.preventDefault();
       var parts = b.getAttribute("data-today-go").split(":"), kind = parts[0], arg = parts[1];
-      var view = { grants: "grants", fundraising: "fundraising", donor: "fundraising", board: "board", meeting: "board" }[kind];
+      var view = { grants: "grants", fundraising: "fundraising", donor: "fundraising", board: "board", meeting: "board", lib: "process", run: "process" }[kind];
       var rail = document.querySelector('.rail-btn[data-view="' + view + '"]');
       if (rail) rail.click();
       setTimeout(function () {
         if (kind === "grants") gmRender(arg);
         else if (kind === "fundraising") frRender(arg);
         else if (kind === "donor") frDonorDetail(arg);
+        else if (kind === "lib" && window.LB) window.LB.render(arg);
+        else if (kind === "run" && window.LB) window.LB.run(arg);
         else if (window.GV) { if (kind === "board") window.GV.render(arg); else window.GV.meeting(arg); }
       }, 30);
       return;

@@ -67,7 +67,7 @@
     <button type="button" class="rail-btn" data-view="fieldintel" data-module="fieldIntelligence">Field Intelligence</button>
     <div class="rail-label">Library</div>
     <button type="button" class="rail-btn" data-view="playbook">Playbooks</button>
-    <button type="button" class="rail-btn" data-view="process">Processes</button>
+    <button type="button" class="rail-btn" data-view="process">Process Library</button>
   </nav>
 
   <main id="main-content" tabindex="-1">
@@ -100,8 +100,8 @@
           <a href="https://grantpass-dashboard.onrender.com/" class="today-more">Open client records &rarr;</a>
         </div>
         <div class="fw-card today-card" id="today-foundation-card" hidden>
-          <h3>Grants, gifts &amp; board</h3>
-          <p class="today-sub" id="today-foundation-sub">Payments and reports due, donors to thank, and what the board needs.</p>
+          <h3>Also due</h3>
+          <p class="today-sub" id="today-foundation-sub">Checklist steps, grants, gifts, and what the board needs.</p>
           <ul class="action-list" id="today-foundation"><li class="empty-note" style="border:none;">Loading...</li></ul>
         </div>
       </div>
@@ -1108,15 +1108,18 @@
 
     <!-- ================= PROCESS LIBRARY ================= -->
     <section class="view" data-view="process" hidden>
-      <div class="view-head"><h2>Process Library</h2><span class="tag">the documented core process</span></div>
-      <p class="view-intro">EOS calls this component Process, the handful of workflows written down well enough that anyone could follow them. For Frankly Inspired, that is the seventeen document series itself. Nothing below duplicates that content, it is the index back to it, grouped by what each piece actually feeds.</p>
-
-      <div class="fw-card" data-panel="01 · Document index">
-        <div class="table-wrap"><table>
-          <thead><tr><th>Document</th><th>Type</th><th>Feeds</th><th></th></tr></thead>
-          <tbody id="process-rows"></tbody>
-        </table></div>
+      <div class="view-head"><h2>Process Library</h2><span class="tag">how we work &middot; what we deliver</span></div>
+      <p class="view-intro">The recurring jobs, written as checklists you can start for a client, a grant, a meeting, or a month, plus the materials you hand to clients. When something in the system calls for a checklist, it's suggested here and on Today.</p>
+      <div class="filter-row fd-tabs" role="tablist">
+        <button type="button" class="filter-btn is-active" data-lb-tab="lb-work" role="tab">How we work</button>
+        <button type="button" class="filter-btn" data-lb-tab="lb-running" role="tab">In progress</button>
+        <button type="button" class="filter-btn" data-lb-tab="lb-deliver" role="tab">What we deliver</button>
       </div>
+      <div class="fd-panel" data-lb-panel="lb-work"></div>
+      <div class="fd-panel" data-lb-panel="lb-running" hidden></div>
+      <div class="fd-panel" data-lb-panel="lb-deliver" hidden></div>
+      <div class="fd-panel" data-lb-panel="lb-process" hidden></div>
+      <div class="fd-panel" data-lb-panel="lb-run" hidden></div>
     </section>
 
     <section class="view" data-view="advancement" hidden>
@@ -1551,6 +1554,7 @@
 <script src="/app.js" defer></script>
 <script src="/foundation.js" defer></script>
 <script src="/governance.js" defer></script>
+<script src="/library.js" defer></script>
 <script>
 // ---------- InstitutionalOS embed + two-way sync with Prospecting ----------
 // The nav button below opens InstitutionalOS's live scorecard in an iframe.

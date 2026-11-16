@@ -799,3 +799,55 @@ CREATE TABLE IF NOT EXISTS gov_policies (
   created_at TEXT,
   archived_at TEXT
 );
+
+-- =====================================================================
+-- Process library (processes.js). "How we work": processes as checklists,
+-- each with an owner, when it's used, and a review date; "runs" are one use
+-- of a checklist for a client, grant, meeting, or month. "What we deliver":
+-- client materials, internal or client-safe.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS proc_processes (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  area TEXT DEFAULT 'consulting',        -- consulting | institutionalos | grants | fundraising | board | operations
+  purpose TEXT DEFAULT '',
+  used_when TEXT DEFAULT '',             -- plain words: when this process starts
+  owner TEXT DEFAULT '',
+  steps TEXT DEFAULT '[]',               -- JSON [{text, days}] days = due this many days after starting ("" = no date)
+  doc_link TEXT DEFAULT '',
+  suggest_on TEXT DEFAULT '',            -- pipeline:lead | pipeline:assessment | pipeline:engaged | pipeline:graduated | grant:approved | meeting:upcoming | member:new | month:end | year:end
+  review_every_months INTEGER DEFAULT 12,
+  last_reviewed TEXT DEFAULT '',
+  version INTEGER DEFAULT 1,
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS proc_runs (
+  id TEXT PRIMARY KEY,
+  process_id TEXT REFERENCES proc_processes(id),
+  process_name TEXT DEFAULT '',
+  subject_kind TEXT DEFAULT 'other',     -- pipeline | grant | meeting | member | month | year | other
+  subject_id TEXT DEFAULT '',
+  subject_label TEXT DEFAULT '',
+  started_on TEXT DEFAULT '',
+  steps TEXT DEFAULT '[]',               -- JSON [{text, dueOn, doneOn, by}]
+  completed_on TEXT DEFAULT '',
+  skipped BOOLEAN DEFAULT false,         -- "not needed" for a suggestion
+  owner TEXT DEFAULT '',
+  created_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS proc_runs_subject ON proc_runs (process_id, subject_kind, subject_id);
+CREATE TABLE IF NOT EXISTS lib_materials (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  kind TEXT DEFAULT 'curriculum',        -- curriculum | workbook | playbook | strategy | template | policy | other
+  audience TEXT DEFAULT 'internal',      -- internal | client-safe
+  area TEXT DEFAULT 'consulting',
+  link TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);

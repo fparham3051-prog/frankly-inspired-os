@@ -869,3 +869,18 @@ a.btn{text-decoration:none;display:inline-block}
   .btn.fd-sm{padding:7px 11px;}
   .today-card .action-list li{gap:8px;}
 }
+
+/* ---------- Process Library (public/library.js) ---------- */
+.lb-proc{padding:12px 0;border-bottom:1px solid var(--line);}.lb-proc:last-child{border-bottom:0}
+.lb-proc p{margin:4px 0 6px}
+.lb-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.lb-suggest{border-left:4px solid var(--accent);}
+.lb-steps{margin:10px 0 12px;padding-left:22px}.lb-steps li{margin:6px 0}
+.lb-check{list-style:none;margin:14px 0;padding:0}
+.lb-check li{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.lb-check label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1 1 280px}
+.lb-check input{width:18px;height:18px;margin-top:3px;flex:none}
+.lb-check li.is-done label span{color:var(--ink-soft);text-decoration:line-through}
+.lb-note{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+.role-board .lb-btns,.role-board [data-lb-start]{display:none !important}
+.role-board .lb-check input{pointer-events:none}

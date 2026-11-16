@@ -278,7 +278,7 @@ async function t(name, fn) {
   });
   await t("foundation: new tables are in the full backup", async () => {
     const r = await req("anon", "GET", "/api/admin/backup-all", null, { "X-Admin-Token": "test-token" });
-    for (const tbl of ["gov_members", "gov_meetings", "gov_coi", "gov_checklist", "gov_policies", "gm_programs", "gm_applications", "gm_reviews", "gm_payments", "gm_reports", "fr_donors", "fr_gifts", "fr_pledges", "fr_campaigns", "fr_touches"]) assert.ok(Array.isArray(r.data.operations.tables[tbl]), tbl);
+    for (const tbl of ["proc_processes", "proc_runs", "lib_materials", "gov_members", "gov_meetings", "gov_coi", "gov_checklist", "gov_policies", "gm_programs", "gm_applications", "gm_reviews", "gm_payments", "gm_reports", "fr_donors", "fr_gifts", "fr_pledges", "fr_campaigns", "fr_touches"]) assert.ok(Array.isArray(r.data.operations.tables[tbl]), tbl);
     assert.ok(r.data.operations.tables.fr_gifts.length >= 7);
   });
 
@@ -362,6 +362,57 @@ async function t(name, fn) {
   await t("reminders: relayed through this app with the status key only", async () => {
     assert.strictEqual((await req("anon", "POST", "/api/admin/reminders/recheck", {})).status, 401);
     assert.strictEqual((await req("anon", "POST", "/api/admin/reminders/nope", {}, { "X-Admin-Token": "test-token" })).status, 404);
+  });
+
+  // ---------------- Process Library ----------------
+  const P = {};
+  await t("library: starter checklists and materials load once", async () => {
+    const r = await req("owner1", "GET", "/api/proc/processes");
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.data.items.length, 10);
+    P.diag = r.data.items.find((x) => x.name === "Running an InstitutionalOS Diagnostic");
+    assert.ok(P.diag && P.diag.steps.length === 10 && P.diag.suggestOn === "pipeline:assessment");
+    assert.match(P.diag.docLink, /^https:/, "linked to the runbook");
+    const m = (await req("owner1", "GET", "/api/proc/materials")).data.items;
+    assert.strictEqual(m.length, 16);
+    assert.ok(m.some((x) => x.audience === "client-safe") && m.some((x) => x.audience === "internal"));
+    await req("owner1", "DELETE", "/api/proc/materials/" + m[0].id);
+    assert.strictEqual((await req("owner1", "GET", "/api/proc/materials")).data.items.length, 15, "removing one doesn't reload the starter set");
+    assert.strictEqual((await req("owner1", "GET", "/api/proc/processes")).data.items.length, 10);
+  });
+  await t("library: a deal at the Diagnostic stage suggests the Diagnostic checklist", async () => {
+    const d = await req("owner1", "POST", "/api/pipeline", { name: "Dana Ruiz", org: "Riverside Arts Collective", stage: "assessment" });
+    assert.ok(d.status === 200 || d.status === 201, JSON.stringify(d.data));
+    const s = (await req("owner1", "GET", "/api/proc/summary")).data;
+    P.sugg = s.suggestions.find((x) => x.subjectLabel === "Riverside Arts Collective" && x.processId === P.diag.id);
+    assert.ok(P.sugg, JSON.stringify(s.suggestions));
+  });
+  await t("library: start it, steps get due dates, ticking every step finishes it", async () => {
+    const r = await req("owner1", "POST", "/api/proc/start", Object.assign({}, P.sugg, { startedOn: "2026-12-01" }));
+    assert.strictEqual(r.status, 201);
+    const run = r.data.item;
+    assert.strictEqual(run.total, 10); assert.strictEqual(run.steps[0].dueOn, "2026-12-01"); assert.strictEqual(run.steps[5].dueOn, "2026-12-22");
+    const s = (await req("owner1", "GET", "/api/proc/summary")).data;
+    assert.ok(!s.suggestions.some((x) => x.subjectLabel === "Riverside Arts Collective" && x.processId === P.diag.id), "no longer suggested");
+    let last;
+    for (let i = 0; i < 10; i++) last = (await req("owner1", "PATCH", "/api/proc/runs/" + run.id, { stepIndex: i, done: true })).data.item;
+    assert.ok(last.completedOn, "finished"); assert.ok(last.steps[0].by, "records who ticked it");
+    const un = (await req("owner1", "PATCH", "/api/proc/runs/" + run.id, { stepIndex: 3, done: false })).data.item;
+    assert.strictEqual(un.completedOn, "", "unticking reopens it");
+  });
+  await t("library: 'not needed' hides a suggestion; editing steps makes a new version", async () => {
+    await req("owner1", "POST", "/api/pipeline", { name: "Sam", org: "Harborview Clinic", stage: "lead" });
+    const s = (await req("owner1", "GET", "/api/proc/summary")).data.suggestions.find((x) => x.subjectLabel === "Harborview Clinic");
+    assert.ok(s);
+    await req("owner1", "POST", "/api/proc/skip", s);
+    assert.ok(!(await req("owner1", "GET", "/api/proc/summary")).data.suggestions.some((x) => x.subjectLabel === "Harborview Clinic"));
+    const e = await req("owner1", "PATCH", "/api/proc/processes/" + P.diag.id, { steps: "Send the letter (day 0)\nScore the areas (day 21)\nReadout" });
+    assert.strictEqual(e.data.item.version, 2);
+    assert.deepStrictEqual(e.data.item.steps, [{ text: "Send the letter", days: 0 }, { text: "Score the areas", days: 21 }, { text: "Readout", days: "" }]);
+  });
+  await t("library: board accounts can read but not start or change checklists", async () => {
+    assert.strictEqual((await req("board2", "GET", "/api/proc/summary")).status, 200);
+    assert.strictEqual((await req("board2", "POST", "/api/proc/start", { processId: P.diag.id })).status, 403);
   });
 
   srv.kill();

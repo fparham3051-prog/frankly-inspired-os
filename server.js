@@ -1782,7 +1782,7 @@ async function automationTick() {
   const C = require("./contacts"), A = require("./processes-auto"), G = require("./gmail");
   const out = { at: new Date().toISOString() };
   try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
-  try { await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
+  try { await require("./processes").ensureStarter(pool); await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
   const drafts = (await pool.query("SELECT o.id FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND r.archived_at IS NULL").catch(() => ({ rows: [] }))).rows.map((r) => r.id);
   const seen = new Set(JSON.parse((await pool.query("SELECT value FROM app_settings WHERE key = 'tick_notified'").catch(() => ({ rows: [] }))).rows[0]?.value || "[]"));

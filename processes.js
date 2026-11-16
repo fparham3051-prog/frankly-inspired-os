@@ -408,4 +408,4 @@ function mount(app, { pool, requireAuth }) {
   }));
 }
 
-module.exports = { mount, STARTER };
+module.exports = { mount, STARTER, ensureStarter };

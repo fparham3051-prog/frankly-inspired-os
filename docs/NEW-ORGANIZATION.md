@@ -29,9 +29,10 @@ identical copy: `frankly-inspired-os/org.config.json`,
 4. **Set the keys** listed in docs/SECURITY.md on each service. Generate new values; never reuse another organization's keys.
 5. **First sign-in:** open the operations app, sign in with `ADMIN_PASSWORD`, go to Settings > People, add yourself as Owner, sign in with your email, turn on two-step sign-in (this also turns off the shared password).
 6. **InstitutionalOS:** open the console, register the owner's email, and set `INTEGRATION_USER_EMAIL` on the InstitutionalOS API to that email.
-7. **Scheduled tasks:** copy the four tasks (morning health check, daily reminders, nightly backup and retention, weekly market scan if used), changing the addresses and keys.
-8. **Run the tests** in each repository (`npm test`, `python3 tests/run_tests.py`) against an empty test database, then deploy.
-9. **Custom addresses:** add the domain to each Render service and the CNAME records at the domain registrar.
+7. **Connect email:** in Google Cloud, create an OAuth client (Google Auth Platform: fill in Branding, Audience External and published "In production", a Web application client with the redirect address shown in Settings > Connected email, and the Gmail API enabled). Paste the Client ID and secret in Settings > Connected email and connect the account messages should go out from.
+8. **Scheduled tasks:** copy the tasks (morning health check, daily reminders, nightly backup and retention, checklist automation every 3 hours, weekly market scan if used), changing the addresses and keys.
+9. **Run the tests** in each repository (`npm test`, `python3 tests/run_tests.py`) against an empty test database, then deploy.
+10. **Custom addresses:** add the domain to each Render service and the CNAME records at the domain registrar.
 
 ## Modules
 

@@ -851,3 +851,37 @@ CREATE TABLE IF NOT EXISTS lib_materials (
   updated_at TEXT,
   archived_at TEXT
 );
+
+-- Step automation (processes-auto.js). Steps carry optional keys:
+--   auto     what in the system ticks the step ("sent" = its message went out)
+--   action   a one-click link for the step
+--   message  a message template; drafts wait in proc_outbox for approval
+ALTER TABLE proc_runs ADD COLUMN IF NOT EXISTS contact_name TEXT DEFAULT '';
+ALTER TABLE proc_runs ADD COLUMN IF NOT EXISTS contact_email TEXT DEFAULT '';
+CREATE TABLE IF NOT EXISTS proc_outbox (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES proc_runs(id),
+  step_index INTEGER NOT NULL,
+  kind TEXT DEFAULT 'first',             -- first | reminder
+  to_email TEXT DEFAULT '',
+  to_name TEXT DEFAULT '',
+  subject TEXT DEFAULT '',
+  body TEXT DEFAULT '',
+  status TEXT DEFAULT 'draft',           -- draft | sent | opened | discarded | failed
+  approved_by TEXT DEFAULT '',
+  sent_at TEXT DEFAULT '',
+  error TEXT DEFAULT '',
+  created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS proc_outbox_run ON proc_outbox (run_id, step_index);
+CREATE TABLE IF NOT EXISTS proc_activity (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES proc_runs(id),
+  at TEXT,
+  text TEXT DEFAULT ''
+);
+-- Grantee report form: one private link per report due.
+ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS token TEXT;
+ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS submitted_by TEXT DEFAULT '';
+ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS link TEXT DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS gm_reports_token ON gm_reports (token);

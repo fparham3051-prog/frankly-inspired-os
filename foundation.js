@@ -70,7 +70,7 @@ const SPECS = {
   },
   gm_reports: {
     required: ["applicationId"], hardDelete: true,
-    fields: { applicationId: ["application_id", "s"], kind: ["kind", "s"], dueOn: ["due_on", "d"], receivedOn: ["received_on", "d"], summary: ["summary", "s"] },
+    fields: { applicationId: ["application_id", "s"], kind: ["kind", "s"], dueOn: ["due_on", "d"], receivedOn: ["received_on", "d"], summary: ["summary", "s"], token: ["token", "ro"], link: ["link", "s"], submittedBy: ["submitted_by", "ro"] },
   },
   fr_campaigns: {
     required: ["name"],
@@ -452,7 +452,7 @@ function mount(app, { pool, requireAuth }) {
       await client.query("DELETE FROM gm_reports WHERE application_id = $1 AND received_on = ''", [a.id]);
       const t = nowIso();
       for (const p of payments) await client.query("INSERT INTO gm_payments (id, application_id, due_on, amount, condition, created_at) VALUES ($1,$2,$3,$4,$5,$6)", [newId(), a.id, coerce("d", p.dueOn), coerce("n", p.amount), coerce("s", p.condition || ""), t]);
-      for (const r of reports) await client.query("INSERT INTO gm_reports (id, application_id, kind, due_on, created_at) VALUES ($1,$2,$3,$4,$5)", [newId(), a.id, ["interim", "final", "other"].includes(r.kind) ? r.kind : "other", coerce("d", r.dueOn), t]);
+      for (const r of reports) await client.query("INSERT INTO gm_reports (id, application_id, kind, due_on, created_at, token) VALUES ($1,$2,$3,$4,$5,$6)", [newId(), a.id, ["interim", "final", "other"].includes(r.kind) ? r.kind : "other", coerce("d", r.dueOn), t, crypto.randomBytes(18).toString("base64url")]);
       await client.query("UPDATE gm_applications SET status = 'approved', amount_awarded = $1, award_start = $2, award_end = $3, decision_notes = COALESCE(NULLIF($4,''), decision_notes), decided_at = $5, updated_at = $5 WHERE id = $6",
         [amount, start, end, String(b.notes || ""), t, a.id]);
       await client.query("COMMIT");
@@ -537,6 +537,61 @@ ${signature()}</div>`;
       note: "Click any text to edit it before printing. Nothing here is saved. Standard conditions live in org.config.json (grantmaking.conditions); have counsel review them once.",
       body,
     }));
+  });
+
+  // Grantee report form: one private link per report due (gm_reports.token).
+  // The grantee writes what happened and can add a link to documents; the
+  // report is marked received and the grant's checklist ticks itself.
+  function reportPage(rep, app2, message) {
+    const { navy, gold } = brand();
+    const o = ORG.org || {};
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Grant report | ${esc(o.name || "")}</title><link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>:root{--navy:${navy};--gold:${gold}}*{box-sizing:border-box}body{margin:0;background:#F3F5F7;color:#23282D;font:16px/1.6 Inter,system-ui,sans-serif}
+header{background:var(--navy);color:#fff;padding:18px 16px}header .in,main{max-width:720px;margin:0 auto}header b{font-family:"Playfair Display",Georgia,serif;font-size:20px}
+main{background:#fff;margin:24px auto;padding:32px clamp(16px,5vw,44px);border-radius:12px}h1{font-family:"Playfair Display",Georgia,serif;color:var(--navy);margin:0 0 8px;font-size:26px}
+form{display:grid;gap:14px;margin-top:18px}label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:14px;color:#33404C}
+input,textarea{font:inherit;font-weight:400;padding:10px 12px;border:1px solid #B8C1CA;border-radius:8px;width:100%}textarea{min-height:110px}
+button{font:inherit;font-weight:700;padding:12px 18px;border-radius:8px;border:0;background:var(--navy);color:#fff;cursor:pointer;justify-self:start}
+.msg{padding:14px 16px;border-radius:8px;background:#EEF6F0;color:#1E5631;font-weight:600}.muted{color:#55606B;font-size:14px}.pre{white-space:pre-wrap}</style></head>
+<body><header><div class="in"><b>${esc(o.name || "")}</b></div></header><main>
+${!rep ? "<h1>Link not found</h1><p>This link isn't valid. Reply to the email it came in and we'll send a new one.</p>" : `
+<h1>${rep.kind === "final" ? "Final" : rep.kind === "interim" ? "Interim" : ""} grant report</h1>
+<p class="muted">${esc(app2.org_name)}${app2.project_title ? " &middot; " + esc(app2.project_title) : ""}${rep.due_on ? " &middot; due " + esc(longDate(rep.due_on)) : ""}</p>
+${message ? `<p class="msg">${esc(message)}</p>` : ""}
+${rep.received_on ? `<p class="msg">Received ${esc(longDate(rep.received_on))}. Thank you.</p><p class="pre">${esc(rep.summary || "")}</p><p class="muted">Need to add something? Submit again below; it's added to what you sent.</p>` : ""}
+<form method="post" action="/grant-report/${esc(rep.token)}">
+<label>What have you done with the grant so far, and for whom?<textarea name="done" required maxlength="5000"></textarea></label>
+<label>What's working, and what has been harder than expected?<textarea name="learned" maxlength="5000"></textarea></label>
+<label>${rep.kind === "final" ? "What comes next for this work?" : "Anything that has changed in your plans, budget, or leadership?"}<textarea name="next" maxlength="5000"></textarea></label>
+<label>Link to photos, numbers, or documents (optional)<input name="link" type="text" maxlength="500" placeholder="A shared folder or file link"></label>
+<label>Your name<input name="name" required maxlength="160" value="${esc(app2.contact_name || "")}"></label>
+<button type="submit">Submit report</button></form>`}
+</main></body></html>`;
+  }
+  const reportHits = new Map();
+  setInterval(() => reportHits.clear(), 3600000).unref();
+  async function reportByToken(token) {
+    const rep = /^[A-Za-z0-9_-]{16,80}$/.test(token) ? (await pool.query("SELECT * FROM gm_reports WHERE token = $1", [token])).rows[0] : null;
+    const app2 = rep ? (await pool.query("SELECT * FROM gm_applications WHERE id = $1", [rep.application_id])).rows[0] : null;
+    return rep && app2 ? { rep, app2 } : {};
+  }
+  app.get("/grant-report/:token", async (req, res) => {
+    const { rep, app2 } = await reportByToken(String(req.params.token));
+    res.status(rep ? 200 : 404).set("Content-Type", "text/html; charset=utf-8").set("Cache-Control", "no-store").send(reportPage(rep, app2, req.query.sent ? "Your report was received. Thank you." : ""));
+  });
+  app.post("/grant-report/:token", require("express").urlencoded({ extended: false, limit: "100kb" }), async (req, res) => {
+    const n = (reportHits.get(req.ip) || 0) + 1; reportHits.set(req.ip, n);
+    if (n > 20) return res.status(429).send("Too many attempts. Try again in an hour.");
+    const { rep, app2 } = await reportByToken(String(req.params.token));
+    if (!rep) return res.status(404).set("Content-Type", "text/html; charset=utf-8").send(reportPage(null));
+    const b = req.body || {};
+    const done = String(b.done || "").trim().slice(0, 5000), name = String(b.name || "").trim().slice(0, 160);
+    if (!done || !name) return res.status(400).set("Content-Type", "text/html; charset=utf-8").send(reportPage(rep, app2, "Please describe what you've done and add your name."));
+    const parts = [done, String(b.learned || "").trim() && "What's working and what's hard: " + String(b.learned).trim().slice(0, 5000), String(b.next || "").trim() && (rep.kind === "final" ? "What comes next: " : "Changes: ") + String(b.next).trim().slice(0, 5000)].filter(Boolean);
+    const text = (rep.summary ? rep.summary + "\n\n---\n" : "") + `Submitted ${todayIso()} by ${name}:\n` + parts.join("\n\n");
+    await pool.query("UPDATE gm_reports SET received_on = COALESCE(NULLIF(received_on, ''), $1), summary = $2, submitted_by = $3, link = COALESCE(NULLIF($4, ''), link) WHERE id = $5", [todayIso(), text.slice(0, 20000), name, String(b.link || "").trim().slice(0, 500), rep.id]);
+    res.redirect(303, `/grant-report/${rep.token}?sent=1`);
   });
 
   // Public application form

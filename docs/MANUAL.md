@@ -31,6 +31,21 @@ Every app has the same top bar: **Operations** (this app), **Clients**
     already started keep theirs.
   - *In progress*: every checklist you've started, its progress, and its next
     step. Overdue and upcoming steps also appear on Today under "Also due".
+  - *Messages to approve*: nothing goes out on its own. When a step that sends
+    a message comes up (or a follow-up is due five days after a message with
+    no response, at most two), a draft waits here. Edit the To, subject, and
+    message, then "Approve and open in my email" (your email app opens with it
+    filled in; press send there) or, once your domain is verified with Resend,
+    "Approve and send". "Don't send" sets it aside.
+  - *Steps that tick themselves*: on a checklist, a step marked "Ticks itself"
+    checks off when the system sees it happen (an invoice sent, a deal linked
+    to InstitutionalOS, a check-in logged in the client portal, a conflict
+    statement signed, a grantee report submitted, minutes approved). A step
+    with a button opens the letter, report, or screen it needs. The Activity
+    list on each checklist records every tick, draft, and approval.
+  - *Grantee reports*: each interim and final report has a private link
+    ("Copy report link" on the grant). Grantees submit there without an
+    account; the report is marked received and the grant checklist ticks.
   - *What we deliver*: client materials, marked client-safe or internal. Links
     flagged "Private link" open only for you; move those files to a shared Drive
     folder and paste the new links.

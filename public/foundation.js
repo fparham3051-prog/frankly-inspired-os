@@ -252,7 +252,7 @@
         html += '<div class="fw-card"><h3>Reports from the grantee</h3><div class="table-wrap"><table class="prospect-table fd-table"><thead><tr><th>Report</th><th>Due</th><th>Received</th><th>What it said</th><th></th></tr></thead><tbody>' +
           (d.reports.length ? d.reports.map(function (r) {
             return "<tr><td>" + esc(r.kind === "interim" ? "Interim" : r.kind === "final" ? "Final" : "Other") + "</td><td>" + esc(fmtDate(r.dueOn)) + (!r.receivedOn && r.dueOn && r.dueOn < today() ? " " + pill("Overdue", "warn") : "") + "</td><td>" + (r.receivedOn ? pill(fmtDate(r.receivedOn), "good") : '<button type="button" class="btn secondary fd-sm" data-report-in="' + esc(r.id) + '">Mark received</button>') +
-              '</td><td class="fd-small">' + esc(r.summary) + '</td><td><button type="button" class="btn secondary fd-sm" data-report-note="' + esc(r.id) + '">Add note</button> <button type="button" class="btn danger" data-del-report="' + esc(r.id) + '">Remove</button></td></tr>';
+              '</td><td class="fd-small fd-pre">' + esc(r.summary) + (r.link ? '<br><a href="' + esc(r.link) + '" target="_blank" rel="noopener">Their link</a>' : "") + '</td><td>' + (r.token && !r.receivedOn ? '<button type="button" class="btn secondary fd-sm" data-copy-report="' + esc(location.origin + "/grant-report/" + r.token) + '">Copy report link</button> ' : "") + '<button type="button" class="btn secondary fd-sm" data-report-note="' + esc(r.id) + '">Add note</button> <button type="button" class="btn danger" data-del-report="' + esc(r.id) + '">Remove</button></td></tr>';
           }).join("") : '<tr><td colspan="5" class="empty-note">No reports scheduled.</td></tr>') + "</tbody></table></div>" +
           '<form class="fd-form fd-inline" id="gm-report-form" data-id="' + esc(a.id) + '"><label>Kind<select name="kind">' + opt("interim", "Interim") + opt("final", "Final") + opt("other", "Other") + "</select></label>" + input("dueOn", "Due", "date", "", "required") + '<div><button type="submit" class="btn secondary">Add report</button></div></form>' +
           '<form class="fd-form fd-inline" id="gm-signed-form" data-id="' + esc(a.id) + '">' + input("agreementSignedOn", "Signed agreement received on", "date", a.agreementSignedOn) + '<div><button type="submit" class="btn secondary">Save</button> <span class="form-msg" role="status"></span></div></form></div>';
@@ -491,6 +491,7 @@
       return;
     }
     if ((b = e.target.closest("[data-report-in]"))) { guard(b, api("/api/gm/reports/" + b.getAttribute("data-report-in"), { method: "PATCH", body: { receivedOn: today() } }), function () { afterGm(b); }); return; }
+    if ((b = e.target.closest("[data-copy-report]"))) { var link = b.getAttribute("data-copy-report"); (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(function () { alertMsg("Report link copied. The grantee submits their report there; no account needed."); }, function () { window.prompt("Copy this link:", link); }); return; }
     if ((b = e.target.closest("[data-report-note]"))) { var note = window.prompt("What did the report say? (a sentence or two for the record)", ""); if (note) guard(b, api("/api/gm/reports/" + b.getAttribute("data-report-note"), { method: "PATCH", body: { summary: note } }), function () { afterGm(b); }); return; }
     if ((b = e.target.closest("[data-del-payment]"))) { if (confirmRemove("this payment")) guard(b, api("/api/gm/payments/" + b.getAttribute("data-del-payment"), { method: "DELETE" }), function () { afterGm(b); }); return; }
     if ((b = e.target.closest("[data-del-report]"))) { if (confirmRemove("this report")) guard(b, api("/api/gm/reports/" + b.getAttribute("data-del-report"), { method: "DELETE" }), function () { afterGm(b); }); return; }
@@ -632,14 +633,15 @@
         pr.stepsDue.slice(0, 4).forEach(function (x) { add(x.overdue ? 0 : 1, "Checklist: " + x.subjectLabel, x.text + (x.overdue ? "" : " (" + fmtDate(x.dueOn) + ")"), "run:" + x.runId); });
         var mods = (window.ORG && window.ORG.modules) || {}, areaMod = { grants: "grantmaking", fundraising: "fundraising", board: "governance", institutionalos: "institutionalos", consulting: "consulting" };
         var sug = pr.suggestions.filter(function (x) { return !areaMod[x.area] || mods[areaMod[x.area]] !== false; });
+        if (pr.drafts) add(0, "Messages", pr.drafts + " message" + (pr.drafts === 1 ? "" : "s") + " waiting for your approval", "lib:lb-outbox");
         if (sug.length) add(2, "Process Library", sug.length === 1 ? "Ready to start: " + sug[0].processName + " for " + sug[0].subjectLabel : sug.length + " checklists ready to start", "lib:lb-work");
       }
       items.sort(function (a, b) { return a.rank - b.rank; });
-      var over = items.filter(function (i) { return i.rank === 0; }).length;
+      var over = items.filter(function (i) { return i.rank === 0 && i.area !== "Messages"; }).length;
       var sub = document.getElementById("today-foundation-sub");
       if (sub) sub.textContent = items.length ? (over ? over + " overdue, " : "") + items.length + " item" + (items.length === 1 ? "" : "s") + " in all." : "Nothing due.";
       list.innerHTML = items.length ? items.slice(0, 8).map(function (i) {
-        return "<li" + (i.rank === 0 ? ' class="row-overdue"' : "") + '><span><span class="who">' + esc(i.area) + '</span><br><a href="#" data-today-go="' + esc(i.go) + '">' + esc(i.text) + "</a></span>" + (i.rank === 0 ? '<span class="when"><span class="overdue-tag">Overdue</span></span>' : "") + "</li>";
+        return "<li" + (i.rank === 0 ? ' class="row-overdue"' : "") + '><span><span class="who">' + esc(i.area) + '</span><br><a href="#" data-today-go="' + esc(i.go) + '">' + esc(i.text) + "</a></span>" + (i.rank === 0 && i.area !== "Messages" ? '<span class="when"><span class="overdue-tag">Overdue</span></span>' : "") + "</li>";
       }).join("") + (items.length > 8 ? '<li class="fd-small fd-dim" style="border:none">and ' + (items.length - 8) + " more</li>" : "")
         : '<li class="empty-note fd-empty-art" style="border:none;">' + EMPTY_ART + "Nothing else due.</li>";
     });
@@ -666,7 +668,7 @@
   });
   // A small line drawing for empty lists: a ledger and a check mark, in the brand colors.
   var EMPTY_ART = '<svg class="fd-art" viewBox="0 0 120 80" aria-hidden="true" focusable="false"><rect x="22" y="10" width="62" height="60" rx="6" fill="none" stroke="currentColor" stroke-width="2.5" opacity=".45"/><path d="M34 28h38M34 40h30M34 52h22" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".45"/><circle cx="86" cy="54" r="15" fill="var(--accent,#B28E42)" opacity=".18"/><path d="M79 54l5 5 10-11" fill="none" stroke="var(--accent,#B28E42)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  window.FD = { renderToday: renderTodayFoundation, art: EMPTY_ART };
+  window.FD = { renderToday: renderTodayFoundation, art: EMPTY_ART, openGrant: function (id) { gmDetail(id); } };
 
   // ---------- startup ----------
   function applyModules(cfg) {

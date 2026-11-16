@@ -47,6 +47,14 @@ restored row-for-row into empty databases).
 ## Public pages
 The only pages open without sign-in are the sign-in page, the public Giving
 Landscape, conflict-of-interest signing pages (`/coi/<private link>`, one per
-member per year; a new link can be issued from the app), and grant application forms (`/apply/<program>`, only while a program
+member per year; a new link can be issued from the app), grantee report forms
+(`/grant-report/<private link>`, one per report due), and grant application forms (`/apply/<program>`, only while a program
 is Open with online applications on). The form limits each connection to five
 submissions an hour and quietly drops bot submissions.
+
+## Outgoing messages
+Checklist messages are drafted by the operations app and never sent without the
+owner's approval. Approved messages go out either from the owner's own email
+app, or through the website server (`POST /api/admin/send-message`, reminder
+secret) once the sending domain is verified with Resend (FROM_EMAIL set to an
+address on that domain). Until then the website server refuses outside sends.

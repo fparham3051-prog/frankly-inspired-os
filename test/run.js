@@ -415,6 +415,82 @@ async function t(name, fn) {
     assert.strictEqual((await req("board2", "POST", "/api/proc/start", { processId: P.diag.id })).status, 403);
   });
 
+  // ---------------- Step automation: internal and external loops ----------------
+  const Q = new Pool({ connectionString: DB });
+  const AU = {};
+  await t("loops: starting a checklist drafts its first message; nothing is sent without approval", async () => {
+    const procs = (await req("owner1", "GET", "/api/proc/processes")).data.items;
+    AU.lead = procs.find((x) => x.name === "Lead to first call");
+    assert.strictEqual(AU.lead.steps[0].message, "lead.reply"); assert.strictEqual(AU.lead.steps[4].auto, "pipe.nextStep");
+    const deal = await req("owner1", "POST", "/api/pipeline", { name: "Jordan Hale", org: "Northside Literacy", stage: "lead" });
+    AU.deal = deal.data.item || deal.data;
+    const r = await req("owner1", "POST", "/api/proc/start", { processId: AU.lead.id, subjectKind: "pipeline", subjectId: AU.deal.id, subjectLabel: "Northside Literacy" });
+    assert.strictEqual(r.status, 201); AU.run = r.data.item;
+    const out = (await req("owner1", "GET", "/api/proc/outbox")).data;
+    const d = out.items.find((m) => m.runId === AU.run.id);
+    assert.ok(d, "a draft is waiting"); assert.strictEqual(d.status, "draft"); assert.strictEqual(d.subject, "Thanks for reaching out");
+    assert.match(d.body, /Hi Jordan/); assert.match(d.body, /calendly\.com/); assert.match(d.body, /Franklin D\. Parham/);
+    assert.strictEqual(out.mail.external, false, "outside delivery not set up in tests");
+    assert.strictEqual(out.items.filter((m) => m.status === "sent").length, 0);
+    AU.draft = d;
+  });
+  await t("loops: approve needs an address; adding the contact fills waiting drafts", async () => {
+    assert.strictEqual((await req("owner1", "POST", `/api/proc/outbox/${AU.draft.id}/send`, {})).status, 400);
+    await req("owner1", "PATCH", "/api/proc/runs/" + AU.run.id, { contactEmail: "jordan@northside.org", contactName: "Jordan Hale" });
+    const d = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.id === AU.draft.id);
+    assert.strictEqual(d.toEmail, "jordan@northside.org");
+    assert.strictEqual((await req("owner1", "POST", `/api/proc/outbox/${AU.draft.id}/send`, {})).status, 409, "system sending is off until the domain is verified");
+  });
+  await t("loops: approved from my email ticks the step; a dated next step ticks another", async () => {
+    assert.strictEqual((await req("owner1", "POST", `/api/proc/outbox/${AU.draft.id}/opened`, {})).status, 200);
+    await req("owner1", "PATCH", "/api/pipeline/" + AU.deal.id, { nextStep: "Discovery call", nextStepDate: "2026-12-03" });
+    const run = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.id === AU.run.id);
+    assert.ok(run.steps[0].doneOn && run.steps[0].by === "Automatic", "reply step ticked");
+    assert.ok(run.steps[4].doneOn, "next-step step ticked");
+    const act = (await req("owner1", "GET", `/api/proc/runs/${AU.run.id}/activity`)).data.items.map((a) => a.text).join(" | ");
+    assert.match(act, /Approved by .* and sent from their email/); assert.match(act, /Ticked automatically/);
+  });
+  await t("loops: a board member's conflict statement: drafted, sent, follow-up after five days, ticks when signed", async () => {
+    const mem = (await req("owner1", "POST", "/api/gov/members", { name: "Morgan Reyes", email: "morgan@board.org", role: "member" })).data.item;
+    const onboard = (await req("owner1", "GET", "/api/proc/processes")).data.items.find((x) => x.name === "Onboarding a board or staff member");
+    const run = (await req("owner1", "POST", "/api/proc/start", { processId: onboard.id, subjectKind: "member", subjectId: mem.id, subjectLabel: "Morgan Reyes" })).data.item;
+    assert.ok(run.steps[0].doneOn, "on the board list: ticks itself");
+    let out = (await req("owner1", "GET", "/api/proc/outbox")).data.items.filter((m) => m.runId === run.id);
+    const coi = out.find((m) => /conflict-of-interest/.test(m.subject));
+    assert.ok(coi, JSON.stringify(out.map((m) => m.subject))); assert.strictEqual(coi.toEmail, "morgan@board.org");
+    const link = /\/coi\/([\w-]+)/.exec(coi.body); assert.ok(link, "has the private signing link");
+    await req("owner1", "POST", `/api/proc/outbox/${coi.id}/opened`, {});
+    await Q.query("UPDATE proc_outbox SET sent_at = $1 WHERE id = $2", [new Date(Date.now() - 6 * 864e5).toISOString(), coi.id]);
+    out = (await req("owner1", "GET", "/api/proc/outbox")).data.items.filter((m) => m.runId === run.id && m.kind === "reminder");
+    assert.strictEqual(out.length, 1); assert.match(out[0].subject, /^Following up:/); assert.strictEqual(out[0].status, "draft");
+    const signed = await fetch(BASE + "/coi/" + link[1], { method: "POST", body: new URLSearchParams({ signedName: "Morgan Reyes", noConflicts: "1" }), redirect: "manual" });
+    assert.strictEqual(signed.status, 303);
+    const after = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.id === run.id);
+    assert.ok(after.steps[2].doneOn, "signing ticks the step");
+  });
+  await t("loops: grantee submits the interim report from a private link; the grant checklist ticks", async () => {
+    const proc = (await req("owner1", "GET", "/api/proc/processes")).data.items.find((x) => x.name === "Grant award to close");
+    const run = (await req("owner1", "POST", "/api/proc/start", { processId: proc.id, subjectKind: "grant", subjectId: G.app.id, subjectLabel: "Eastside Learning Lab" })).data.item;
+    assert.strictEqual(run.contactEmail, "dana@eastside.org", "contact filled from the application");
+    const d = (await req("owner1", "GET", "/api/gm/applications/" + G.app.id)).data;
+    const interim = d.reports.find((x) => x.kind === "interim");
+    assert.ok(interim.token, "each report has a private link");
+    const page = await fetch(BASE + "/grant-report/" + interim.token); assert.strictEqual(page.status, 200);
+    const post = await fetch(BASE + "/grant-report/" + interim.token, { method: "POST", body: new URLSearchParams({ done: "Tutored 64 students.", learned: "Attendance dips in winter.", name: "Dana Ruiz" }), redirect: "manual" });
+    assert.strictEqual(post.status, 303);
+    const rep = (await req("owner1", "GET", "/api/gm/applications/" + G.app.id)).data.reports.find((x) => x.id === interim.id);
+    assert.ok(rep.receivedOn); assert.match(rep.summary, /Tutored 64 students/);
+    const after = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.id === run.id);
+    assert.ok(after.steps[4].doneOn, "interim step ticked");
+    assert.strictEqual((await fetch(BASE + "/grant-report/not-a-real-token-1234")).status, 404);
+  });
+  await t("loops: board accounts can't approve messages", async () => {
+    const any = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.status === "draft");
+    assert.ok(any);
+    assert.strictEqual((await req("board2", "POST", `/api/proc/outbox/${any.id}/opened`, {})).status, 403);
+  });
+  await Q.end();
+
   srv.kill();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

@@ -19,6 +19,7 @@
 const F = require("./foundation");
 const { ORG } = require("./accounts");
 const { todayIso, nowIso, newId, parseJson, toApi, insertRow, coerce } = F;
+const AUTO = require("./processes-auto");
 
 F.SPECS.proc_processes = {
   required: ["name"],
@@ -102,13 +103,18 @@ async function ensureStarter(pool) {
     const mats = ((ORG.library || {}).materials || []);
     const byTitle = {};
     for (const m of mats) { const row = await insertRow(pool, "lib_materials", m); byTitle[m.title] = row.link; }
-    for (const p of STARTER) await insertRow(pool, "proc_processes", Object.assign({ reviewEveryMonths: 12, docLink: p.docTitle ? byTitle[p.docTitle] || "" : "" }, p));
+    for (const p of STARTER) {
+      const auto = AUTO.AUTOMATION[p.name] || [];
+      const steps = p.steps.map((x, i) => Object.assign({}, x, auto[i] || {}));
+      await insertRow(pool, "proc_processes", Object.assign({ reviewEveryMonths: 12, docLink: p.docTitle ? byTitle[p.docTitle] || "" : "" }, p, { steps }));
+    }
   }
   await pool.query("INSERT INTO app_settings (key, value) VALUES ('library_seeded', '1') ON CONFLICT (key) DO NOTHING");
 }
 
 function runToApi(r) {
   const a = toApi("proc_runs", r);
+  a.contactName = r.contact_name || ""; a.contactEmail = r.contact_email || "";
   const today = todayIso();
   const steps = a.steps || [];
   a.done = steps.filter((x) => x.doneOn).length;
@@ -127,11 +133,14 @@ function mount(app, { pool, requireAuth }) {
     if (!Array.isArray(list)) return [];
     return list.slice(0, 40).map((x) => {
       if (typeof x === "string") { const m = /^(.*?)\s*\((?:day\s*)?(\d{1,3})\)\s*$/i.exec(x); return m ? { text: m[1].slice(0, 400), days: Number(m[2]) } : { text: x.slice(0, 400), days: "" }; }
-      return { text: String(x.text || "").slice(0, 400), days: x.days === "" || x.days == null || isNaN(Number(x.days)) ? "" : Math.max(0, Math.min(999, Number(x.days))) };
+      const out = { text: String(x.text || "").slice(0, 400), days: x.days === "" || x.days == null || isNaN(Number(x.days)) ? "" : Math.max(0, Math.min(999, Number(x.days))) };
+      for (const k of ["auto", "action", "message", "to"]) if (x[k]) out[k] = String(x[k]).slice(0, 60);
+      return out;
     }).filter((x) => x.text);
   };
   app.get("/api/proc/processes", requireAuth, wrap(async (req, res) => {
     await ensureStarter(pool);
+    await AUTO.upgradeStarter(pool);
     const rows = (await pool.query("SELECT * FROM proc_processes WHERE archived_at IS NULL ORDER BY area, lower(name)")).rows;
     const uses = Object.fromEntries((await pool.query("SELECT process_id, count(*) FILTER (WHERE NOT skipped)::int AS n, count(*) FILTER (WHERE NOT skipped AND completed_on = '' AND archived_at IS NULL)::int AS open FROM proc_runs GROUP BY process_id")).rows.map((r) => [r.process_id, r]));
     res.json({ items: rows.map((r) => Object.assign(toApi("proc_processes", r), { runs: (uses[r.id] || {}).n || 0, openRuns: (uses[r.id] || {}).open || 0 })) });
@@ -145,7 +154,11 @@ function mount(app, { pool, requireAuth }) {
     if ("steps" in b) {
       b.steps = cleanSteps(b.steps);
       const cur = (await pool.query("SELECT version, steps FROM proc_processes WHERE id = $1", [req.params.id])).rows[0];
-      if (cur && JSON.stringify(parseJson(cur.steps, [])) !== JSON.stringify(b.steps)) b.version = (Number(cur.version) || 1) + 1;
+      // A step that keeps its words keeps its automation.
+      const before = Object.fromEntries(parseJson(cur ? cur.steps : "[]", []).map((x) => [x.text, x]));
+      b.steps.forEach((x) => { const o = before[x.text]; if (o) for (const k of ["auto", "action", "message", "to"]) if (o[k]) x[k] = o[k]; });
+      const plain = (list) => JSON.stringify(list.map((x) => [x.text, x.days]));
+      if (cur && plain(parseJson(cur.steps, [])) !== plain(b.steps)) b.version = (Number(cur.version) || 1) + 1;
     }
     const row = await F.updateRow(pool, "proc_processes", req.params.id, b);
     if (!row) return res.status(404).json({ error: "not found" });
@@ -167,10 +180,18 @@ function mount(app, { pool, requireAuth }) {
     const p = (await pool.query("SELECT * FROM proc_processes WHERE id = $1 AND archived_at IS NULL", [String(b.processId || "")])).rows[0];
     if (!p) return res.status(404).json({ error: "Process not found." });
     const start = coerce("d", b.startedOn) || todayIso();
-    const steps = parseJson(p.steps, []).map((x) => ({ text: x.text, dueOn: x.days === "" || x.days == null ? "" : addDays(start, Number(x.days)), doneOn: "", by: "" }));
+    const steps = parseJson(p.steps, []).map((x) => {
+      const st = { text: x.text, dueOn: x.days === "" || x.days == null ? "" : addDays(start, Number(x.days)), doneOn: "", by: "" };
+      for (const k of ["auto", "action", "message", "to"]) if (x[k]) st[k] = x[k];
+      return st;
+    });
+    const c = await AUTO.contactFor(pool, b.subjectKind || "other", b.subjectId || "");
     const row = await insertRow(pool, "proc_runs", { processId: p.id, processName: p.name, subjectKind: b.subjectKind || "other", subjectId: b.subjectId || "", subjectLabel: String(b.subjectLabel || "").slice(0, 200),
       startedOn: start, steps, owner: b.owner || p.owner || "" });
-    res.status(201).json({ item: runToApi(row) });
+    await pool.query("UPDATE proc_runs SET contact_name = $1, contact_email = $2 WHERE id = $3", [String(b.contactName || c.name || "").slice(0, 160), String(b.contactEmail || c.email || "").slice(0, 200), row.id]);
+    await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [newId(), row.id, nowIso(), "Started"]);
+    await AUTO.evaluate(pool);
+    res.status(201).json({ item: runToApi((await pool.query("SELECT * FROM proc_runs WHERE id = $1", [row.id])).rows[0]) });
   }));
   app.post("/api/proc/skip", requireAuth, wrap(async (req, res) => {
     const b = req.body || {};
@@ -180,6 +201,7 @@ function mount(app, { pool, requireAuth }) {
     res.json({ ok: true });
   }));
   app.get("/api/proc/runs", requireAuth, wrap(async (req, res) => {
+    await AUTO.upgradeStarter(pool); await AUTO.evaluate(pool);
     const where = ["archived_at IS NULL", "NOT skipped"];
     if (req.query.open) where.push("completed_on = ''");
     const rows = (await pool.query(`SELECT * FROM proc_runs WHERE ${where.join(" AND ")} ORDER BY completed_on = '' DESC, started_on DESC LIMIT 500`)).rows;
@@ -198,8 +220,15 @@ function mount(app, { pool, requireAuth }) {
     if (typeof b.addStep === "string" && b.addStep.trim()) steps.push({ text: b.addStep.trim().slice(0, 400), dueOn: coerce("d", b.addStepDue), doneOn: "", by: "" });
     const allDone = steps.length > 0 && steps.every((x) => x.doneOn);
     const completed = b.complete === true || allDone ? (r.completed_on || todayIso()) : (b.complete === false ? "" : (allDone ? r.completed_on : ""));
-    const row = (await pool.query("UPDATE proc_runs SET steps = $1, completed_on = $2, owner = COALESCE($3, owner) WHERE id = $4 RETURNING *",
+    let row = (await pool.query("UPDATE proc_runs SET steps = $1, completed_on = $2, owner = COALESCE($3, owner) WHERE id = $4 RETURNING *",
       [JSON.stringify(steps), completed, b.owner != null ? String(b.owner).slice(0, 120) : null, r.id])).rows[0];
+    if (b.contactEmail != null || b.contactName != null) {
+      const email = b.contactEmail != null ? String(b.contactEmail).trim().slice(0, 200) : r.contact_email, name = b.contactName != null ? String(b.contactName).trim().slice(0, 160) : r.contact_name;
+      row = (await pool.query("UPDATE proc_runs SET contact_email = $1, contact_name = $2 WHERE id = $3 RETURNING *", [email, name, r.id])).rows[0];
+      // drafts to "the contact" that had no address yet pick it up
+      await pool.query("UPDATE proc_outbox SET to_email = $1, to_name = CASE WHEN to_name = '' THEN $2 ELSE to_name END WHERE run_id = $3 AND status = 'draft' AND to_email = ''", [email, name, r.id]);
+    }
+    if (b.stepIndex != null) await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [newId(), r.id, nowIso(), `${b.done ? "Ticked" : "Unticked"} by ${await whoAmI(req.session)}: ${(steps[Number(b.stepIndex)] || {}).text || ""}`]);
     res.json({ item: runToApi(row) });
   }));
   app.delete("/api/proc/runs/:id", requireAuth, wrap(async (req, res) => {
@@ -207,9 +236,91 @@ function mount(app, { pool, requireAuth }) {
     res.json({ ok: true });
   }));
 
+  // ----- messages waiting for approval (nothing is sent without it) -----
+  const WEBSITE_API_URL = (process.env.WEBSITE_API_URL || "").replace(/\/+$/, "");
+  const WEBSITE_ADMIN_SECRET = process.env.WEBSITE_ADMIN_SECRET || "";
+  let mailCache = null, mailAt = 0;
+  async function mailStatus() {
+    if (mailCache && Date.now() - mailAt < 600000) return mailCache;
+    if (!WEBSITE_API_URL || !WEBSITE_ADMIN_SECRET) return { external: false, reason: "not configured" };
+    try {
+      const r = await fetch(WEBSITE_API_URL + "/api/admin/mail-status", { headers: { "X-Reminder-Secret": WEBSITE_ADMIN_SECRET }, signal: AbortSignal.timeout(60000) });
+      const j = await r.json().catch(() => ({}));
+      mailCache = { external: !!j.external, from: j.from || "" }; mailAt = Date.now();
+    } catch (e) { return { external: false, reason: "website server unreachable" }; }
+    return mailCache;
+  }
+  app.get("/api/proc/mail-status", requireAuth, wrap(async (req, res) => res.json(await mailStatus())));
+  const outApi = (o) => ({ id: o.id, runId: o.run_id, stepIndex: o.step_index, kind: o.kind, toEmail: o.to_email, toName: o.to_name, subject: o.subject, body: o.body, status: o.status, approvedBy: o.approved_by, sentAt: o.sent_at, error: o.error, createdAt: o.created_at,
+    processName: o.process_name, subjectLabel: o.subject_label, stepText: o.step_text });
+  app.get("/api/proc/outbox", requireAuth, wrap(async (req, res) => {
+    await AUTO.upgradeStarter(pool); await AUTO.evaluate(pool);
+    const rows = (await pool.query(`SELECT o.*, r.process_name, r.subject_label, (r.steps::json -> o.step_index ->> 'text') AS step_text FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id
+      WHERE r.archived_at IS NULL AND (o.status = 'draft' OR o.created_at >= $1) ORDER BY o.status = 'draft' DESC, o.created_at DESC LIMIT 300`, [addDays(todayIso(), -60)])).rows;
+    res.json({ items: rows.map(outApi), mail: await mailStatus() });
+  }));
+  const getDraft = async (id) => (await pool.query("SELECT * FROM proc_outbox WHERE id = $1", [id])).rows[0];
+  const logRun = (runId, text) => pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [newId(), runId, nowIso(), text]);
+  app.patch("/api/proc/outbox/:id", requireAuth, wrap(async (req, res) => {
+    const o = await getDraft(req.params.id);
+    if (!o || o.status !== "draft") return res.status(409).json({ error: "Only drafts can be edited." });
+    const b = req.body || {};
+    await pool.query("UPDATE proc_outbox SET to_email = $1, subject = $2, body = $3 WHERE id = $4", [String(b.toEmail != null ? b.toEmail : o.to_email).slice(0, 1000), String(b.subject != null ? b.subject : o.subject).slice(0, 200), String(b.body != null ? b.body : o.body).slice(0, 20000), o.id]);
+    res.json({ ok: true });
+  }));
+  // Approve and send through the website server (once outside delivery is set up).
+  app.post("/api/proc/outbox/:id/send", requireAuth, wrap(async (req, res) => {
+    const b = req.body || {};
+    if (b.toEmail != null || b.subject != null || b.body != null) await pool.query("UPDATE proc_outbox SET to_email = COALESCE($1, to_email), subject = COALESCE($2, subject), body = COALESCE($3, body) WHERE id = $4 AND status = 'draft'", [b.toEmail != null ? String(b.toEmail) : null, b.subject != null ? String(b.subject) : null, b.body != null ? String(b.body) : null, req.params.id]);
+    const o = await getDraft(req.params.id);
+    if (!o || o.status !== "draft") return res.status(409).json({ error: "This message isn't waiting for approval." });
+    if (!/@/.test(o.to_email || "")) return res.status(400).json({ error: "Add who it goes to first." });
+    if (/\[[^\]]*(link|paste|sentences)[^\]]*\]/i.test(o.body)) return res.status(400).json({ error: "Fill in the bracketed placeholder in the message first." });
+    const ms = await mailStatus();
+    if (!ms.external) return res.status(409).json({ error: "Sending from the system isn't set up yet. Use \"Approve and open in my email\"." });
+    const who = await whoAmI(req.session);
+    try {
+      const r = await fetch(WEBSITE_API_URL + "/api/admin/send-message", { method: "POST", headers: { "Content-Type": "application/json", "X-Reminder-Secret": WEBSITE_ADMIN_SECRET },
+        body: JSON.stringify({ to: o.to_email, subject: o.subject, text: o.body, replyTo: (ORG.org || {}).email || undefined }), signal: AbortSignal.timeout(120000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || "website server returned " + r.status);
+      await pool.query("UPDATE proc_outbox SET status = 'sent', sent_at = $1, approved_by = $2, error = '' WHERE id = $3", [nowIso(), who, o.id]);
+      await logRun(o.run_id, `Approved by ${who} and sent: ${o.subject} (to ${o.to_email})`);
+      await AUTO.evaluate(pool);
+      res.json({ ok: true });
+    } catch (err) {
+      await pool.query("UPDATE proc_outbox SET error = $1 WHERE id = $2", [String(err.message || err).slice(0, 300), o.id]);
+      res.status(502).json({ error: "Couldn't send: " + (err.message || err) });
+    }
+  }));
+  // Approved and sent from the owner's own email (the screen opens it prefilled).
+  app.post("/api/proc/outbox/:id/opened", requireAuth, wrap(async (req, res) => {
+    const o = await getDraft(req.params.id);
+    if (!o || o.status !== "draft") return res.status(409).json({ error: "This message isn't waiting for approval." });
+    const who = await whoAmI(req.session);
+    await pool.query("UPDATE proc_outbox SET status = 'opened', sent_at = $1, approved_by = $2 WHERE id = $3", [nowIso(), who, o.id]);
+    await logRun(o.run_id, `Approved by ${who} and sent from their email: ${o.subject}${o.to_email ? " (to " + o.to_email + ")" : ""}`);
+    await AUTO.evaluate(pool);
+    res.json({ ok: true });
+  }));
+  app.post("/api/proc/outbox/:id/discard", requireAuth, wrap(async (req, res) => {
+    const o = await getDraft(req.params.id);
+    if (!o || o.status !== "draft") return res.status(409).json({ error: "This message isn't waiting for approval." });
+    await pool.query("UPDATE proc_outbox SET status = 'discarded' WHERE id = $1", [o.id]);
+    await logRun(o.run_id, `Not sent (discarded by ${await whoAmI(req.session)}): ${o.subject}`);
+    res.json({ ok: true });
+  }));
+  app.get("/api/proc/runs/:id/activity", requireAuth, wrap(async (req, res) => {
+    const rows = (await pool.query("SELECT at, text FROM proc_activity WHERE run_id = $1 ORDER BY at DESC LIMIT 200", [req.params.id])).rows;
+    const out = (await pool.query("SELECT id, step_index, kind, status, subject, to_email, sent_at FROM proc_outbox WHERE run_id = $1 ORDER BY created_at", [req.params.id])).rows;
+    res.json({ items: rows, messages: out.map((o) => ({ id: o.id, stepIndex: o.step_index, kind: o.kind, status: o.status, subject: o.subject, toEmail: o.to_email, sentAt: o.sent_at })) });
+  }));
+
   // ----- summary: suggestions, open checklists, steps due, reviews due -----
   app.get("/api/proc/summary", requireAuth, wrap(async (req, res) => {
     await ensureStarter(pool);
+    await AUTO.upgradeStarter(pool);
+    await AUTO.evaluate(pool);
     const today = todayIso(), in7 = addDays(today, 7), in21 = addDays(today, 21);
     const procs = (await pool.query("SELECT * FROM proc_processes WHERE archived_at IS NULL")).rows;
     const runs = (await pool.query("SELECT * FROM proc_runs WHERE archived_at IS NULL")).rows;
@@ -246,7 +357,8 @@ function mount(app, { pool, requireAuth }) {
       const due = base ? F.addMonths(base, Number(p.review_every_months) || 12) : "";
       return { id: p.id, name: p.name, owner: p.owner, nextReview: due };
     }).filter((p) => p.nextReview && p.nextReview <= addDays(today, 30));
-    res.json({ suggestions, open, stepsDue, reviews, counts: { processes: procs.length, open: open.length, completed: runs.filter((r) => !r.skipped && r.completed_on).length } });
+    const drafts = (await pool.query("SELECT count(*)::int AS n FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND r.archived_at IS NULL")).rows[0].n;
+    res.json({ suggestions, open, stepsDue, reviews, drafts, counts: { processes: procs.length, open: open.length, completed: runs.filter((r) => !r.skipped && r.completed_on).length } });
   }));
 }
 

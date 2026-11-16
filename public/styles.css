@@ -884,3 +884,17 @@ a.btn{text-decoration:none;display:inline-block}
 .lb-note{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
 .role-board .lb-btns,.role-board [data-lb-start]{display:none !important}
 .role-board .lb-check input{pointer-events:none}
+
+/* Step automation */
+.lb-tags{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 0 28px}
+.lb-tag{display:inline-block;font-size:.72rem;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--ink-soft);text-decoration:none;line-height:1.4}
+.lb-auto{border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+.lb-msg.is-wait{border-color:var(--warn);color:var(--warn);font-weight:600}
+.lb-msg.is-sent{border-color:color-mix(in srgb,var(--good,#3d8b5a) 50%,var(--line))}
+.lb-draft .fd-form{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.lb-draft textarea{font-family:inherit;line-height:1.5}
+.lb-count{font-weight:700}
+.lb-contact{border-top:0;margin-top:6px;padding-top:0}
+.lb-steps .lb-tag{margin-left:4px}
+.role-board .lb-draft .fd-actions,.role-board .lb-contact{display:none !important}
+@media (max-width:640px){.lb-tags{margin-left:0}}

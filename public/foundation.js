@@ -39,7 +39,7 @@
     return out;
   }
   function flash(el, text, bad) { if (!el) return; el.textContent = text; el.className = "form-msg" + (bad ? " is-bad" : ""); if (!bad) setTimeout(function () { if (el.textContent === text) el.textContent = ""; }, 4000); }
-  function empty(text) { return '<p class="empty-note fd-empty">' + esc(text) + "</p>"; }
+  function empty(text) { return '<p class="empty-note fd-empty fd-empty-art">' + (typeof EMPTY_ART === "string" ? EMPTY_ART : "") + esc(text) + "</p>"; }
   function kpi(label, value, sub) { return '<div class="fd-kpi"><span class="fd-kpi-v">' + value + '</span><span class="fd-kpi-l">' + esc(label) + "</span>" + (sub ? '<span class="fd-kpi-s">' + sub + "</span>" : "") + "</div>"; }
   function bar(part, whole, extra) {
     var p = Math.min(100, pct(part, whole)), e = extra ? Math.min(100 - p, pct(extra, whole)) : 0;
@@ -594,14 +594,81 @@
   }
   document.addEventListener("click", function (e) { if (e.target.closest("#open-settings-btn")) setTimeout(renderAreas, 50); });
 
+  // ---------- Today: grants, gifts & board in one list ----------
+  function renderTodayFoundation() {
+    var card = document.getElementById("today-foundation-card");
+    var list = document.getElementById("today-foundation");
+    if (!card || !list) return;
+    var m = (window.ORG && window.ORG.modules) || {};
+    var on = { gm: m.grantmaking !== false, fr: m.fundraising !== false, gv: m.governance !== false };
+    card.hidden = !(on.gm || on.fr || on.gv);
+    var grid = card.parentElement; if (grid) grid.classList.toggle("has-four", !card.hidden);
+    if (card.hidden) return;
+    var skip = Promise.resolve(null);
+    Promise.all([on.gm ? api("/api/gm/summary").catch(function () { return null; }) : skip, on.fr ? api("/api/fr/summary").catch(function () { return null; }) : skip, on.gv ? api("/api/gov/summary").catch(function () { return null; }) : skip]).then(function (r) {
+      var gm = r[0], fr = r[1], gv = r[2], items = [], t = today();
+      var soon = new Date(); soon.setDate(soon.getDate() + 14); var in14 = soon.toISOString().slice(0, 10);
+      function add(rank, area, text, go) { items.push({ rank: rank, area: area, text: text, go: go }); }
+      if (gm) {
+        gm.paymentsDue.forEach(function (p) { add(p.overdue ? 0 : 1, "Grants", (p.overdue ? "Payment overdue: " : "Payment due " + fmtDate(p.dueOn) + ": ") + p.orgName + ", " + money(p.amount), "grants:gm-overview"); });
+        gm.reportsDue.filter(function (x) { return x.overdue; }).forEach(function (x) { add(0, "Grants", (x.kind === "final" ? "Final" : "Interim") + " report overdue from " + x.orgName, "grants:gm-overview"); });
+        if (gm.needsReview.length) add(1, "Grants", gm.needsReview.length + " application" + (gm.needsReview.length === 1 ? " needs" : "s need") + " a first review", "grants:gm-apps");
+        else if (gm.totals.newOnline) add(2, "Grants", gm.totals.newOnline + " new online application" + (gm.totals.newOnline === 1 ? "" : "s"), "grants:gm-apps");
+      }
+      if (fr) {
+        var late = fr.toThank.filter(function (g) { return g.daysWaiting > 2; }).length;
+        if (fr.toThank.length) add(late ? 0 : 1, "Fundraising", fr.toThank.length + " donor" + (fr.toThank.length === 1 ? "" : "s") + " to thank" + (late ? " (" + late + " waiting more than 2 days)" : ""), "fundraising:fr-overview");
+        var pOver = fr.pledgesDue.filter(function (p) { return p.overdue; }).length;
+        if (fr.pledgesDue.length) add(pOver ? 0 : 1, "Fundraising", fr.pledgesDue.length + " pledge payment" + (fr.pledgesDue.length === 1 ? "" : "s") + " due" + (pOver ? ", " + pOver + " overdue" : ""), "fundraising:fr-pledges");
+        fr.followUps.slice(0, 3).forEach(function (f) { add(f.overdue ? 0 : 1, "Fundraising", f.donorName + ": " + f.nextStep + (f.overdue ? "" : " (" + fmtDate(f.nextOn) + ")"), "donor:" + f.donorId); });
+      }
+      if (gv) {
+        gv.minutesMissing.slice(0, 2).forEach(function (x) { add(0, "Board", "Write the minutes: " + x.title + ", " + fmtDate(x.startsAt), "meeting:" + x.id); });
+        if (gv.nextMeeting && gv.nextMeeting.startsAt.slice(0, 10) <= in14) add(1, "Board", gv.nextMeeting.title + " " + fmtDate(gv.nextMeeting.startsAt) + ": send the agenda", "meeting:" + gv.nextMeeting.id);
+        (gv.checklist[0] ? gv.checklist[0].next : []).filter(function (c) { return c.overdue || c.dueOn <= in14; }).slice(0, 2).forEach(function (c) { add(c.overdue ? 0 : 1, "Form 990", c.label, "board:gv-990"); });
+        if (gv.coi.started && gv.coi.unsigned.length) add(1, "Board", gv.coi.unsigned.length + " conflict statement" + (gv.coi.unsigned.length === 1 ? "" : "s") + " unsigned for " + gv.coi.year, "board:gv-coi");
+        if (gv.minutesToApprove.length) add(2, "Board", gv.minutesToApprove.length + " set" + (gv.minutesToApprove.length === 1 ? "" : "s") + " of minutes to approve at the next meeting", "board:gv-meetings");
+      }
+      items.sort(function (a, b) { return a.rank - b.rank; });
+      var over = items.filter(function (i) { return i.rank === 0; }).length;
+      var sub = document.getElementById("today-foundation-sub");
+      if (sub) sub.textContent = items.length ? (over ? over + " overdue, " : "") + items.length + " item" + (items.length === 1 ? "" : "s") + " in all." : "Nothing due.";
+      list.innerHTML = items.length ? items.slice(0, 8).map(function (i) {
+        return "<li" + (i.rank === 0 ? ' class="row-overdue"' : "") + '><span><span class="who">' + esc(i.area) + '</span><br><a href="#" data-today-go="' + esc(i.go) + '">' + esc(i.text) + "</a></span>" + (i.rank === 0 ? '<span class="when"><span class="overdue-tag">Overdue</span></span>' : "") + "</li>";
+      }).join("") + (items.length > 8 ? '<li class="fd-small fd-dim" style="border:none">and ' + (items.length - 8) + " more</li>" : "")
+        : '<li class="empty-note fd-empty-art" style="border:none;">' + EMPTY_ART + "Nothing due for grants, gifts, or the board.</li>";
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-today-go]");
+    if (b) {
+      e.preventDefault();
+      var parts = b.getAttribute("data-today-go").split(":"), kind = parts[0], arg = parts[1];
+      var view = { grants: "grants", fundraising: "fundraising", donor: "fundraising", board: "board", meeting: "board" }[kind];
+      var rail = document.querySelector('.rail-btn[data-view="' + view + '"]');
+      if (rail) rail.click();
+      setTimeout(function () {
+        if (kind === "grants") gmRender(arg);
+        else if (kind === "fundraising") frRender(arg);
+        else if (kind === "donor") frDonorDetail(arg);
+        else if (window.GV) { if (kind === "board") window.GV.render(arg); else window.GV.meeting(arg); }
+      }, 30);
+      return;
+    }
+    if (e.target.closest('.rail-btn[data-view="today"]')) setTimeout(renderTodayFoundation, 30);
+  });
+  // A small line drawing for empty lists: a ledger and a check mark, in the brand colors.
+  var EMPTY_ART = '<svg class="fd-art" viewBox="0 0 120 80" aria-hidden="true" focusable="false"><rect x="22" y="10" width="62" height="60" rx="6" fill="none" stroke="currentColor" stroke-width="2.5" opacity=".45"/><path d="M34 28h38M34 40h30M34 52h22" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".45"/><circle cx="86" cy="54" r="15" fill="var(--accent,#B28E42)" opacity=".18"/><path d="M79 54l5 5 10-11" fill="none" stroke="var(--accent,#B28E42)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  window.FD = { renderToday: renderTodayFoundation, art: EMPTY_ART };
+
   // ---------- startup ----------
   function applyModules(cfg) {
     var m = (cfg && cfg.modules) || {};
     var label = document.querySelector('[data-module-group="foundation"]');
     if (label) label.hidden = m.grantmaking === false && m.fundraising === false && m.governance === false;
   }
-  document.addEventListener("org:ready", function (e) { applyModules(e.detail); });
-  if (window.ORG) applyModules(window.ORG);
+  document.addEventListener("org:ready", function (e) { applyModules(e.detail); renderTodayFoundation(); });
+  if (window.ORG) { applyModules(window.ORG); renderTodayFoundation(); }
   // If the page reopened on one of these views, draw it.
   var gv = document.querySelector('.view[data-view="grants"]'), fv = document.querySelector('.view[data-view="fundraising"]');
   if (gv && !gv.hidden) gmRender("gm-overview");

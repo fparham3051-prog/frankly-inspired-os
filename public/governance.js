@@ -25,7 +25,7 @@
   function opt(v, l, sel) { return '<option value="' + esc(v) + '"' + (String(sel) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>"; }
   function input(n, l, type, v, a) { return "<label>" + esc(l) + '<input name="' + n + '" type="' + (type || "text") + '" value="' + esc(v == null ? "" : v) + '" ' + (a || "") + "></label>"; }
   function area(n, l, v, a) { return '<label class="fd-wide">' + esc(l) + '<textarea name="' + n + '" ' + (a || "") + ">" + esc(v || "") + "</textarea></label>"; }
-  function empty(t) { return '<p class="empty-note fd-empty">' + esc(t) + "</p>"; }
+  function empty(t) { return '<p class="empty-note fd-empty fd-empty-art">' + ((window.FD && window.FD.art) || "") + esc(t) + "</p>"; }
   function kpi(l, v, s) { return '<div class="fd-kpi"><span class="fd-kpi-v">' + v + '</span><span class="fd-kpi-l">' + esc(l) + "</span>" + (s ? '<span class="fd-kpi-s">' + s + "</span>" : "") + "</div>"; }
   function bar(a, b) { var p = b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0; return '<div class="fd-bar" role="img" aria-label="' + p + ' percent"><span style="width:' + p + '%"></span></div>'; }
   function toast(t) {
@@ -296,6 +296,7 @@
     else if (id === "gv-item-form") go(api("/api/gov/checklist", { method: "POST", body: Object.assign(d, { fiscalYear: S.fy, sort: 100 }) }), function () { render("gv-990"); });
     else if (id === "gv-policy-form") go(api(rid ? "/api/gov/policies/" + rid : "/api/gov/policies", { method: rid ? "PATCH" : "POST", body: d }), function () { render("gv-policies"); });
   });
+  window.GV = { render: render, meeting: meetingDetail };
   var v = document.querySelector('.view[data-view="board"]');
   if (v && !v.hidden) render("gv-overview");
 })();

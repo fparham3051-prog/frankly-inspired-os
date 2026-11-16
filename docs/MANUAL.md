@@ -18,6 +18,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 - **Settings**: your password and two-step sign-in; for the owner, People
   (owner, staff, board), sign-in rules, and the organization profile.
 - **My Desk**: the owner's personal development space, opened from the top bar.
+- **Today** also has a "Grants, gifts & board" card when those areas are on: grant payments and reports due, donors to thank, pledge payments, donor follow-ups, minutes to write, the next board meeting, unsigned conflict statements, and Form 990 items due. Each line opens the right screen.
 - **Settings > Areas** (owner): turn whole areas on or off.
 - **Grants** (Foundation): Overview (budget, committed, paid, what's due),
   Applications (filter, open one to review, decide, and track it), Active

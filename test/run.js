@@ -45,8 +45,26 @@ async function t(name, fn) {
   const mock = http.createServer((q, r) => {
     let body = ""; q.on("data", (d) => (body += d)); q.on("end", () => {
       const u = new URL(q.url, "http://x"), json = (o, st) => { r.writeHead(st || 200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
-      if (u.pathname === "/token") { const f = new URLSearchParams(body); return json(f.get("grant_type") === "authorization_code" ? (f.get("code") === "good-code" ? { access_token: "at1", refresh_token: "rt1", expires_in: 3600 } : { error: "invalid_grant" }) : { access_token: "at2", expires_in: 3600 }, f.get("code") === "bad" ? 400 : 200); }
+      if (u.pathname === "/token") { const f = new URLSearchParams(body); return json(f.get("grant_type") === "authorization_code" ? (f.get("code") === "good-code" ? { access_token: "at1", refresh_token: "rt1", expires_in: 3600, scope: "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file" } : { error: "invalid_grant" }) : { access_token: "at2", expires_in: 3600 }, f.get("code") === "bad" ? 400 : 200); }
       if (u.pathname === "/revoke") return json({});
+      if (q.headers.authorization === "Bearer at1" || q.headers.authorization === "Bearer at2") {
+        const SH = MOCK.sheet;
+        if (u.pathname === "/v4/spreadsheets" && q.method === "POST") {
+          const j = JSON.parse(body); MOCK.sheet = { id: "s1", tabs: j.sheets.map((x, i) => ({ title: x.properties.title, sheetId: i })), values: {}, perms: [], creates: ((SH && SH.creates) || 0) + 1 };
+          return json({ spreadsheetId: "s1", spreadsheetUrl: "https://docs.google.com/spreadsheets/d/s1/edit", sheets: MOCK.sheet.tabs.map((t) => ({ properties: t })) });
+        }
+        if (SH && u.pathname === "/v4/spreadsheets/s1" && q.method === "GET") return json({ spreadsheetId: "s1", spreadsheetUrl: "https://docs.google.com/spreadsheets/d/s1/edit", sheets: SH.tabs.map((t) => ({ properties: t })) });
+        if (SH && u.pathname === "/v4/spreadsheets/s1:batchUpdate") {
+          const replies = JSON.parse(body).requests.map((r) => { if (!r.addSheet) return {}; const t = { title: r.addSheet.properties.title, sheetId: SH.tabs.length }; SH.tabs.push(t); return { addSheet: { properties: t } }; });
+          return json({ replies });
+        }
+        if (SH && u.pathname === "/v4/spreadsheets/s1/values:batchClear") { SH.values = {}; return json({}); }
+        if (SH && u.pathname.startsWith("/v4/spreadsheets/s1/values/") && q.method === "PUT") {
+          const range = decodeURIComponent(u.pathname.split("/values/")[1]), tab = /^'(.+)'!/.exec(range)[1];
+          SH.values[tab] = (SH.values[tab] || []).concat(JSON.parse(body).values); return json({});
+        }
+        if (SH && u.pathname === "/drive/v3/files/s1/permissions") { SH.perms.push(JSON.parse(body)); return json({ id: "p" + SH.perms.length }); }
+      }
       if (q.headers.authorization !== "Bearer at1" && q.headers.authorization !== "Bearer at2") return json({ error: { message: "bad token" } }, 401);
       if (u.pathname === "/gmail/v1/users/me/profile") return json({ emailAddress: "Owner@Gmail.test" });
       if (u.pathname === "/gmail/v1/users/me/settings/sendAs") return json({ sendAs: [{ sendAsEmail: "owner@gmail.test", isDefault: false }, { sendAsEmail: "franklin@biz.test", displayName: "Franklin Parham", isDefault: true, verificationStatus: "accepted" }, { sendAsEmail: "pending@biz.test", verificationStatus: "pending" }] });
@@ -65,7 +83,7 @@ async function t(name, fn) {
   });
   await new Promise((ok) => mock.listen(0, ok)); MOCK.port = mock.address().port;
   const GURL = "http://localhost:" + MOCK.port;
-  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
+  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
   const srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
@@ -612,11 +630,34 @@ async function t(name, fn) {
   });
   await t("setup: the System setup checklist started on its own, dated, and ticks what the system can see", async () => {
     const run = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.processName === "System setup");
-    assert.ok(run, "started automatically"); assert.strictEqual(run.steps.length, 17);
+    assert.ok(run, "started automatically"); assert.strictEqual(run.steps.length, 18);
     assert.ok(run.steps.every((x) => x.dueOn), "every step has a date");
     assert.ok(run.steps[0].doneOn && run.steps[0].by === "Automatic", "Gmail connected ticks step 1");
     assert.ok(run.steps[2].doneOn, "a message sent through Gmail ticks the test-message step");
     assert.strictEqual((await req("owner1", "GET", "/api/proc/processes")).data.items.filter((x) => x.name === "System setup").length, 1);
+  });
+  await t("report: prospect report to Google Sheets: every tab, refresh reuses the sheet, share, CSV fallback, setup step ticks", async () => {
+    await req("owner1", "POST", "/api/prospects", { name: "Taylor Brooks", org: "Harbor Youth", source: "website pop-up", notes: "Email: taylor@harbor.org" });
+    const before = (await req("owner1", "GET", "/api/reports/prospects")).data;
+    assert.ok(before.google && before.google.sheets, JSON.stringify(before.google)); assert.strictEqual(before.sheet, null);
+    const titles = before.tabs.map((x) => x.title);
+    for (const tname of ["Summary", "Website leads", "All prospects", "Pipeline", "Diagnostics", "DMV market scan", "Contacts", "Grant applicants", "Donors"]) assert.ok(titles.includes(tname), tname);
+    assert.strictEqual((await req("board2", "POST", "/api/reports/prospects/sheet", {})).status, 403);
+    const made = await req("owner1", "POST", "/api/reports/prospects/sheet", {});
+    assert.strictEqual(made.status, 200, JSON.stringify(made.data)); assert.match(made.data.url, /docs\.google\.com/);
+    const web = MOCK.sheet.values["Website leads"];
+    assert.strictEqual(web[0][0], "Date"); assert.ok(web.some((r) => r.includes("taylor@harbor.org")), "pop-up lead with its email");
+    assert.ok(MOCK.sheet.values["Summary"].some((r) => r[0] === "Internal"));
+    assert.ok(MOCK.sheet.values["Contacts"].length > 1);
+    await req("owner1", "POST", "/api/reports/prospects/sheet", {});
+    assert.strictEqual(MOCK.sheet.creates, 1, "refresh updates the same sheet");
+    assert.strictEqual((await req("owner1", "POST", "/api/reports/prospects/share", { emails: "not-an-email" })).status, 400);
+    const sh = await req("owner1", "POST", "/api/reports/prospects/share", { emails: "teammate@frankly.test, second@frankly.test", role: "reader" });
+    assert.strictEqual(sh.status, 200); assert.strictEqual(MOCK.sheet.perms.length, 2); assert.strictEqual(MOCK.sheet.perms[0].role, "reader");
+    const csv = await fetch(BASE + "/api/reports/prospects.csv?tab=Website%20leads", { headers: { Cookie: jar.owner1 } });
+    assert.strictEqual(csv.status, 200); assert.match(await csv.text(), /taylor@harbor\.org/);
+    const run = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.processName === "System setup");
+    assert.ok(run.steps[5].doneOn, "creating the sheet ticks the setup step");
   });
   await t("tick: needs a key; reports only new drafts since the last notice", async () => {
     assert.strictEqual((await req("anon", "POST", "/api/admin/tick", null)).status, 401);

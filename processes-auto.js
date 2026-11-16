@@ -37,7 +37,7 @@ const AUTOMATION = {
     { message: "diag.portal", auto: "sent" }, { message: "diag.book90", auto: "sent" }],
   "90-day plan and weekly check-ins": [
     {}, { message: "plan.checkin", auto: "ios.checkin" }, {}, {}, {}, A("ios.review90"), {}],
-  "System setup": [A("sys.gmail", { action: "settings" }), {}, A("sys.gmailSent"), A("sys.twostep", { action: "settings" }), {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
+  "System setup": [A("sys.gmail", { action: "settings" }), {}, A("sys.gmailSent"), A("sys.twostep", { action: "settings" }), {}, A("sys.sheet"), {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
   "Closing out an engagement": [
     A("pipe.invoiceSent"), { message: "close.feedback", auto: "feedback.received" }, { message: "close.casestudy", auto: "sent" }, {},
     A("pipe.invoicePaid"), { message: "close.thanks", auto: "sent" }],
@@ -112,6 +112,7 @@ async function loadCtx(pool, runs) {
     sys: {
       gmail: !!(await q("SELECT 1 FROM app_settings WHERE key = 'gmail_accounts' AND value <> ''")).length && !!(await q("SELECT 1 FROM app_settings WHERE key = 'gmail_default'")).length,
       gmailSent: !!(await q("SELECT 1 FROM proc_outbox WHERE sent_via LIKE 'gmail:%' LIMIT 1")).length,
+      sheet: !!(await q("SELECT 1 FROM app_settings WHERE key = 'report_prospects_sheet' AND value LIKE '%\"id\"%'")).length,
       twostep: !!(await q("SELECT 1 FROM app_users WHERE role = 'owner' AND totp_on AND NOT COALESCE(disabled, false) LIMIT 1")).length,
     },
     monthInvoices: await q("SELECT issued_date FROM invoices WHERE archived_at IS NULL AND issued_date >= $1", [addDays(todayIso(), -40)]),
@@ -159,6 +160,7 @@ function detect(key, run, ctx, stepIndex) {
     case "sys.gmail": return ctx.sys.gmail;
     case "sys.gmailSent": return ctx.sys.gmail && ctx.sys.gmailSent;
     case "sys.twostep": return ctx.sys.twostep;
+    case "sys.sheet": return ctx.sys.sheet;
     case "month.invoices": return ctx.monthInvoices.some((i) => (i.issued_date || "").slice(0, 7) === String(run.subject_id || "").slice(0, 7) || (i.issued_date || "") >= run.started_on);
     default: return false;
   }
@@ -320,7 +322,7 @@ async function upgradeStarter(pool) {
 // One time: add the "System setup" checklist to the library and start it, so
 // the owner's remaining setup work is dated and shows on Today.
 async function ensureSetup(pool) {
-  if ((await pool.query("SELECT 1 FROM app_settings WHERE key = 'library_setup_v1'")).rows.length) return;
+  if ((await pool.query("SELECT 1 FROM app_settings WHERE key = 'library_setup_v1'")).rows.length) return setupV2(pool);
   if (!(await pool.query("SELECT 1 FROM proc_processes LIMIT 1")).rows.length) return;
   const { STARTER } = require("./processes");
   const p = STARTER.find((x) => x.name === "System setup");
@@ -342,7 +344,28 @@ async function ensureSetup(pool) {
     const row = await F.insertRow(pool, "proc_runs", { processId: pid, processName: p.name, subjectKind: "other", subjectId: "", subjectLabel: org, startedOn: start, steps, owner: "Owner" });
     await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [newId(), row.id, nowIso(), "Started automatically"]);
   }
-  await pool.query("INSERT INTO app_settings (key, value) VALUES ('library_setup_v1', '1') ON CONFLICT (key) DO NOTHING");
+  await pool.query("INSERT INTO app_settings (key, value) VALUES ('library_setup_v1', '1'), ('library_setup_v2', '1') ON CONFLICT (key) DO NOTHING");
+}
+// v2: the Google step also turns on Sheets and Drive; add the prospect report step.
+async function setupV2(pool) {
+  if ((await pool.query("SELECT 1 FROM app_settings WHERE key = 'library_setup_v2'")).rows.length) return;
+  const { STARTER } = require("./processes");
+  const p = STARTER.find((x) => x.name === "System setup");
+  const fix = (steps, dated, start) => {
+    if (!Array.isArray(steps) || steps.some((x) => /prospect report/i.test(x.text))) return null;
+    if (steps[0] && /Google Cloud setup/.test(steps[0].text)) steps[0].text = p.steps[0].text;
+    const at = steps.findIndex((x) => /backup in Google Drive/.test(x.text));
+    const add = Object.assign({ text: p.steps[5].text }, dated ? { dueOn: addDays(start, 4), doneOn: "", by: "" } : { days: 4 }, { auto: "sys.sheet" });
+    steps.splice(at >= 0 ? at + 1 : steps.length, 0, add);
+    return steps;
+  };
+  for (const r of (await pool.query("SELECT id, steps FROM proc_processes WHERE name = 'System setup'")).rows) {
+    const s = fix(parseJson(r.steps, []), false); if (s) await pool.query("UPDATE proc_processes SET steps = $1 WHERE id = $2", [JSON.stringify(s), r.id]);
+  }
+  for (const r of (await pool.query("SELECT id, steps, started_on FROM proc_runs WHERE process_name = 'System setup'")).rows) {
+    const s = fix(parseJson(r.steps, []), true, r.started_on || todayIso()); if (s) await pool.query("UPDATE proc_runs SET steps = $1 WHERE id = $2", [JSON.stringify(s), r.id]);
+  }
+  await pool.query("INSERT INTO app_settings (key, value) VALUES ('library_setup_v2', '1') ON CONFLICT (key) DO NOTHING");
 }
 
 module.exports = { AUTOMATION, TEMPLATES: T, evaluate, contactFor, upgradeStarter, detect };

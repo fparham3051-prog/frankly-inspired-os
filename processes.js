@@ -92,11 +92,12 @@ const STARTER = [
   { name: "System setup", area: "operations", suggestOn: "", usedWhen: "Once, when the system is first set up for an organization (it starts on its own).",
     purpose: "Everything only the owner can do to take the system from built to fully working: email, security, the domain, real data, and the professional reviews.", steps: [
       // Week 1: email and security
-      s("Finish the Google Cloud setup (Branding, publish the app, create the Web client, enable the Gmail API) and connect Gmail in Settings > Connected email", 1),
+      s("Finish the Google Cloud setup (Branding, publish the app, create the Web client, enable the Gmail, Google Sheets, and Google Drive APIs) and connect Gmail in Settings > Connected email", 1),
       s("Find out where the business email is hosted: connect it directly if it's Google Workspace, otherwise add it in Gmail as a \"Send mail as\" address; then choose it as the sender", 2),
       s("Approve one test message to yourself and confirm it arrives from the right address", 2),
       s("Turn on two-step sign-in for the owner account (Settings > Your account)", 2),
       s("Open last night's backup in Google Drive (Frankly Inspired Backups) and confirm it's there", 4),
+      s("Create the prospect report Google Sheet (Contacts > Prospect report) and share it with your team", 4),
       // Week 2: the domain
       s("In Resend, add the sending domain and copy its DNS records (SPF, DKIM) into the domain registrar", 7),
       s("Add a DMARC record at the registrar (start with p=none)", 7),

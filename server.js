@@ -1772,6 +1772,7 @@ require("./governance").mount(app, { pool, requireAuth });
 require("./processes").mount(app, { pool, requireAuth });
 require("./contacts").mount(app, { pool, requireAuth });
 require("./gmail").mount(app, { pool, requireAuth });
+require("./sheets").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task
@@ -1783,6 +1784,7 @@ async function automationTick() {
   const out = { at: new Date().toISOString() };
   try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
   try { await require("./processes").ensureStarter(pool); await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
+  try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
   const drafts = (await pool.query("SELECT o.id FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND r.archived_at IS NULL").catch(() => ({ rows: [] }))).rows.map((r) => r.id);
   const seen = new Set(JSON.parse((await pool.query("SELECT value FROM app_settings WHERE key = 'tick_notified'").catch(() => ({ rows: [] }))).rows[0]?.value || "[]"));

@@ -74,6 +74,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   grants, gifts, board role, checklists, messages and feedback. Fixing an email
   here updates their board, donor and grant records, open checklists and any
   message waiting for approval. Merge duplicates from the person's page.
+- **Prospect report** (Contacts > Prospect report): every prospect across the system in one Google Sheet, a tab per area (website leads, all prospects, pipeline, Diagnostics, DMV market scan, contacts, grant applicants, donors) plus a summary. Create it once, share it with the team from the same screen; it refreshes itself daily. Each tab also downloads as a spreadsheet file. Internal only: the market scan tab names organizations with private ratings.
 - **Connected email** (Settings, owner): connect one or more Google accounts so
   approved messages go out from your own address (including a "Send mail as"
   business address), sit in your Sent folder, keep follow-ups in the same

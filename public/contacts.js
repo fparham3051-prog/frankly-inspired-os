@@ -33,7 +33,7 @@
   function render(tab) {
     tab = tab || C.tab; if (tab === "ct-person" || tab === "ct-org") tab = C.last || "ct-people"; C.tab = tab; C.last = tab; show(tab);
     var el = panel(tab); el.innerHTML = '<p class="load-note">Loading...</p>';
-    (tab === "ct-people" ? people(el) : orgs(el)).catch(function (e) { el.innerHTML = empty("Couldn't load: " + e.message); });
+    (tab === "ct-people" ? people(el) : tab === "ct-report" ? report(el) : orgs(el)).catch(function (e) { el.innerHTML = empty("Couldn't load: " + e.message); });
   }
   function toolbar(placeholder) {
     return '<div class="fd-toolbar"><label>Search <input type="search" id="ct-q" value="' + esc(C.q) + '" placeholder="' + esc(placeholder) + '"></label>' +
@@ -68,6 +68,40 @@
         }).join("") : '<tr><td colspan="4" class="empty-note">No organizations match.</td></tr>') + "</tbody></table></div></div>";
     });
   }
+  // ---------- Prospect report (Google Sheets) ----------
+  function ago(iso) { if (!iso) return ""; var m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 2 ? "just now" : m < 60 ? m + " minutes ago" : m < 1440 ? Math.round(m / 60) + " hours ago" : fmtDate(iso); }
+  function report(el) {
+    return api("/api/reports/prospects").then(function (r) {
+      var cl = document.body.classList, board = cl.contains("role-board"), owner = cl.contains("role-owner");
+      var h = '<div class="fw-card"><h3>Prospect report</h3><p class="view-intro">Every prospect across the system in one Google Sheet, a tab per area, for sharing with your team. It refreshes itself once a day; refresh it any time here. It\'s internal: the market scan tab names organizations with private ratings.</p>';
+      if (!r.google) h += '<p class="fd-small lb-note">' + pill("Google isn't connected", "warn") + ' Connect a Google account in Settings &gt; Connected email to create the sheet. Until then, download any tab as a spreadsheet file below.</p>';
+      else if (!r.google.sheets) h += '<p class="fd-small lb-note">' + pill("Needs one more permission", "warn") + " The Google connection for " + esc(r.google.account) + " doesn't include Sheets. In Settings &gt; Connected email, disconnect and connect again.</p>";
+      if (r.sheet) h += '<p><a class="btn" href="' + esc(r.sheet.url) + '" target="_blank" rel="noopener">Open the sheet</a> ' + (board ? "" : '<button type="button" class="btn secondary" id="rp-refresh">Refresh now</button>') + ' <span class="fd-small fd-dim">Updated ' + esc(ago(r.sheet.updatedAt)) + " &middot; in " + esc(r.sheet.account) + "'s Google Drive</span></p>";
+      else if (r.google && r.google.sheets && !board) h += '<p><button type="button" class="btn" id="rp-refresh">Create the Google Sheet</button></p>';
+      h += '<span class="form-msg" id="rp-msg" role="status"></span></div>';
+      h += '<div class="fw-card"><h3>What\'s in it</h3><div class="table-wrap"><table class="prospect-table fd-table"><thead><tr><th>Tab</th><th>Rows</th><th>What it is</th><th></th></tr></thead><tbody>' +
+        r.tabs.filter(function (t) { return t.rows != null; }).map(function (t) { return "<tr><td><strong>" + esc(t.title) + "</strong></td><td>" + t.rows + '</td><td class="fd-small">' + esc(t.note) + '</td><td><a class="fd-small" href="/api/reports/prospects.csv?tab=' + encodeURIComponent(t.title) + '">Download</a></td></tr>'; }).join("") + "</tbody></table></div></div>";
+      if (r.sheet && owner) {
+        h += '<div class="fw-card"><h3>Share with your team</h3><p class="fd-small">Google emails each person a link. Viewers can read and filter; editors can change the sheet (changes are replaced at the next refresh).</p>' +
+          '<form class="fd-form settings-form" id="rp-share"><label class="fd-wide">Email addresses<input name="emails" placeholder="name@organization.org, another@organization.org" required></label>' +
+          '<label>Access<select name="role">' + opt("reader", "Can view") + opt("writer", "Can edit") + '</select></label><div class="fd-wide"><button type="submit" class="btn">Share</button> <span class="form-msg" role="status"></span></div></form>' +
+          (r.sheet.shared.length ? '<ul class="fd-list">' + r.sheet.shared.map(function (x) { return "<li><span>" + esc(x.email) + '</span><span class="fd-small">' + (x.role === "writer" ? "can edit" : "can view") + " &middot; " + esc(fmtDate(x.at)) + "</span></li>"; }).join("") + "</ul>" : "") +
+          '<p class="fd-small fd-dim">To remove someone, open the sheet and use Google\'s Share button.</p></div>';
+      }
+      el.innerHTML = h;
+    });
+  }
+  document.addEventListener("click", function (e) {
+    if (e.target.id !== "rp-refresh") return;
+    var b = e.target, msg = document.getElementById("rp-msg"); b.disabled = true; msg.textContent = "Building the sheet... this can take a minute.";
+    api("/api/reports/prospects/sheet", { method: "POST", body: {} }).then(function (r) { toast("Sheet updated."); render("ct-report"); }).catch(function (err) { b.disabled = false; msg.textContent = err.message; });
+  });
+  document.addEventListener("submit", function (e) {
+    if (e.target.id !== "rp-share") return;
+    e.preventDefault(); var f = e.target, d = formData(f), msg = f.querySelector(".form-msg");
+    api("/api/reports/prospects/share", { method: "POST", body: d }).then(function () { toast("Shared."); render("ct-report"); }).catch(function (err) { msg.textContent = err.message; });
+  });
+
   function section(title, rows, emptyText) { return '<div class="fw-card"><h3>' + esc(title) + "</h3>" + (rows ? '<ul class="fd-list">' + rows + "</ul>" : empty(emptyText)) + "</div>"; }
   function person(id) {
     var el = panel("ct-person"); show("ct-person"); el.innerHTML = '<p class="load-note">Loading...</p>'; window.scrollTo(0, 0);
@@ -175,7 +209,7 @@
     api("/api/gmail/status").then(function (s) {
       var h = "";
       if (!s.configured) {
-        h += '<p class="fd-small">Step 1: in Google Cloud, create an OAuth client (type "Web application") and add this exact redirect address:</p>' +
+        h += '<p class="fd-small">Step 1: in Google Cloud, turn on the Gmail API, Google Sheets API, and Google Drive API, then create an OAuth client (type "Web application") with this exact redirect address:</p>' +
           '<p><code class="ct-code">' + esc(s.redirectUri) + '</code> <button type="button" class="btn secondary fd-sm" data-gm-copy="' + esc(s.redirectUri) + '">Copy</button></p>' +
           '<p class="fd-small">Step 2: paste the Client ID and Client secret here. The secret is stored encrypted and never shown again.</p>' +
           '<form class="fd-form settings-form" id="gm-config">' + input("clientId", "Client ID", "text", "", 'required autocomplete="off"') + input("clientSecret", "Client secret", "password", "", 'required autocomplete="off"') +

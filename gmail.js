@@ -28,7 +28,9 @@ const AUTH_URL = process.env.GOOGLE_AUTH_URL || "https://accounts.google.com/o/o
 const TOKEN_URL = process.env.GOOGLE_TOKEN_URL || "https://oauth2.googleapis.com/token";
 const REVOKE_URL = process.env.GOOGLE_REVOKE_URL || "https://oauth2.googleapis.com/revoke";
 const GMAIL = (process.env.GMAIL_API_BASE || "https://gmail.googleapis.com").replace(/\/$/, "");
-const SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/gmail.readonly"];
+// drive.file: only files this app creates (the prospect report sheet); it
+// can't see anything else in the Drive.
+const SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/drive.file"];
 
 // ---------- encrypted settings ----------
 function key() { return crypto.createHash("sha256").update(String(process.env.SESSION_SECRET || "dev") + "|gmail").digest(); }
@@ -81,7 +83,7 @@ async function accessToken(pool, email) {
 }
 async function gapi(pool, email, path, opts) {
   const t = await accessToken(pool, email);
-  const r = await fetch(GMAIL + path, Object.assign({ signal: AbortSignal.timeout(60000) }, opts || {}, { headers: Object.assign({ Authorization: "Bearer " + t }, (opts && opts.headers) || {}) }));
+  const r = await fetch(/^https?:/.test(path) ? path : GMAIL + path, Object.assign({ signal: AbortSignal.timeout(60000) }, opts || {}, { headers: Object.assign({ Authorization: "Bearer " + t }, (opts && opts.headers) || {}) }));
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((j.error && (j.error.message || j.error.status)) || "Gmail returned " + r.status);
   return j;
@@ -164,7 +166,7 @@ function mount(app, { pool, requireAuth }) {
   app.get("/api/gmail/status", requireAuth, wrap(async (req, res) => {
     const cfg = await config(pool), list = await accounts(pool), d = await defaults(pool), s = await sender(pool);
     res.json({ configured: cfg.ok, clientId: cfg.clientId, redirectUri: redirectUri(), sender: s,
-      accounts: list.map((a) => ({ email: a.email, connectedAt: a.connectedAt, sendAs: (a.sendAs || []).map((x) => ({ email: x.email, displayName: x.displayName, isDefault: !!x.isDefault })) })), default: d });
+      accounts: list.map((a) => ({ email: a.email, connectedAt: a.connectedAt, sheets: /drive\.file/.test(a.scope || ""), sendAs: (a.sendAs || []).map((x) => ({ email: x.email, displayName: x.displayName, isDefault: !!x.isDefault })) })), default: d });
   }));
   app.post("/api/gmail/config", requireAuth, ownerOnly, wrap(async (req, res) => {
     const b = req.body || {};
@@ -206,7 +208,7 @@ function mount(app, { pool, requireAuth }) {
         sendAs = (sa.sendAs || []).filter((x) => !x.verificationStatus || x.verificationStatus === "accepted").map((x) => ({ email: String(x.sendAsEmail).toLowerCase(), displayName: x.displayName || "", isDefault: !!x.isDefault }));
       } catch (e) { /* the account address still works */ }
       const list = (await accounts(pool)).filter((a) => a.email !== email);
-      list.push({ email, refresh: j.refresh_token, sendAs, connectedAt: new Date().toISOString() });
+      list.push({ email, refresh: j.refresh_token, sendAs, scope: String(j.scope || ""), connectedAt: new Date().toISOString() });
       await saveAccounts(pool, list);
       tokenCache.set(email, { token: j.access_token, exp: Date.now() + (Number(j.expires_in) || 3000) * 1000 });
       const d = await defaults(pool);
@@ -235,4 +237,4 @@ function mount(app, { pool, requireAuth }) {
   }));
 }
 
-module.exports = { mount, send, sender, checkReplies, accounts, _mime: mime };
+module.exports = { mount, send, sender, checkReplies, accounts, gapi, _mime: mime };

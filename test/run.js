@@ -359,6 +359,11 @@ async function t(name, fn) {
     assert.strictEqual((await req("board2", "PATCH", "/api/gov/meetings/" + V.meeting.id, { minutes: "x" })).status, 403);
   });
 
+  await t("reminders: relayed through this app with the status key only", async () => {
+    assert.strictEqual((await req("anon", "POST", "/api/admin/reminders/recheck", {})).status, 401);
+    assert.strictEqual((await req("anon", "POST", "/api/admin/reminders/nope", {}, { "X-Admin-Token": "test-token" })).status, 404);
+  });
+
   srv.kill();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

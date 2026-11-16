@@ -1642,6 +1642,32 @@ app.get("/api/admin/backup-all", requireAdminScope("backup"), async (req, res) =
 // Data retention (docs/DATA-RETENTION.md). Deletes only logs that have no
 // business value after six months; everything else is listed for the owner
 // to review, never deleted automatically.
+// Reminder emails, sent by the website server. Scheduled tasks call this
+// instead of the website server directly: the place they run can reach this
+// app but not frankly-inspired-api. kind = recheck (90-day Health Index
+// re-checks) or checkin (InstitutionalOS weekly check-ins).
+app.post("/api/admin/reminders/:kind", requireAdminScope("status"), async (req, res) => {
+  const path = { recheck: "/api/admin/send-reminders", checkin: "/api/admin/send-checkin-reminders" }[req.params.kind];
+  if (!path) return res.status(404).json({ ok: false, error: "kind must be recheck or checkin" });
+  if (!WEBSITE_API_URL || !WEBSITE_ADMIN_SECRET) return res.status(500).json({ ok: false, error: "WEBSITE_API_URL / WEBSITE_ADMIN_SECRET not set" });
+  let lastErr = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 140000);
+    try {
+      const r = await fetch(WEBSITE_API_URL + path, { method: "POST", headers: { "X-Reminder-Secret": WEBSITE_ADMIN_SECRET }, signal: ctrl.signal });
+      const body = await r.json().catch(() => ({}));
+      if (r.ok) return res.json(Object.assign({ ok: true }, body, { attempts: attempt }));
+      lastErr = `website server returned ${r.status}${body.error ? ": " + body.error : ""}`;
+      if (![502, 503, 504].includes(r.status)) break;
+    } catch (err) {
+      lastErr = err.name === "AbortError" ? "website server timed out" : String(err.message || err);
+    } finally { clearTimeout(timer); }
+    if (attempt === 1) await new Promise((ok) => setTimeout(ok, 15000));
+  }
+  res.status(502).json({ ok: false, error: lastErr });
+});
+
 app.post("/api/admin/retention", requireAdminScope("backup"), async (req, res) => {
   const out = { at: new Date().toISOString(), deleted: {}, review: {}, errors: [] };
   try {

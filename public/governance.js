@@ -130,7 +130,7 @@
         (d.members.length ? '<form class="fd-form" id="gv-attend-form" data-id="' + esc(m.id) + '">' + d.members.map(function (x) {
           return "<label>" + esc(x.name) + (x.role && x.role !== "member" ? ' <span class="fd-dim">(' + esc(ROLE[x.role] || x.role) + ")</span>" : "") + '<select name="' + esc(x.id) + '">' + opt("", "Not recorded", att[x.id] || "") + opt("present", "Present", att[x.id] || "") + opt("absent", "Absent", att[x.id] || "") + opt("excused", "Excused", att[x.id] || "") + "</select></label>";
         }).join("") + input("guests", "Also present (staff, guests)", "text", m.guests) + '<div class="fd-wide"><button type="submit" class="btn">Save attendance</button> <span class="form-msg" role="status"></span></div></form>' : "") + "</div>";
-      html += '<div class="fw-card"><h3>Minutes</h3><form class="fd-form" id="gv-minutes-form" data-id="' + esc(m.id) + '">' +
+      html += '<div class="fw-card"><h3>Minutes</h3><div data-ai-minutes="' + esc(m.id) + '"></div><form class="fd-form" id="gv-minutes-form" data-id="' + esc(m.id) + '">' +
         area("conflictsDeclared", "Conflicts of interest declared (who, on which item, and that they stepped out)", m.conflictsDeclared, 'rows=2 placeholder="None declared."') +
         area("minutes", "Discussion: what was reported and discussed, item by item", m.minutes, "rows=10") +
         input("minutesApprovedOn", "Board approved these minutes on", "date", m.minutesApprovedOn) +

@@ -902,3 +902,19 @@ a.btn{text-decoration:none;display:inline-block}
 .ct-code{font-size:.8rem;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
 .fd-list li>span:first-child{text-align:left}
 #gmail-body .btn{display:inline-block;text-decoration:none}
+/* AI assistance */
+.ai-pill{background:#ede7f6;color:#4527a0;border-color:#d1c4e9;font-weight:600;letter-spacing:.02em}
+.ai-brief{margin-top:.4rem;font-size:.85rem;color:var(--ink,#1d2733)}
+.ai-brief summary{cursor:pointer;list-style:none}
+.ai-brief summary::-webkit-details-marker{display:none}
+.ai-brief p{margin:.35rem 0}
+.ai-ask-form{display:flex;gap:.5rem;margin:.4rem 0}
+.ai-ask-form input{flex:1;min-width:0;padding:.55rem .7rem;border:1px solid var(--line);border-radius:8px;font:inherit}
+.ai-answer{margin-top:.6rem;padding:.75rem .9rem;background:var(--bg);border:1px solid var(--line);border-radius:10px;font-size:.92rem;line-height:1.5}
+.ai-doc{white-space:normal;padding:.75rem .9rem;background:var(--bg);border:1px solid var(--line);border-radius:10px;line-height:1.55}
+.ai-headline{font-size:1.05rem;font-weight:600;margin:.3rem 0 .6rem}
+.ai-proposal{margin-top:1rem;padding-top:.8rem;border-top:1px solid var(--line)}
+.ai-minutes{margin:.2rem 0 .9rem}
+.ai-minutes summary{cursor:pointer;font-weight:600}
+.ai-minutes textarea{width:100%;box-sizing:border-box}
+.fn-card .fd-form textarea{min-height:3.2em}

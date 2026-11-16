@@ -1010,7 +1010,7 @@
         '<td>' + esc(p.nextStep || "") + '</td>' +
         '<td>' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</td>' +
         '<td class="dim">' + esc(p.source || "") + '</td>' +
-        '<td class="row-actions"><a class="btn secondary" href="/letter/engagement?pipeline=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener" title="Proposal and engagement letter for this record">Letter</a> <button type="button" class="btn danger pl-delete">Remove</button></td>' +
+        '<td class="row-actions"><button type="button" class="btn ai-deal-open" data-deal="' + esc(p.id) + '" title="Pre-call brief, call notes, Diagnostic first pass">AI</button> <a class="btn secondary" href="/letter/engagement?pipeline=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener" title="Proposal and engagement letter for this record">Letter</a> <button type="button" class="btn danger pl-delete">Remove</button></td>' +
         '</tr>';
     }).join("");
   }
@@ -1131,7 +1131,7 @@
         '<td class="dim">' + esc(p.org || "") + '</td>' +
         '<td class="dim">' + esc(PROSPECT_SOURCE_LABELS[p.source] || p.source || "") + '</td>' +
         '<td><select class="inline-select ps-stage-select">' + opts + '</select></td>' +
-        '<td class="dim">' + esc(p.notes || "") + '</td>' +
+        '<td class="dim">' + esc(p.notes || "") + (window.AIX ? window.AIX.briefHtml(p) : "") + '</td>' +
         '<td><button type="button" class="btn ps-score" title="Score this organization in InstitutionalOS">Score</button> <button type="button" class="btn ps-promote">Promote</button> <button type="button" class="btn danger ps-delete">Remove</button></td>' +
         '</tr>';
       // Same 990 financial-health disclosure as the Giving Landscape org

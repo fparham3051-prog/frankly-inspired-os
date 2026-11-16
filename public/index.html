@@ -69,6 +69,7 @@
     <div class="rail-label">Library</div>
     <button type="button" class="rail-btn" data-view="playbook">Playbooks</button>
     <button type="button" class="rail-btn" data-view="process">Process Library</button>
+    <button type="button" class="rail-btn" data-view="fieldnotes">Field Notes</button>
   </nav>
 
   <main id="main-content" tabindex="-1">
@@ -99,6 +100,12 @@
           <p class="today-sub">Weekly check-ins due, blocked actions, 90-day reviews, and confirmed constraints still without a plan.</p>
           <ul class="action-list" id="today-clients"><li class="empty-note" style="border:none;">Loading...</li></ul>
           <a href="https://grantpass-dashboard.onrender.com/" class="today-more">Open client records &rarr;</a>
+        </div>
+        <div class="fw-card today-card" id="ai-ask-card" hidden>
+          <h3>Ask the system</h3>
+          <p class="today-sub">A question about your pipeline, leads, money, checklists, or grants. It answers only from what's in the system.</p>
+          <form id="ai-ask-form" class="ai-ask-form"><input id="ai-ask-q" type="text" placeholder="Which deals have stalled for 30 days?" maxlength="600" aria-label="Your question"><button type="submit" class="btn">Ask</button></form>
+          <div id="ai-ask-answer" class="ai-answer" role="status" hidden></div>
         </div>
         <div class="fw-card today-card" id="today-foundation-card" hidden>
           <h3>Also due</h3>
@@ -1483,6 +1490,18 @@
       <div class="fd-panel" data-gv-panel="gv-meeting" hidden></div>
     </section>
 
+    <!-- ================= FIELD NOTES ================= -->
+    <section class="view" data-view="fieldnotes" hidden>
+      <div class="view-head"><h2>Field Notes</h2><span class="tag">written with AI, approved by you</span></div>
+      <p class="view-intro">Short notes for your website and the people who signed up for them: the signal, the usual assumption, the real constraint, what to check, and one 90-day action. A draft is written each month from your problem log (no names). Edit it, publish it to the Insights page, then email it to subscribers; that email waits in Messages to approve like everything else.</p>
+      <div id="fn-panel"><p class="load-note">Loading...</p></div>
+    </section>
+
+    <!-- ================= DEAL ASSISTANT ================= -->
+    <section class="view" data-view="deal" hidden>
+      <div id="deal-panel"></div>
+    </section>
+
     <!-- ================= CONTACTS ================= -->
     <section class="view" data-view="contacts" hidden>
       <div class="view-head"><h2>Contacts</h2><span class="tag">one record per person and organization</span></div>
@@ -1555,6 +1574,11 @@
         <span class="form-msg" id="areas-msg" role="status"></span>
       </div>
 
+      <div class="fw-card" id="ai-card">
+        <h3>AI assistance</h3>
+        <div id="ai-body"><p class="load-note">Loading...</p></div>
+      </div>
+
       <div class="fw-card owner-only" id="gmail-card">
         <h3>Connected email</h3>
         <p class="view-intro">Connect a Gmail or Google Workspace account so approved messages go out from your own address, land in your Sent folder, and replies show up here, and so the prospect report can be saved to Google Sheets. Nothing is ever sent without your approval.</p>
@@ -1581,6 +1605,7 @@
 <script src="/governance.js" defer></script>
 <script src="/library.js" defer></script>
 <script src="/contacts.js" defer></script>
+<script src="/aix.js" defer></script>
 <script>
 // ---------- InstitutionalOS embed + two-way sync with Prospecting ----------
 // The nav button below opens InstitutionalOS's live scorecard in an iframe.

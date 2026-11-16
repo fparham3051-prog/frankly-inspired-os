@@ -212,6 +212,7 @@
         (prog.questions || []).map(function (q) { return (a.answers || {})[q.key] ? '<h4 class="settings-h4">' + esc(q.label) + '</h4><p class="fd-pre">' + esc(a.answers[q.key]) + "</p>" : ""; }).join("") +
         (d.history.length ? '<h4 class="settings-h4">Earlier applications from this organization</h4><ul class="fd-list">' + d.history.map(function (h) { return '<li><a href="#" data-gm-open="' + esc(h.id) + '">' + esc(fmtDate(h.createdAt)) + "</a><span>" + pill(STATUS_LABEL[h.status] || h.status, STATUS_KIND[h.status]) + (h.amountAwarded ? " " + money(h.amountAwarded) : "") + "</span></li>"; }).join("") + "</ul>" : "") + "</div>";
 
+      html += '<div data-ai-grant="' + esc(a.id) + '"></div>';
       // Reviews
       html += '<div class="fw-card"><h3>Reviews</h3>' + (d.score.average != null ? '<p><strong>' + d.score.average.toFixed(1) + " / 5</strong> average from " + d.score.reviews + " review" + (d.score.reviews === 1 ? "" : "s") +
         " &middot; " + Object.keys(REC_LABEL).filter(function (k) { return d.score.recommendations[k]; }).map(function (k) { return d.score.recommendations[k] + " " + REC_LABEL[k].toLowerCase(); }).join(", ") + (d.score.conflicts ? " &middot; " + d.score.conflicts + " stepped aside (conflict)" : "") + "</p>" : "") +
@@ -576,7 +577,7 @@
 
   // ---------- Settings > Areas ----------
   var AREA_LABEL = { consulting: "Consulting practice (pipeline, money, delivery)", institutionalos: "InstitutionalOS (client diagnostics)", marketScan: "DMV market scan", donorAnalysis: "Donor analysis",
-    givingLandscape: "Giving landscape", fieldIntelligence: "Field intelligence", myDesk: "My Desk", grantmaking: "Grants (give money out)", fundraising: "Fundraising (donors and gifts)", governance: "Board & governance" };
+    givingLandscape: "Giving landscape", fieldIntelligence: "Field intelligence", myDesk: "My Desk", grantmaking: "Grants (give money out)", fundraising: "Fundraising (donors and gifts)", governance: "Board & governance", ai: "AI assistance (briefs, drafts for approval, summaries)" };
   function renderAreas() {
     var box = document.getElementById("areas-list");
     if (!box) return;
@@ -633,7 +634,9 @@
         pr.stepsDue.slice(0, 4).forEach(function (x) { add(x.overdue ? 0 : 1, "Checklist: " + x.subjectLabel, x.text + (x.overdue ? "" : " (" + fmtDate(x.dueOn) + ")"), "run:" + x.runId); });
         var mods = (window.ORG && window.ORG.modules) || {}, areaMod = { grants: "grantmaking", fundraising: "fundraising", board: "governance", institutionalos: "institutionalos", consulting: "consulting" };
         var sug = pr.suggestions.filter(function (x) { return !areaMod[x.area] || mods[areaMod[x.area]] !== false; });
-        (pr.replies || []).filter(function (x) { return x.at && x.at.slice(0, 10) >= new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10); }).slice(0, 3).forEach(function (x) { add(0, "Reply", (x.from || "Someone") + " replied: " + x.subject, "run:" + x.runId); });
+        (pr.replies || []).filter(function (x) { return x.at && x.at.slice(0, 10) >= new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10); }).slice(0, 3).forEach(function (x) { add(0, "Reply", (x.from || "Someone") + (x.summary ? ": " + x.summary : " replied: " + x.subject), x.runId ? "run:" + x.runId : "lib:lb-outbox"); });
+        (pr.precalls || []).forEach(function (x) { add(1, "Pre-call brief", x.label + (x.date ? " (" + fmtDate(x.date) + ")" : ""), "deal:" + x.id); });
+        if (pr.noteDrafts) add(1, "Field notes", pr.noteDrafts + " draft" + (pr.noteDrafts === 1 ? "" : "s") + " to review and publish", "notes:");
         if (pr.drafts) add(0, "Messages", pr.drafts + " message" + (pr.drafts === 1 ? "" : "s") + " waiting for your approval", "lib:lb-outbox");
         if (sug.length) add(2, "Process Library", sug.length === 1 ? "Ready to start: " + sug[0].processName + " for " + sug[0].subjectLabel : sug.length + " checklists ready to start", "lib:lb-work");
       }
@@ -652,6 +655,8 @@
     if (b) {
       e.preventDefault();
       var parts = b.getAttribute("data-today-go").split(":"), kind = parts[0], arg = parts[1];
+      if (kind === "deal" && window.AIX) { window.AIX.deal(arg); return; }
+      if (kind === "notes") { var fb = document.querySelector('.rail-btn[data-view="fieldnotes"]'); if (fb) fb.click(); return; }
       var view = { grants: "grants", fundraising: "fundraising", donor: "fundraising", board: "board", meeting: "board", lib: "process", run: "process" }[kind];
       var rail = document.querySelector('.rail-btn[data-view="' + view + '"]');
       if (rail) rail.click();

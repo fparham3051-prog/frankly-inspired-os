@@ -939,3 +939,45 @@ ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS gmail_thread_id TEXT DEFAULT ''
 ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS gmail_message_id TEXT DEFAULT '';
 ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS replied_at TEXT DEFAULT '';
 ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS reply_from TEXT DEFAULT '';
+
+-- ---------- AI assistance ----------
+-- Drafts not tied to a checklist (AI first replies, reply answers, field
+-- note broadcasts, call follow-ups) use the same approval queue.
+ALTER TABLE proc_outbox ALTER COLUMN run_id DROP NOT NULL;
+ALTER TABLE proc_outbox ALTER COLUMN step_index DROP NOT NULL;
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS subject_kind TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS subject_id TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS subject_label TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS reply_to_message TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS recipients TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS reply_kind TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS reply_summary TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS ai BOOLEAN DEFAULT false;
+ALTER TABLE proc_activity ALTER COLUMN run_id DROP NOT NULL;
+
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS ai_brief TEXT DEFAULT '';
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS ai_at TEXT DEFAULT '';
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS unsubscribed_at TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ai_precall TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ai_precall_for TEXT DEFAULT '';
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ai_diagnostic TEXT DEFAULT '';
+ALTER TABLE gm_applications ADD COLUMN IF NOT EXISTS ai_read TEXT DEFAULT '';
+ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS ai_summary TEXT DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS field_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT DEFAULT '',
+  signal TEXT DEFAULT '',
+  assumption TEXT DEFAULT '',
+  constraint_text TEXT DEFAULT '',
+  evidence TEXT DEFAULT '',
+  action TEXT DEFAULT '',
+  trigger_key TEXT DEFAULT '',
+  status TEXT DEFAULT 'draft',            -- draft | published | archived
+  published_on TEXT DEFAULT '',
+  outbox_id TEXT DEFAULT '',
+  source TEXT DEFAULT 'ai',
+  created_at TEXT,
+  updated_at TEXT
+);

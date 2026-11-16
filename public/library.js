@@ -188,15 +188,16 @@
       el.innerHTML = (gm ? '<p class="fd-small lb-note">' + pill("Sending from " + r.mail.from, "good") + " Approving sends from your Gmail; it lands in your Sent folder and replies show up here.</p>"
         : ext ? "" : '<p class="fd-small lb-note">' + pill("Sending from your own email", "gold") + " Approving opens the message in your email app with everything filled in, ready to send. To send straight from the system, connect Gmail in Settings.</p>") +
         (drafts.length ? drafts.map(function (m) {
-          return '<form class="fw-card lb-draft" data-draft="' + esc(m.id) + '"><p class="fd-small fd-dim">' + esc(m.processName) + " &middot; " + esc(m.subjectLabel) + (m.stepText ? " &middot; " + esc(m.stepText) : "") + (m.kind === "reminder" ? " " + pill("Follow-up", "gold") : "") + "</p>" +
-            '<div class="fd-form">' + input("toEmail", "To", "text", m.toEmail, 'placeholder="name@organization.org" required') + input("subject", "Subject", "text", m.subject, "required") +
+          return '<form class="fw-card lb-draft" data-draft="' + esc(m.id) + '"><p class="fd-small fd-dim">' + esc(m.processName) + " &middot; " + esc(m.subjectLabel) + (m.stepText ? " &middot; " + esc(m.stepText) : "") + (m.kind === "reminder" ? " " + pill("Follow-up", "gold") : "") + (m.kind === "reply" ? " " + pill("Answer to their reply", "gold") : "") + (m.ai ? ' <span class="pill ai-pill" title="Written with AI; read it before approving">AI draft</span>' : "") + "</p>" +
+            (m.kind === "broadcast" ? '<p class="fd-small lb-note">' + pill(m.recipientCount + " subscriber" + (m.recipientCount === 1 ? "" : "s"), "good") + " One approval sends each person their own copy; {first} becomes their first name.</p>" : "") +
+            '<div class="fd-form">' + (m.kind === "broadcast" ? "" : input("toEmail", "To", "text", m.toEmail, 'placeholder="name@organization.org" required')) + input("subject", "Subject", "text", m.subject, "required") +
             area("body", "Message", m.body, 'rows="16"') + "</div>" +
-            '<div class="fd-actions">' + (ext ? '<button type="button" class="btn" data-lb-send="' + esc(m.id) + '">' + (gm ? "Approve and send from " + esc(r.mail.from) : "Approve and send") + "</button> " : "") +
-            '<button type="button" class="btn' + (ext ? " secondary" : "") + '" data-lb-open="' + esc(m.id) + '">Approve and open in my email</button> <button type="button" class="btn secondary" data-lb-save="' + esc(m.id) + '">Save changes</button> <button type="button" class="btn danger" data-lb-discard="' + esc(m.id) + '">Don\'t send</button></div>' +
+            '<div class="fd-actions">' + (ext || (m.kind === "broadcast" && gm) ? '<button type="button" class="btn" data-lb-send="' + esc(m.id) + '">' + (m.kind === "broadcast" ? "Approve and send to " + m.recipientCount : gm ? "Approve and send from " + esc(r.mail.from) : "Approve and send") + "</button> " : "") +
+            (m.kind === "broadcast" ? (gm ? "" : '<span class="fd-small">Connect Gmail in Settings to send this.</span> ') : '<button type="button" class="btn' + (ext ? " secondary" : "") + '" data-lb-open="' + esc(m.id) + '">Approve and open in my email</button> ') + '<button type="button" class="btn secondary" data-lb-save="' + esc(m.id) + '">Save changes</button> <button type="button" class="btn danger" data-lb-discard="' + esc(m.id) + '">Don\'t send</button></div>' +
             (m.error ? '<p class="fd-small lb-note">' + pill("Last try failed", "warn") + " " + esc(m.error) + "</p>" : "") + "</form>";
         }).join("") : empty("Nothing waiting for your approval.")) +
         (done.length ? '<details class="fw-card"><summary><strong>Recently approved or set aside</strong> <span class="fd-dim">(' + done.length + ")</span></summary><ul class=\"fd-list\">" + done.map(function (m) {
-          return "<li><span><strong>" + esc(m.subject) + '</strong><br><span class="fd-small fd-dim">' + esc(m.subjectLabel) + (m.toEmail ? " &middot; " + esc(m.toEmail) : "") + "</span></span><span>" +
+          return "<li><span><strong>" + esc(m.subject) + '</strong><br><span class="fd-small fd-dim">' + esc(m.subjectLabel) + (m.toEmail ? " &middot; " + esc(m.toEmail) : "") + "</span>" + (m.replySummary ? '<br><span class="fd-small">Their reply: ' + esc(m.replySummary) + "</span>" : "") + "</span><span>" +
             (m.repliedAt ? pill("Replied " + fmtDate(m.repliedAt), "good") + " " : "") + (m.status === "sent" ? pill("Sent " + fmtDate(m.sentAt) + (m.sentVia === "gmail" ? " from Gmail" : ""), "good") : m.status === "opened" ? pill("Sent from your email " + fmtDate(m.sentAt), "good") : pill("Not sent")) + (m.approvedBy ? '<br><span class="fd-small fd-dim">approved by ' + esc(m.approvedBy) + "</span>" : "") + "</span></li>";
         }).join("") + "</ul></details>" : "");
     });
@@ -204,7 +205,7 @@
   function setCount(n) { var c = document.getElementById("lb-outbox-count"); if (c) c.textContent = n ? "(" + n + ")" : ""; }
   function draftValues(id) {
     var f = document.querySelector('[data-draft="' + id + '"]');
-    return f ? { toEmail: f.elements.toEmail.value.trim(), subject: f.elements.subject.value, body: f.elements.body.value } : {};
+    return f ? { toEmail: f.elements.toEmail ? f.elements.toEmail.value.trim() : undefined, subject: f.elements.subject.value, body: f.elements.body.value } : {};
   }
 
   // ---------- What we deliver ----------

@@ -163,6 +163,8 @@ app.set("trust proxy", 1);
 // header, dropping the X-Powered-By: Express fingerprint, and a few others.
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
+// Documents for the AI Diagnostic first pass are larger than any other request.
+app.use("/api/ai/diagnostic", express.json({ limit: "30mb" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -256,7 +258,7 @@ function rowToRock(r) {
   return { id: r.id, title: r.title, quarter: r.quarter, dueDate: r.due_date, notes: r.notes, status: r.status, createdAt: r.created_at };
 }
 function rowToProspect(r) {
-  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "", trigger: r.trigger_key || "", selfScores: safeJsonParse(r.self_scores || "", null) };
+  return { id: r.id, name: r.name, org: r.org, source: r.source, status: r.status, link: r.link, notes: r.notes, createdAt: r.created_at, sourceRef: r.source_ref, interest: r.interest || "", orgStage: r.org_stage || "", trigger: r.trigger_key || "", selfScores: safeJsonParse(r.self_scores || "", null), aiBrief: safeJsonParse(r.ai_brief || "", null), unsubscribedAt: r.unsubscribed_at || "" };
 }
 function rowToDigest(r) {
   return { id: r.id, category: r.category, headline: r.headline, summary: r.summary, source: r.source, url: r.url, loggedAt: r.logged_at };
@@ -1773,6 +1775,7 @@ require("./processes").mount(app, { pool, requireAuth });
 require("./contacts").mount(app, { pool, requireAuth });
 require("./gmail").mount(app, { pool, requireAuth });
 require("./sheets").mount(app, { pool, requireAuth });
+require("./ai-features").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task
@@ -1784,9 +1787,10 @@ async function automationTick() {
   const out = { at: new Date().toISOString() };
   try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
   try { await require("./processes").ensureStarter(pool); await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
+  try { out.ai = await require("./ai-features").tick(pool); } catch (e) { out.aiError = String(e.message || e); }
   try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
-  const drafts = (await pool.query("SELECT o.id FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND r.archived_at IS NULL").catch(() => ({ rows: [] }))).rows.map((r) => r.id);
+  const drafts = (await pool.query("SELECT o.id FROM proc_outbox o LEFT JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND (r.id IS NULL OR r.archived_at IS NULL)").catch(() => ({ rows: [] }))).rows.map((r) => r.id);
   const seen = new Set(JSON.parse((await pool.query("SELECT value FROM app_settings WHERE key = 'tick_notified'").catch(() => ({ rows: [] }))).rows[0]?.value || "[]"));
   const fresh = drafts.filter((id) => !seen.has(id));
   const replies = (await pool.query("SELECT count(*)::int AS n FROM proc_outbox WHERE replied_at >= $1", [new Date(Date.now() - 864e5).toISOString()]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n;
@@ -1805,6 +1809,10 @@ app.post("/api/admin/tick", requireAdminScope("status"), async (req, res) => {
     if (req.query.markNotified) await pool.query("INSERT INTO app_settings (key, value) VALUES ('tick_notified', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [JSON.stringify(drafts)]);
     res.json(Object.assign({ ok: true }, out));
   } catch (err) { console.error("tick", err); res.status(500).json({ ok: false, error: String(err.message || err) }); }
+});
+app.get("/aix.js", (req, res) => {
+  if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
+  res.sendFile(path.join(__dirname, "public", "aix.js"));
 });
 app.get("/contacts.js", (req, res) => {
   if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();

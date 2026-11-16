@@ -41,12 +41,32 @@ async function t(name, fn) {
   await pool.end();
   // A stand-in for Google (OAuth + Gmail API) so the Gmail connection can be tested end to end.
   const http = require("http");
-  const MOCK = { sends: [], threads: {}, port: 0 };
+  const MOCK = { sends: [], threads: {}, port: 0, ai: [], inbox: [], from: {}, siteNotes: null };
   const mock = http.createServer((q, r) => {
     let body = ""; q.on("data", (d) => (body += d)); q.on("end", () => {
       const u = new URL(q.url, "http://x"), json = (o, st) => { r.writeHead(st || 200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
       if (u.pathname === "/token") { const f = new URLSearchParams(body); return json(f.get("grant_type") === "authorization_code" ? (f.get("code") === "good-code" ? { access_token: "at1", refresh_token: "rt1", expires_in: 3600, scope: "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file" } : { error: "invalid_grant" }) : { access_token: "at2", expires_in: 3600 }, f.get("code") === "bad" ? 400 : 200); }
       if (u.pathname === "/revoke") return json({});
+      // Stand-in for the website server: the AI relay and field notes.
+      if (u.pathname.startsWith("/api/admin/") && q.headers["x-reminder-secret"] !== "ws") return json({ ok: false }, 401);
+      if (u.pathname === "/api/admin/ai" && q.method === "GET") return json({ ok: true, configured: true, model: "test-model" });
+      if (u.pathname === "/api/admin/ai") {
+        const j = JSON.parse(body), parts = j.messages[0].content, text = parts.map((x) => x.text || "").join("\n");
+        MOCK.ai.push({ system: j.system, text, parts });
+        const out = (o) => json({ ok: true, text: typeof o === "string" ? o : JSON.stringify(o) });
+        if (/A new lead came in/.test(text)) return out({ brief: { who: "Program director at a youth org", read: "Scored revenue lowest.", likelyConstraint: "Revenue concentration", nextStep: "Offer a call", fit: "strong" }, reply: { subject: "Thanks for reaching out", body: "Hi Riley,\n\nThanks for taking the check-up." } });
+        if (/Draft one new field note/.test(text)) return out({ title: "When the waitlist grows faster than staff", signal: "A growing waitlist.", assumption: "We need more funding.", constraint: "Intake process capacity.", evidence: "Time from inquiry to service.", action: "Map intake steps and time them.", trigger: "strain" });
+        if (/pre-call brief/.test(text)) return out({ headline: "Northside Arts, discovery call", numbers: ["Revenue $1.2M"], heard: "Board is worried.", likelyConstraint: "Founder dependence", questions: ["Q1", "Q2", "Q3"], goal: "Agree on a Diagnostic", watchFor: "Budget timing" });
+        if (/call notes into records/.test(text)) return out({ summary: "Talked about board strain.", stage: "assessment", nextStep: "Send Diagnostic proposal", nextStepDate: "2030-01-15", trigger: "founder", problem: { presentingProblem: "Board disengaged", verifiedConstraint: "Founder holds all relationships", differs: true, atStake: "Succession", whoPays: "Board", orgType: "Arts", orgSize: "$1M" }, followUp: { subject: "Good talking today", body: "Thanks for the time today." } });
+        if (/Someone replied/.test(text)) return out({ kind: "scheduling", summary: "Wants to meet next Tuesday", answer: { subject: "Re: time", body: "Tuesday works." } });
+        if (/Read the attached documents/.test(text)) return out({ areas: [{ key: "revenue", score: 42, confidence: "medium", evidence: ["990 p.1: revenue fell 20%"], missing: "Audit" }], constraint: { area: "revenue", name: "Revenue concentration", why: "One funder is 60%.", evidenceFor: ["990"], evidenceAgainst: [], confidence: "medium" }, memo: "Draft memo.", plan: [{ action: "Diversify", owner: "ED", week: 4, evidence: "Two new funders" }], questions: ["Q?"] });
+        if (/First read of a grant application/.test(text)) return out({ summary: "Solid youth program.", criteria: [{ criterion: "Impact", assessment: "Clear outcomes", rating: "strong" }], strengths: ["Track record"], concerns: [], questions: ["Budget?"], lean: "advance", leanReason: "Fits the program." });
+        if (/Summarize a grantee/.test(text)) return out({ summary: "On track.", outcomes: ["120 youth served"], risks: [], followUp: "" });
+        if (/Draft board meeting minutes/.test(text)) return out("MINUTES OF THE BOARD\nCalled to order [confirm].");
+        if (/^Question:/m.test(text)) return out("You have 1 deal in Lead.");
+        return out({});
+      }
+      if (u.pathname === "/api/admin/field-notes") { MOCK.siteNotes = JSON.parse(body).notes; return json({ ok: true, count: MOCK.siteNotes.length }); }
       if (q.headers.authorization === "Bearer at1" || q.headers.authorization === "Bearer at2") {
         const SH = MOCK.sheet;
         if (u.pathname === "/v4/spreadsheets" && q.method === "POST") {
@@ -76,14 +96,15 @@ async function t(name, fn) {
         return json({ id: "m" + n, threadId });
       }
       let m;
-      if ((m = /^\/gmail\/v1\/users\/me\/messages\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], payload: { headers: [{ name: "Message-ID", value: "<" + m[1] + "@mail.test>" }] } });
+      if (u.pathname === "/gmail/v1/users/me/messages" && q.method === "GET") return json({ messages: MOCK.inbox.map((id) => ({ id })) });
+      if ((m = /^\/gmail\/v1\/users\/me\/messages\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], snippet: "Could we talk Tuesday?", payload: { mimeType: "text/plain", body: { data: Buffer.from("Could we talk Tuesday?\n\nOn Mon someone wrote:\n> old").toString("base64url") }, headers: [{ name: "Message-ID", value: "<" + m[1] + "@mail.test>" }].concat(MOCK.from[m[1]] ? [{ name: "From", value: MOCK.from[m[1]] }] : []) } });
       if ((m = /^\/gmail\/v1\/users\/me\/threads\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], messages: MOCK.threads[m[1]] || [] });
       json({ error: { message: "not found" } }, 404);
     });
   });
   await new Promise((ok) => mock.listen(0, ok)); MOCK.port = mock.address().port;
   const GURL = "http://localhost:" + MOCK.port;
-  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
+  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, WEBSITE_API_URL: GURL, WEBSITE_ADMIN_SECRET: "ws", SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
   const srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
@@ -659,8 +680,121 @@ async function t(name, fn) {
     const run = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.processName === "System setup");
     assert.ok(run.steps[5].doneOn, "creating the sheet ticks the setup step");
   });
+  // ---------- AI assistance ----------
+  await t("ai: status shows ready through the website relay; board can't run AI actions", async () => {
+    const st = (await req("owner1", "GET", "/api/ai/status")).data;
+    assert.strictEqual(st.ready, true, JSON.stringify(st)); assert.strictEqual(st.relay.model, "test-model");
+    assert.strictEqual((await req("board2", "POST", "/api/ai/ask", { question: "How many deals?" })).status, 403);
+  });
+  await t("ai 1: a new website lead gets a brief and a first-reply draft waiting for approval (nothing sent)", async () => {
+    const sends = MOCK.sends.length;
+    const p = (await req("owner1", "POST", "/api/prospects", { name: "Riley Shaw", org: "Eastgate Youth", source: "assessment tool", notes: "Email: riley@eastgate.org\nTool: Health Index\nComposite score: 48" })).data;
+    const pid = (p.item || p).id;
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    const row = (await req("owner1", "GET", "/api/state")).data.prospects.find((x) => x.id === pid);
+    assert.ok(row.aiBrief && row.aiBrief.fit === "strong", JSON.stringify(row.aiBrief));
+    const call = MOCK.ai.find((c) => /A new lead came in/.test(c.text) && /Eastgate/.test(c.text));
+    assert.ok(call && /Composite score: 48/.test(call.text), "the brief is built from what they sent"); assert.match(call.system, /Never invent facts/);
+    const d = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.subjectId === pid && m.status === "draft");
+    assert.ok(d && d.ai && d.toEmail === "riley@eastgate.org" && d.purpose === "First reply (AI draft)", JSON.stringify(d));
+    assert.match(d.body, /Thanks for taking the check-up/);
+    assert.strictEqual(MOCK.sends.length, sends, "nothing sent on its own");
+    await req("owner1", "POST", "/api/ai/lead/" + pid, {});
+    const drafts = (await req("owner1", "GET", "/api/proc/outbox")).data.items.filter((m) => m.subjectId === pid && m.status === "draft");
+    assert.strictEqual(drafts.length, 1, "a new draft replaces the old one");
+  });
+  await t("ai 5: a reply is read, summarized, and answered in the same thread after approval", async () => {
+    const out = (await req("owner1", "GET", "/api/proc/outbox")).data.items;
+    const first = out.find((m) => m.replySummary);
+    assert.ok(first, "the reply from the Gmail test was classified"); assert.strictEqual(first.replyKind, "scheduling"); assert.strictEqual(first.replySummary, "Wants to meet next Tuesday");
+    const ans = out.find((m) => m.kind === "reply" && m.status === "draft");
+    assert.ok(ans && ans.ai && ans.toEmail === "avery@board.org", JSON.stringify(ans));
+    const call = MOCK.ai.find((c) => /Someone replied/.test(c.text));
+    assert.match(call.text, /Could we talk Tuesday\?/); assert.ok(!/old/.test(call.text.split("Their reply")[1]), "quoted earlier message cut off");
+    const r = await req("owner1", "POST", `/api/proc/outbox/${ans.id}/send`, {});
+    assert.strictEqual(r.status, 200, JSON.stringify(r.data));
+    const last = MOCK.sends[MOCK.sends.length - 1];
+    assert.strictEqual(last.threadId, "t1"); assert.match(last.raw, /^In-Reply-To: <r1@mail\.test>/m);
+    const sum = (await req("owner1", "GET", "/api/proc/summary")).data;
+    assert.ok(sum.replies.some((x) => x.summary === "Wants to meet next Tuesday"));
+  });
+  await t("ai 2: field note drafted, published to the website, emailed to subscribers with one approval; unsubscribe works", async () => {
+    const n = (await req("owner1", "POST", "/api/ai/field-notes/draft", {})).data.item;
+    assert.strictEqual(n.status, "draft"); assert.strictEqual(n.trigger, "strain");
+    const call = MOCK.ai.find((c) => /Draft one new field note/.test(c.text));
+    assert.ok(!/Northside|Harbor|Eastgate/.test(call.text), "no organization names go into the field note prompt");
+    assert.strictEqual((await req("owner1", "POST", `/api/ai/field-notes/${n.id}/email`, {})).status, 409, "must publish first");
+    await req("owner1", "PATCH", "/api/ai/field-notes/" + n.id, { title: "When the waitlist outgrows the staff" });
+    const pub = (await req("owner1", "POST", `/api/ai/field-notes/${n.id}/publish`, {})).data;
+    assert.ok(pub.site.pushed, JSON.stringify(pub)); assert.strictEqual(MOCK.siteNotes[0].title, "When the waitlist outgrows the staff");
+    const list = (await req("owner1", "GET", "/api/ai/field-notes")).data;
+    assert.strictEqual(list.subscribers, 1, "Taylor from the pop-up");
+    const em = (await req("owner1", "POST", `/api/ai/field-notes/${n.id}/email`, {})).data;
+    assert.strictEqual(em.recipients, 1);
+    const b = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.id === em.outboxId);
+    assert.strictEqual(b.kind, "broadcast"); assert.strictEqual(b.recipientCount, 1); assert.match(b.body, /Reply "unsubscribe"/);
+    const before = MOCK.sends.length;
+    const sent = await req("owner1", "POST", `/api/proc/outbox/${b.id}/send`, {});
+    assert.strictEqual(sent.status, 200, JSON.stringify(sent.data)); assert.strictEqual(sent.data.sent, 1);
+    assert.strictEqual(MOCK.sends.length, before + 1); assert.match(MOCK.sends[MOCK.sends.length - 1].raw, /^To: taylor@harbor\.org/m);
+    const rawB = MOCK.sends[MOCK.sends.length - 1].raw.split("\r\n\r\n").slice(1).join("").replace(/\s+/g, "");
+    assert.match(Buffer.from(rawB, "base64").toString("utf8"), /Hi Taylor,/);
+    MOCK.inbox.push("u1"); MOCK.from.u1 = "Taylor Brooks <taylor@harbor.org>";
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    assert.strictEqual((await req("owner1", "GET", "/api/ai/field-notes")).data.subscribers, 0, "unsubscribed");
+  });
+  await t("ai 6 + 4: pre-call brief, then call notes become records and a follow-up draft", async () => {
+    const deal = (await req("owner1", "POST", "/api/pipeline", { name: "Northside Arts", org: "Northside Arts", stage: "discovery", nextStep: "Discovery call", nextStepDate: new Date().toISOString().slice(0, 10) })).data;
+    const id = (deal.item || deal).id;
+    await req("owner1", "POST", "/api/contacts", { name: "Jamie Cole", email: "jamie@northside.org", orgId: (await req("owner1", "POST", "/api/orgs", { name: "Northside Arts" })).data.item.id });
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    let d = (await req("owner1", "GET", "/api/ai/deal/" + id)).data;
+    assert.ok(d.precall && d.precall.questions.length === 3, "brief written the day of the call");
+    assert.ok((await req("owner1", "GET", "/api/proc/summary")).data.precalls.some((x) => x.id === id), "shows on Today");
+    const prop = (await req("owner1", "POST", `/api/ai/call-notes/${id}`, { notes: "Board chair says they are disengaged; founder holds every funder relationship. Agreed to look at a Diagnostic." })).data;
+    assert.strictEqual(prop.stage, "assessment"); assert.strictEqual(prop.contact.email, "jamie@northside.org");
+    const ap = (await req("owner1", "POST", `/api/ai/call-notes/${id}/apply`, prop)).data;
+    assert.ok(ap.problemId && ap.outboxId, JSON.stringify(ap));
+    const row = (await req("owner1", "GET", "/api/state")).data.pipeline.find((x) => x.id === id);
+    assert.strictEqual(row.stage, "assessment"); assert.strictEqual(row.nextStepDate, "2030-01-15"); assert.match(row.notes, /call: Talked about board strain/);
+    const fu = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.id === ap.outboxId);
+    assert.strictEqual(fu.toEmail, "jamie@northside.org"); assert.strictEqual(fu.status, "draft");
+    CT.deal = id;
+  });
+  await t("ai 3: Diagnostic first pass reads uploaded documents and stores the result (documents not kept)", async () => {
+    const files = [{ name: "990-2024.pdf", type: "application/pdf", data: Buffer.from("%PDF-1.4 fake").toString("base64") }, { name: "budget.txt", type: "text/plain", data: Buffer.from("Total revenue 1,200,000").toString("base64") }];
+    const r = await req("owner1", "POST", `/api/ai/diagnostic/${CT.deal}`, { files, context: "Board retreat in March" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.data)); assert.strictEqual(r.data.constraint.name, "Revenue concentration");
+    const call = MOCK.ai.find((c) => /Read the attached documents/.test(c.text));
+    assert.ok(call.parts.some((p) => p.type === "document" && p.source.media_type === "application/pdf"), "PDF sent as a document");
+    assert.ok(call.parts.some((p) => /Total revenue 1,200,000/.test(p.text || "")), "text file included");
+    const d = (await req("owner1", "GET", "/api/ai/deal/" + CT.deal)).data;
+    assert.deepStrictEqual(d.diagnostic.docs, ["990-2024.pdf", "budget.txt"]);
+    assert.ok(!JSON.stringify(d.diagnostic).includes("ZmFrZQ"), "document contents not stored");
+    assert.strictEqual((await req("owner1", "POST", `/api/ai/diagnostic/${CT.deal}`, { files: [] })).status, 400);
+  });
+  await t("ai 7: grant first read, minutes draft; ai 8: ask the system", async () => {
+    const apps = (await req("owner1", "GET", "/api/gm/applications")).data.items;
+    const g = (await req("owner1", "POST", "/api/ai/grant-read/" + apps[0].id, {})).data;
+    assert.strictEqual(g.lean, "advance");
+    assert.strictEqual((await req("owner1", "GET", "/api/ai/grant-read/" + apps[0].id)).data.read.lean, "advance");
+    const mt = (await req("owner1", "GET", "/api/gov/meetings")).data.items[0];
+    const mn = (await req("owner1", "POST", "/api/ai/minutes/" + mt.id, { notes: "Chair opened at 6. Treasurer reported. Motion to approve budget passed." })).data;
+    assert.match(mn.minutes, /MINUTES/);
+    const a = (await req("owner1", "POST", "/api/ai/ask", { question: "How many deals are in Lead?" })).data;
+    assert.strictEqual(a.answer, "You have 1 deal in Lead.");
+    const call = MOCK.ai.find((c) => /^Question:/m.test(c.text));
+    assert.match(call.text, /Northside Arts/); assert.match(call.system || "", /ONLY the data provided/);
+  });
+  await t("ai: daily limit stops new requests with a clear message", async () => {
+    await Q.query("INSERT INTO app_settings (key, value) VALUES ('ai_usage', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [JSON.stringify({ date: new Date().toISOString().slice(0, 10), calls: 150 })]);
+    const r = await req("owner1", "POST", "/api/ai/ask", { question: "Anything?" });
+    assert.strictEqual(r.status, 429); assert.match(r.data.error, /limit/);
+    await Q.query("DELETE FROM app_settings WHERE key = 'ai_usage'");
+  });
   await t("tick: needs a key; reports only new drafts since the last notice", async () => {
     assert.strictEqual((await req("anon", "POST", "/api/admin/tick", null)).status, 401);
+    await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" });
     const t2 = (await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" })).data;
     assert.strictEqual(t2.newSinceLastNotice, 0); assert.ok(t2.waiting >= 1);
   });

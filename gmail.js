@@ -127,6 +127,20 @@ async function send(pool, { to, subject, body, threadId, inReplyTo }) {
   return { id: sent.id, threadId: sent.threadId, messageId, from: s.from, account: s.account };
 }
 
+// Plain text of a message: the text/plain part, or tag-stripped HTML, with
+// the quoted earlier message cut off.
+function bodyText(part) {
+  if (!part) return "";
+  const dec = (d) => Buffer.from(String(d || "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+  const find = (p, type) => { if (!p) return null; if (p.mimeType === type && p.body && p.body.data) return dec(p.body.data); for (const c of p.parts || []) { const r = find(c, type); if (r) return r; } return null; };
+  let t = find(part, "text/plain");
+  if (!t) { const h = find(part, "text/html"); t = h ? h.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&") : ""; }
+  const cut = t.search(/\n\s*On .{4,200}wrote:\s*\n|\n-{2,}\s*Original Message|\n>+ /);
+  return (cut > 0 ? t.slice(0, cut) : t).trim().slice(0, 8000);
+}
+let replyHook = null;
+function onReply(fn) { replyHook = fn; }
+
 // Notice replies to messages we sent: anything in the thread, after our
 // message, from someone other than us.
 async function checkReplies(pool) {
@@ -134,7 +148,7 @@ async function checkReplies(pool) {
   if (!list.length) return { checked: 0, replies: 0 };
   const ours = new Set(list.flatMap((a) => [a.email].concat((a.sendAs || []).map((x) => x.email))).map((e) => e.toLowerCase()));
   const since = new Date(Date.now() - 60 * 864e5).toISOString();
-  const rows = (await pool.query("SELECT id, run_id, gmail_thread_id, sent_at, subject, to_email FROM proc_outbox WHERE sent_via LIKE 'gmail:%' AND gmail_thread_id <> '' AND replied_at = '' AND sent_at >= $1 ORDER BY sent_at DESC LIMIT 40", [since])).rows;
+  const rows = (await pool.query("SELECT * FROM proc_outbox WHERE sent_via LIKE 'gmail:%' AND gmail_thread_id <> '' AND replied_at = '' AND sent_at >= $1 ORDER BY sent_at DESC LIMIT 40", [since])).rows;
   let replies = 0;
   for (const o of rows) {
     const acct = (await pool.query("SELECT sent_via FROM proc_outbox WHERE id = $1", [o.id])).rows[0].sent_via.slice(6);
@@ -151,8 +165,17 @@ async function checkReplies(pool) {
         const from = (((reply.payload || {}).headers || []).find((h) => /^from$/i.test(h.name)) || {}).value || "";
         const when = new Date(Number(reply.internalDate)).toISOString();
         await pool.query("UPDATE proc_outbox SET replied_at = $1, reply_from = $2 WHERE id = $3", [when, from.slice(0, 200), o.id]);
-        await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [crypto.randomUUID(), o.run_id, when, `Reply received from ${from.replace(/<.*>/, "").trim() || from}: ${o.subject}`]);
+        if (o.run_id) await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [crypto.randomUUID(), o.run_id, when, `Reply received from ${from.replace(/<.*>/, "").trim() || from}: ${o.subject}`]);
         replies++;
+        // Hand the reply to the AI features (classify, draft an answer for approval).
+        if (replyHook) {
+          try {
+            const full = await gapi(pool, acct, `/gmail/v1/users/me/messages/${encodeURIComponent(reply.id)}?format=full`);
+            const hdr = (n) => ((((full.payload || {}).headers) || []).find((h) => h.name.toLowerCase() === n) || {}).value || "";
+            const addr = ((/<([^>]+)>/.exec(from) || [])[1] || from).trim().toLowerCase();
+            await replyHook(pool, o, { from, addr, text: bodyText(full.payload) || full.snippet || "", messageId: hdr("message-id") });
+          } catch (e) { console.error("reply hook", e.message); }
+        }
       }
     } catch (e) { /* try again next pass */ }
   }
@@ -237,4 +260,4 @@ function mount(app, { pool, requireAuth }) {
   }));
 }
 
-module.exports = { mount, send, sender, checkReplies, accounts, gapi, _mime: mime };
+module.exports = { mount, send, sender, checkReplies, accounts, gapi, onReply, bodyText, _mime: mime };

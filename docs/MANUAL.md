@@ -82,6 +82,15 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   is sent without approval. Without a connection, approving opens the message
   in your email program.
 - **System setup checklist** (Process Library > In progress): the owner's one-time setup work, dated over about six weeks, started automatically. Gmail, the test message, and two-step sign-in tick themselves; the rest you tick.
+- **AI assistance** (Settings > AI assistance; switch it off under Areas). Requests go through the website server, which holds the Anthropic key; a daily limit (AI_DAILY_LIMIT, default 150 requests) caps use. Every message AI writes waits in Messages to approve, marked "AI draft".
+  - *Lead brief and first reply*: new website leads get a brief (who, what their scores say, likely constraint as a guess, next step, fit) on their Prospecting row and a first-reply draft. Pop-up sign-ups get a short welcome draft.
+  - *Pre-call brief*: written the day before a deal's dated next step (lead, discovery, Diagnostic stages); shows on Today and on the deal's AI page (the AI button on each Pipeline row).
+  - *Call notes to records*: paste notes on the deal's AI page; review the proposed stage, next step, problem log entry, and follow-up; Apply.
+  - *Diagnostic first pass*: upload documents on the deal's AI page; get seven-area pre-scores with evidence, a proposed binding constraint, a draft memo, a draft 90-day plan, and questions to verify. Documents are not stored.
+  - *Reading replies*: Gmail replies are summarized and classified; an answer is drafted in the same thread; a yes or scheduling reply moves a Lead deal to Discovery call; "unsubscribe" removes a field-notes subscriber.
+  - *Field Notes* (rail): a draft each month (after the 3rd) from the problem log, without names; edit, publish to the website's Insights page, then email subscribers with one approval.
+  - *Foundation*: AI first read on each grant application (criteria, strengths, concerns, questions, a lean); summaries of received grantee reports; "Draft the minutes from my notes" on a meeting.
+  - *Ask the system* (Today): questions answered only from the system's data.
 - **Automation runs on its own**: every 15 minutes while the app is awake, and
   every 3 hours from a scheduled task, the system refreshes contacts, ticks
   checklist steps it can see are done, drafts messages and follow-ups for

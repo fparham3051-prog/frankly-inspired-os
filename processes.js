@@ -20,6 +20,7 @@ const F = require("./foundation");
 const { ORG } = require("./accounts");
 const { todayIso, nowIso, newId, parseJson, toApi, insertRow, coerce } = F;
 const AUTO = require("./processes-auto");
+const GMAIL = require("./gmail");
 
 F.SPECS.proc_processes = {
   required: ["name"],
@@ -225,6 +226,8 @@ function mount(app, { pool, requireAuth }) {
     if (b.contactEmail != null || b.contactName != null) {
       const email = b.contactEmail != null ? String(b.contactEmail).trim().slice(0, 200) : r.contact_email, name = b.contactName != null ? String(b.contactName).trim().slice(0, 160) : r.contact_name;
       row = (await pool.query("UPDATE proc_runs SET contact_email = $1, contact_name = $2 WHERE id = $3 RETURNING *", [email, name, r.id])).rows[0];
+      // the contact record learns the address too
+      if (email && ["pipeline", "grant", "member"].includes(r.subject_kind)) await require("./contacts").rememberEmail(pool, r.subject_kind, r.subject_id, name, email).catch(() => {});
       // drafts to "the contact" that had no address yet pick it up
       await pool.query("UPDATE proc_outbox SET to_email = $1, to_name = CASE WHEN to_name = '' THEN $2 ELSE to_name END WHERE run_id = $3 AND status = 'draft' AND to_email = ''", [email, name, r.id]);
     }
@@ -250,14 +253,19 @@ function mount(app, { pool, requireAuth }) {
     } catch (e) { return { external: false, reason: "website server unreachable" }; }
     return mailCache;
   }
-  app.get("/api/proc/mail-status", requireAuth, wrap(async (req, res) => res.json(await mailStatus())));
+  async function mailAll() {
+    const g = await GMAIL.sender(pool).catch(() => null);
+    const w = await mailStatus();
+    return { gmail: g ? { account: g.account, from: g.from } : null, external: !!g || w.external, via: g ? "gmail" : (w.external ? "website" : "own-email"), from: g ? g.from : (w.from || "") };
+  }
+  app.get("/api/proc/mail-status", requireAuth, wrap(async (req, res) => res.json(await mailAll())));
   const outApi = (o) => ({ id: o.id, runId: o.run_id, stepIndex: o.step_index, kind: o.kind, toEmail: o.to_email, toName: o.to_name, subject: o.subject, body: o.body, status: o.status, approvedBy: o.approved_by, sentAt: o.sent_at, error: o.error, createdAt: o.created_at,
-    processName: o.process_name, subjectLabel: o.subject_label, stepText: o.step_text });
+    processName: o.process_name, subjectLabel: o.subject_label, stepText: o.step_text, sentVia: o.sent_via || "", repliedAt: o.replied_at || "", replyFrom: o.reply_from || "" });
   app.get("/api/proc/outbox", requireAuth, wrap(async (req, res) => {
     await AUTO.upgradeStarter(pool); await AUTO.evaluate(pool);
     const rows = (await pool.query(`SELECT o.*, r.process_name, r.subject_label, (r.steps::json -> o.step_index ->> 'text') AS step_text FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id
       WHERE r.archived_at IS NULL AND (o.status = 'draft' OR o.created_at >= $1) ORDER BY o.status = 'draft' DESC, o.created_at DESC LIMIT 300`, [addDays(todayIso(), -60)])).rows;
-    res.json({ items: rows.map(outApi), mail: await mailStatus() });
+    res.json({ items: rows.map(outApi), mail: await mailAll() });
   }));
   const getDraft = async (id) => (await pool.query("SELECT * FROM proc_outbox WHERE id = $1", [id])).rows[0];
   const logRun = (runId, text) => pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [newId(), runId, nowIso(), text]);
@@ -276,15 +284,27 @@ function mount(app, { pool, requireAuth }) {
     if (!o || o.status !== "draft") return res.status(409).json({ error: "This message isn't waiting for approval." });
     if (!/@/.test(o.to_email || "")) return res.status(400).json({ error: "Add who it goes to first." });
     if (/\[[^\]]*(link|paste|sentences)[^\]]*\]/i.test(o.body)) return res.status(400).json({ error: "Fill in the bracketed placeholder in the message first." });
-    const ms = await mailStatus();
-    if (!ms.external) return res.status(409).json({ error: "Sending from the system isn't set up yet. Use \"Approve and open in my email\"." });
     const who = await whoAmI(req.session);
+    const gm = await GMAIL.sender(pool).catch(() => null);
     try {
+      if (gm) {
+        // Follow-ups go in the same thread as the first message.
+        const first = o.kind === "reminder" ? (await pool.query("SELECT * FROM proc_outbox WHERE run_id = $1 AND step_index = $2 AND kind = 'first' AND sent_via LIKE 'gmail:%' AND gmail_thread_id <> '' ORDER BY created_at LIMIT 1", [o.run_id, o.step_index])).rows[0] : null;
+        const subject = first ? (/^re:/i.test(first.subject) ? first.subject : "Re: " + first.subject) : o.subject;
+        const sent = await GMAIL.send(pool, { to: o.to_email, subject, body: o.body, threadId: first ? first.gmail_thread_id : undefined, inReplyTo: first ? first.gmail_message_id : undefined });
+        await pool.query("UPDATE proc_outbox SET status = 'sent', sent_at = $1, approved_by = $2, error = '', sent_via = $3, gmail_thread_id = $4, gmail_message_id = $5, subject = $6 WHERE id = $7",
+          [nowIso(), who, "gmail:" + sent.account, sent.threadId || "", sent.messageId || "", subject, o.id]);
+        await logRun(o.run_id, `Approved by ${who} and sent from ${sent.from}: ${subject} (to ${o.to_email})`);
+        await AUTO.evaluate(pool);
+        return res.json({ ok: true, via: "gmail", from: sent.from });
+      }
+      const ms = await mailStatus();
+      if (!ms.external) return res.status(409).json({ error: "Sending from the system isn't set up yet. Connect Gmail in Settings, or use \"Approve and open in my email\"." });
       const r = await fetch(WEBSITE_API_URL + "/api/admin/send-message", { method: "POST", headers: { "Content-Type": "application/json", "X-Reminder-Secret": WEBSITE_ADMIN_SECRET },
         body: JSON.stringify({ to: o.to_email, subject: o.subject, text: o.body, replyTo: (ORG.org || {}).email || undefined }), signal: AbortSignal.timeout(120000) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) throw new Error(j.error || "website server returned " + r.status);
-      await pool.query("UPDATE proc_outbox SET status = 'sent', sent_at = $1, approved_by = $2, error = '' WHERE id = $3", [nowIso(), who, o.id]);
+      await pool.query("UPDATE proc_outbox SET status = 'sent', sent_at = $1, approved_by = $2, error = '', sent_via = 'website' WHERE id = $3", [nowIso(), who, o.id]);
       await logRun(o.run_id, `Approved by ${who} and sent: ${o.subject} (to ${o.to_email})`);
       await AUTO.evaluate(pool);
       res.json({ ok: true });
@@ -358,7 +378,9 @@ function mount(app, { pool, requireAuth }) {
       return { id: p.id, name: p.name, owner: p.owner, nextReview: due };
     }).filter((p) => p.nextReview && p.nextReview <= addDays(today, 30));
     const drafts = (await pool.query("SELECT count(*)::int AS n FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND r.archived_at IS NULL")).rows[0].n;
-    res.json({ suggestions, open, stepsDue, reviews, drafts, counts: { processes: procs.length, open: open.length, completed: runs.filter((r) => !r.skipped && r.completed_on).length } });
+    const replies = (await pool.query("SELECT o.run_id, o.subject, o.reply_from, o.replied_at, r.subject_label FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.replied_at >= $1 AND r.archived_at IS NULL ORDER BY o.replied_at DESC LIMIT 10", [addDays(today, -7)])).rows
+      .map((x) => ({ runId: x.run_id, subject: x.subject, from: (x.reply_from || "").replace(/<.*>/, "").trim() || x.reply_from, at: x.replied_at, subjectLabel: x.subject_label }));
+    res.json({ suggestions, open, stepsDue, reviews, drafts, replies, counts: { processes: procs.length, open: open.length, completed: runs.filter((r) => !r.skipped && r.completed_on).length } });
   }));
 }
 

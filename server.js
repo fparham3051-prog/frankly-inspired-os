@@ -1770,6 +1770,44 @@ require("./report").mountLetter(app, { pool, requireAuth });
 require("./foundation").mount(app, { pool, requireAuth });
 require("./governance").mount(app, { pool, requireAuth });
 require("./processes").mount(app, { pool, requireAuth });
+require("./contacts").mount(app, { pool, requireAuth });
+require("./gmail").mount(app, { pool, requireAuth });
+
+// ---------- background automation ----------
+// Every 15 minutes while the app is awake (and whenever a scheduled task
+// calls /api/admin/tick): keep contacts current, tick checklist steps the
+// system can see are done, draft messages and follow-ups for approval, and
+// check Gmail for replies. Nothing is ever sent from here.
+async function automationTick() {
+  const C = require("./contacts"), A = require("./processes-auto"), G = require("./gmail");
+  const out = { at: new Date().toISOString() };
+  try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
+  try { await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
+  try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
+  const drafts = (await pool.query("SELECT o.id FROM proc_outbox o JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND r.archived_at IS NULL").catch(() => ({ rows: [] }))).rows.map((r) => r.id);
+  const seen = new Set(JSON.parse((await pool.query("SELECT value FROM app_settings WHERE key = 'tick_notified'").catch(() => ({ rows: [] }))).rows[0]?.value || "[]"));
+  const fresh = drafts.filter((id) => !seen.has(id));
+  const replies = (await pool.query("SELECT count(*)::int AS n FROM proc_outbox WHERE replied_at >= $1", [new Date(Date.now() - 864e5).toISOString()]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n;
+  out.waiting = drafts.length; out.newSinceLastNotice = fresh.length; out.repliesLastDay = replies;
+  return { out, drafts };
+}
+let tickBusy = false;
+setInterval(() => {
+  if (tickBusy) return; tickBusy = true;
+  automationTick().catch((e) => console.error("automation tick", e)).finally(() => { tickBusy = false; });
+}, 15 * 60 * 1000).unref();
+app.post("/api/admin/tick", requireAdminScope("status"), async (req, res) => {
+  try {
+    const { out, drafts } = await automationTick();
+    // "newSinceLastNotice" lets a scheduled task notify only about new drafts.
+    if (req.query.markNotified) await pool.query("INSERT INTO app_settings (key, value) VALUES ('tick_notified', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [JSON.stringify(drafts)]);
+    res.json(Object.assign({ ok: true }, out));
+  } catch (err) { console.error("tick", err); res.status(500).json({ ok: false, error: String(err.message || err) }); }
+});
+app.get("/contacts.js", (req, res) => {
+  if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
+  res.sendFile(path.join(__dirname, "public", "contacts.js"));
+});
 app.get("/library.js", (req, res) => {
   if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
   res.sendFile(path.join(__dirname, "public", "library.js"));

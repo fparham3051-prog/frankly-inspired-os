@@ -633,15 +633,16 @@
         pr.stepsDue.slice(0, 4).forEach(function (x) { add(x.overdue ? 0 : 1, "Checklist: " + x.subjectLabel, x.text + (x.overdue ? "" : " (" + fmtDate(x.dueOn) + ")"), "run:" + x.runId); });
         var mods = (window.ORG && window.ORG.modules) || {}, areaMod = { grants: "grantmaking", fundraising: "fundraising", board: "governance", institutionalos: "institutionalos", consulting: "consulting" };
         var sug = pr.suggestions.filter(function (x) { return !areaMod[x.area] || mods[areaMod[x.area]] !== false; });
+        (pr.replies || []).filter(function (x) { return x.at && x.at.slice(0, 10) >= new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10); }).slice(0, 3).forEach(function (x) { add(0, "Reply", (x.from || "Someone") + " replied: " + x.subject, "run:" + x.runId); });
         if (pr.drafts) add(0, "Messages", pr.drafts + " message" + (pr.drafts === 1 ? "" : "s") + " waiting for your approval", "lib:lb-outbox");
         if (sug.length) add(2, "Process Library", sug.length === 1 ? "Ready to start: " + sug[0].processName + " for " + sug[0].subjectLabel : sug.length + " checklists ready to start", "lib:lb-work");
       }
       items.sort(function (a, b) { return a.rank - b.rank; });
-      var over = items.filter(function (i) { return i.rank === 0 && i.area !== "Messages"; }).length;
+      var over = items.filter(function (i) { return i.rank === 0 && i.area !== "Messages" && i.area !== "Reply"; }).length;
       var sub = document.getElementById("today-foundation-sub");
       if (sub) sub.textContent = items.length ? (over ? over + " overdue, " : "") + items.length + " item" + (items.length === 1 ? "" : "s") + " in all." : "Nothing due.";
       list.innerHTML = items.length ? items.slice(0, 8).map(function (i) {
-        return "<li" + (i.rank === 0 ? ' class="row-overdue"' : "") + '><span><span class="who">' + esc(i.area) + '</span><br><a href="#" data-today-go="' + esc(i.go) + '">' + esc(i.text) + "</a></span>" + (i.rank === 0 && i.area !== "Messages" ? '<span class="when"><span class="overdue-tag">Overdue</span></span>' : "") + "</li>";
+        return "<li" + (i.rank === 0 ? ' class="row-overdue"' : "") + '><span><span class="who">' + esc(i.area) + '</span><br><a href="#" data-today-go="' + esc(i.go) + '">' + esc(i.text) + "</a></span>" + (i.rank === 0 && i.area !== "Messages" && i.area !== "Reply" ? '<span class="when"><span class="overdue-tag">Overdue</span></span>' : "") + "</li>";
       }).join("") + (items.length > 8 ? '<li class="fd-small fd-dim" style="border:none">and ' + (items.length - 8) + " more</li>" : "")
         : '<li class="empty-note fd-empty-art" style="border:none;">' + EMPTY_ART + "Nothing else due.</li>";
     });

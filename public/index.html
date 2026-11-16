@@ -53,6 +53,7 @@
     <button type="button" class="rail-btn" data-view="command-center">Overview</button>
     <div class="rail-label">Run the practice</div>
     <button type="button" class="rail-btn" data-view="practice">Pipeline &amp; Money</button>
+    <button type="button" class="rail-btn" data-view="contacts">Contacts</button>
     <button type="button" class="rail-btn" data-view="session">Weekly Meeting</button>
     <button type="button" class="rail-btn" data-view="direction">Priorities &amp; Vision</button>
     <div class="rail-label">Clients</div>
@@ -1482,6 +1483,20 @@
       <div class="fd-panel" data-gv-panel="gv-meeting" hidden></div>
     </section>
 
+    <!-- ================= CONTACTS ================= -->
+    <section class="view" data-view="contacts" hidden>
+      <div class="view-head"><h2>Contacts</h2><span class="tag">one record per person and organization</span></div>
+      <p class="view-intro">Everyone the practice deals with, in one place: clients, prospects, grantees, donors, and the board. Open a person to see their deals, grants, gifts, board role, checklists, and every message. Fix an email once here and it's used everywhere.</p>
+      <div class="filter-row fd-tabs" role="tablist">
+        <button type="button" class="filter-btn is-active" data-ct-tab="ct-people" role="tab">People</button>
+        <button type="button" class="filter-btn" data-ct-tab="ct-orgs" role="tab">Organizations</button>
+      </div>
+      <div class="fd-panel" data-ct-panel="ct-people"></div>
+      <div class="fd-panel" data-ct-panel="ct-orgs" hidden></div>
+      <div class="fd-panel" data-ct-panel="ct-person" hidden></div>
+      <div class="fd-panel" data-ct-panel="ct-org" hidden></div>
+    </section>
+
     <!-- ================= SETTINGS ================= -->
     <section class="view" data-view="settings" hidden>
       <div class="view-head"><h2>Settings</h2><span class="tag" id="settings-who"></span></div>
@@ -1538,6 +1553,12 @@
         <span class="form-msg" id="areas-msg" role="status"></span>
       </div>
 
+      <div class="fw-card owner-only" id="gmail-card">
+        <h3>Connected email</h3>
+        <p class="view-intro">Connect a Gmail or Google Workspace account so approved messages go out from your own address, land in your Sent folder, and replies show up here. Nothing is ever sent without your approval.</p>
+        <div id="gmail-body"><p class="load-note">Loading...</p></div>
+      </div>
+
       <div class="fw-card owner-only">
         <h3>Organization profile</h3>
         <p class="view-intro">Name, brand, links, offers, and which areas are on come from one file, <code>org.config.json</code>, shared with the InstitutionalOS console and the website. To set this system up for another organization, see the setup checklist in <code>docs/NEW-ORGANIZATION.md</code>.</p>
@@ -1557,6 +1578,7 @@
 <script src="/foundation.js" defer></script>
 <script src="/governance.js" defer></script>
 <script src="/library.js" defer></script>
+<script src="/contacts.js" defer></script>
 <script>
 // ---------- InstitutionalOS embed + two-way sync with Prospecting ----------
 // The nav button below opens InstitutionalOS's live scorecard in an iframe.

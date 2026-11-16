@@ -885,3 +885,57 @@ ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS token TEXT;
 ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS submitted_by TEXT DEFAULT '';
 ALTER TABLE gm_reports ADD COLUMN IF NOT EXISTS link TEXT DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS gm_reports_token ON gm_reports (token);
+
+-- =====================================================================
+-- Contacts and organizations (contacts.js): one record per person and per
+-- organization, linked to everything else. Filled and kept current from the
+-- pipeline, prospects, grant applications, donors, and the board roster.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS organizations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT DEFAULT 'nonprofit',          -- nonprofit | foundation | company | government | other
+  ein TEXT DEFAULT '',
+  website TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS organizations_name ON organizations (lower(name));
+CREATE TABLE IF NOT EXISTS contacts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  title TEXT DEFAULT '',
+  org_id TEXT REFERENCES organizations(id),
+  notes TEXT DEFAULT '',
+  created_at TEXT,
+  updated_at TEXT,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS contacts_email ON contacts (lower(email));
+CREATE INDEX IF NOT EXISTS contacts_name ON contacts (lower(name));
+CREATE TABLE IF NOT EXISTS contact_links (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,                     -- pipeline | prospect | grant | donor | member
+  ref_id TEXT NOT NULL,
+  contact_id TEXT REFERENCES contacts(id),
+  org_id TEXT REFERENCES organizations(id),
+  role TEXT DEFAULT '',                   -- client | prospect | grantee | donor | board
+  created_at TEXT,
+  UNIQUE (kind, ref_id)
+);
+CREATE INDEX IF NOT EXISTS contact_links_contact ON contact_links (contact_id);
+CREATE INDEX IF NOT EXISTS contact_links_org ON contact_links (org_id);
+
+-- Gmail connection (gmail.js): approved messages go out from the owner's own
+-- account; replies are noticed. Tokens are stored encrypted in app_settings.
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS sent_via TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS gmail_thread_id TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS gmail_message_id TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS replied_at TEXT DEFAULT '';
+ALTER TABLE proc_outbox ADD COLUMN IF NOT EXISTS reply_from TEXT DEFAULT '';

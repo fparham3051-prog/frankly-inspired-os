@@ -39,7 +39,33 @@ async function t(name, fn) {
   const pool = new Pool({ connectionString: DB });
   await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   await pool.end();
-  const env = Object.assign({}, process.env, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
+  // A stand-in for Google (OAuth + Gmail API) so the Gmail connection can be tested end to end.
+  const http = require("http");
+  const MOCK = { sends: [], threads: {}, port: 0 };
+  const mock = http.createServer((q, r) => {
+    let body = ""; q.on("data", (d) => (body += d)); q.on("end", () => {
+      const u = new URL(q.url, "http://x"), json = (o, st) => { r.writeHead(st || 200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
+      if (u.pathname === "/token") { const f = new URLSearchParams(body); return json(f.get("grant_type") === "authorization_code" ? (f.get("code") === "good-code" ? { access_token: "at1", refresh_token: "rt1", expires_in: 3600 } : { error: "invalid_grant" }) : { access_token: "at2", expires_in: 3600 }, f.get("code") === "bad" ? 400 : 200); }
+      if (u.pathname === "/revoke") return json({});
+      if (q.headers.authorization !== "Bearer at1" && q.headers.authorization !== "Bearer at2") return json({ error: { message: "bad token" } }, 401);
+      if (u.pathname === "/gmail/v1/users/me/profile") return json({ emailAddress: "Owner@Gmail.test" });
+      if (u.pathname === "/gmail/v1/users/me/settings/sendAs") return json({ sendAs: [{ sendAsEmail: "owner@gmail.test", isDefault: false }, { sendAsEmail: "franklin@biz.test", displayName: "Franklin Parham", isDefault: true, verificationStatus: "accepted" }, { sendAsEmail: "pending@biz.test", verificationStatus: "pending" }] });
+      if (u.pathname === "/gmail/v1/users/me/messages/send") {
+        const j = JSON.parse(body), raw = Buffer.from(j.raw, "base64url").toString("utf8"), n = MOCK.sends.length + 1;
+        const threadId = j.threadId || "t" + n;
+        MOCK.sends.push({ raw, threadId: j.threadId || "", id: "m" + n });
+        (MOCK.threads[threadId] = MOCK.threads[threadId] || []).push({ id: "m" + n, internalDate: String(Date.now()), payload: { headers: [{ name: "From", value: "Franklin <franklin@biz.test>" }] } });
+        return json({ id: "m" + n, threadId });
+      }
+      let m;
+      if ((m = /^\/gmail\/v1\/users\/me\/messages\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], payload: { headers: [{ name: "Message-ID", value: "<" + m[1] + "@mail.test>" }] } });
+      if ((m = /^\/gmail\/v1\/users\/me\/threads\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], messages: MOCK.threads[m[1]] || [] });
+      json({ error: { message: "not found" } }, 404);
+    });
+  });
+  await new Promise((ok) => mock.listen(0, ok)); MOCK.port = mock.address().port;
+  const GURL = "http://localhost:" + MOCK.port;
+  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
   const srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
@@ -417,7 +443,7 @@ async function t(name, fn) {
 
   // ---------------- Step automation: internal and external loops ----------------
   const Q = new Pool({ connectionString: DB });
-  const AU = {};
+  const AU = {}, CT = {};
   await t("loops: starting a checklist drafts its first message; nothing is sent without approval", async () => {
     const procs = (await req("owner1", "GET", "/api/proc/processes")).data.items;
     AU.lead = procs.find((x) => x.name === "Lead to first call");
@@ -489,7 +515,114 @@ async function t(name, fn) {
     assert.ok(any);
     assert.strictEqual((await req("board2", "POST", `/api/proc/outbox/${any.id}/opened`, {})).status, 403);
   });
+
+  // ---------- contacts and organizations ----------
+  await t("contacts: board members, grantees and run contacts appear once, with their roles", async () => {
+    const all = (await req("owner1", "GET", "/api/contacts")).data.items;
+    const morgan = all.filter((c) => c.email === "morgan@board.org");
+    assert.strictEqual(morgan.length, 1, "one record for Morgan"); assert.ok(morgan[0].roles.includes("board"), JSON.stringify(morgan[0].roles));
+    const dana = all.find((c) => c.email === "dana@eastside.org"); assert.ok(dana && dana.roles.includes("grantee"));
+    assert.strictEqual((await req("owner1", "GET", "/api/contacts?q=morgan")).data.items.length, 1);
+    assert.ok((await req("owner1", "GET", "/api/contacts?role=board")).data.items.every((c) => c.roles.includes("board")));
+    const again = (await req("owner1", "GET", "/api/contacts")).data.items.length;
+    assert.strictEqual(again, all.length, "syncing twice adds no duplicates");
+    CT.morgan = morgan[0]; CT.dana = dana;
+  });
+  await t("contacts: a person's profile shows board role, checklists, and messages", async () => {
+    const d = (await req("owner1", "GET", "/api/contacts/" + CT.morgan.id)).data;
+    assert.strictEqual(d.board.length, 1); assert.ok(d.checklists.length >= 1);
+    assert.ok(d.messages.some((m) => /conflict-of-interest/.test(m.subject)));
+    const g = (await req("owner1", "GET", "/api/contacts/" + CT.dana.id)).data;
+    assert.ok(g.grants.length >= 1, "grant shows on the grantee");
+  });
+  await t("contacts: fixing an email once updates the board record too", async () => {
+    await req("owner1", "PATCH", "/api/contacts/" + CT.morgan.id, { email: "morgan.reyes@board.org" });
+    const m = (await req("owner1", "GET", "/api/gov/members")).data.items.find((x) => x.name === "Morgan Reyes");
+    assert.strictEqual(m.email, "morgan.reyes@board.org");
+  });
+  await t("contacts: organizations, add a person, merge a duplicate", async () => {
+    const org = (await req("owner1", "POST", "/api/orgs", { name: "Riverbend Arts" })).data.item;
+    const a = (await req("owner1", "POST", "/api/contacts", { name: "Lee Park", email: "lee@riverbend.org", orgId: org.id })).data.item;
+    const b = (await req("owner1", "POST", "/api/contacts", { name: "Lee Park", phone: "555-0100" })).data.item;
+    assert.strictEqual((await req("owner1", "POST", `/api/contacts/${a.id}/merge`, { fromId: b.id })).status, 200);
+    const merged = (await req("owner1", "GET", "/api/contacts/" + a.id)).data.item;
+    assert.strictEqual(merged.phone, "555-0100"); assert.strictEqual(merged.email, "lee@riverbend.org");
+    assert.ok(!(await req("owner1", "GET", "/api/contacts?q=lee park")).data.items.some((c) => c.id === b.id), "duplicate gone");
+    const o = (await req("owner1", "GET", "/api/orgs/" + org.id)).data;
+    assert.ok(o.people.some((p) => p.id === a.id));
+    assert.strictEqual((await req("board2", "POST", "/api/contacts", { name: "X" })).status, 403);
+  });
+
+  // ---------- Gmail ----------
+  await t("gmail: owner saves the Google app keys; others can't", async () => {
+    let s = (await req("owner1", "GET", "/api/gmail/status")).data;
+    assert.strictEqual(s.configured, false); assert.strictEqual(s.redirectUri, BASE + "/oauth/google/callback");
+    assert.strictEqual((await req("owner1", "POST", "/api/gmail/config", { clientId: "nope", clientSecret: "x" })).status, 400);
+    assert.strictEqual((await req("board2", "POST", "/api/gmail/config", { clientId: "1-abc.apps.googleusercontent.com", clientSecret: "secret-123456" })).status, 403);
+    assert.strictEqual((await req("owner1", "POST", "/api/gmail/config", { clientId: "1-abc.apps.googleusercontent.com", clientSecret: "secret-123456" })).status, 200);
+    s = (await req("owner1", "GET", "/api/gmail/status")).data; assert.strictEqual(s.configured, true);
+    const raw = (await Q.query("SELECT value FROM app_settings WHERE key = 'google_client_secret'")).rows[0].value;
+    assert.ok(!/secret-123456/.test(raw), "secret is stored encrypted");
+  });
+  await t("gmail: connect an account; Send-as addresses are picked up", async () => {
+    const st = await req("owner1", "GET", "/oauth/google/start");
+    assert.strictEqual(st.status, 302);
+    const loc = new URL(st.headers.get("location"));
+    assert.strictEqual(loc.origin + loc.pathname, GURL + "/auth"); assert.match(loc.searchParams.get("scope"), /gmail\.send/);
+    const bad = await req("owner1", "GET", "/oauth/google/callback?code=good-code&state=wrong");
+    assert.match(decodeURIComponent(bad.headers.get("location")), /didn't match/);
+    const st2 = await req("owner1", "GET", "/oauth/google/start");
+    const state = new URL(st2.headers.get("location")).searchParams.get("state");
+    const cb = await req("owner1", "GET", "/oauth/google/callback?code=good-code&state=" + state);
+    assert.strictEqual(cb.status, 303); assert.match(decodeURIComponent(cb.headers.get("location")), /connected owner@gmail\.test/);
+    const s = (await req("owner1", "GET", "/api/gmail/status")).data;
+    assert.strictEqual(s.accounts.length, 1);
+    assert.deepStrictEqual(s.accounts[0].sendAs.map((x) => x.email).sort(), ["franklin@biz.test", "owner@gmail.test"], "unverified alias left out");
+    assert.strictEqual(s.sender.from, "franklin@biz.test", "the account's default Send-as address is used");
+    assert.strictEqual((await req("owner1", "POST", "/api/gmail/default", { account: "owner@gmail.test", from: "someone@else.test" })).status, 400);
+  });
+  await t("gmail: approving sends from the business address; follow-up stays in the thread; a reply is noticed", async () => {
+    const mem = (await req("owner1", "POST", "/api/gov/members", { name: "Avery Cole", email: "avery@board.org", role: "member" })).data.item;
+    const onboard = (await req("owner1", "GET", "/api/proc/processes")).data.items.find((x) => x.name === "Onboarding a board or staff member");
+    const run = (await req("owner1", "POST", "/api/proc/start", { processId: onboard.id, subjectKind: "member", subjectId: mem.id, subjectLabel: "Avery Cole" })).data.item;
+    let out = (await req("owner1", "GET", "/api/proc/outbox")).data;
+    assert.strictEqual(out.mail.via, "gmail"); assert.strictEqual(out.mail.from, "franklin@biz.test");
+    const coi = out.items.find((m) => m.runId === run.id && /conflict-of-interest/.test(m.subject));
+    const sent = await req("owner1", "POST", `/api/proc/outbox/${coi.id}/send`, {});
+    assert.strictEqual(sent.status, 200, JSON.stringify(sent.data)); assert.strictEqual(sent.data.via, "gmail");
+    const first = MOCK.sends[MOCK.sends.length - 1];
+    assert.match(first.raw, /^From: Franklin Parham <franklin@biz\.test>/m); assert.match(first.raw, /^To: avery@board\.org/m);
+    assert.strictEqual(MOCK.sends.length, 1, "only the approved message went out");
+    await Q.query("UPDATE proc_outbox SET sent_at = $1 WHERE id = $2", [new Date(Date.now() - 6 * 864e5).toISOString(), coi.id]);
+    out = (await req("owner1", "GET", "/api/proc/outbox")).data.items.filter((m) => m.runId === run.id && m.kind === "reminder" && m.status === "draft");
+    assert.strictEqual(out.length, 1, "follow-up drafted, waiting for approval");
+    assert.strictEqual(MOCK.sends.length, 1, "follow-up not sent on its own");
+    await req("owner1", "POST", `/api/proc/outbox/${out[0].id}/send`, {});
+    const fu = MOCK.sends[MOCK.sends.length - 1];
+    assert.strictEqual(fu.threadId, "t1", "same thread"); assert.match(fu.raw, /^In-Reply-To: <m1@mail\.test>/m);
+    MOCK.threads.t1.push({ id: "r1", internalDate: String(Date.now()), payload: { headers: [{ name: "From", value: "Avery Cole <avery@board.org>" }] } });
+    const tick = await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" });
+    assert.strictEqual(tick.status, 200); assert.ok(tick.data.gmail.replies >= 1, JSON.stringify(tick.data)); assert.ok(tick.data.repliesLastDay >= 1);
+    const after = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.id === coi.id);
+    assert.ok(after.repliedAt); assert.match(after.replyFrom, /avery@board\.org/);
+    const act = (await req("owner1", "GET", `/api/proc/runs/${run.id}/activity`)).data.items.map((a) => a.text).join(" | ");
+    assert.match(act, /Reply received from Avery Cole/);
+    const sum = (await req("owner1", "GET", "/api/proc/summary")).data;
+    assert.ok(sum.replies.some((r) => r.runId === run.id));
+  });
+  await t("tick: needs a key; reports only new drafts since the last notice", async () => {
+    assert.strictEqual((await req("anon", "POST", "/api/admin/tick", null)).status, 401);
+    const t2 = (await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" })).data;
+    assert.strictEqual(t2.newSinceLastNotice, 0); assert.ok(t2.waiting >= 1);
+  });
+  await t("gmail: disconnect goes back to opening in my email", async () => {
+    assert.strictEqual((await req("owner1", "POST", "/api/gmail/disconnect", { account: "owner@gmail.test" })).status, 200);
+    const out = (await req("owner1", "GET", "/api/proc/outbox")).data;
+    assert.notStrictEqual(out.mail.via, "gmail");
+    assert.strictEqual((await req("owner1", "GET", "/api/gmail/status")).data.accounts.length, 0);
+  });
   await Q.end();
+  mock.close();
 
   srv.kill();
   console.log(`\n${passed} passed, ${failed} failed`);

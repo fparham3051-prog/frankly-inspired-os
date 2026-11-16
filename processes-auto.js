@@ -235,7 +235,7 @@ async function evaluate(pool) {
             const t = draftText(st.message, r, ctx, rc);
             await pool.query("INSERT INTO proc_outbox (id, run_id, step_index, kind, to_email, to_name, subject, body, created_at) VALUES ($1,$2,$3,'first',$4,$5,$6,$7,$8)", [newId(), r.id, i, rc.email || "", rc.name || "", t.subject, t.body, nowIso()]);
             drafted++; log.push(`Drafted a message for approval: ${t.subject}${rc.name ? " (to " + rc.name + ")" : ""}`);
-          } else if (st.auto && st.auto !== "sent" && sentList.length && sentList.length <= 2) {
+          } else if (st.auto && st.auto !== "sent" && sentList.length && sentList.length <= 2 && !forThem.some((o) => o.replied_at)) {
             const last = sentList[sentList.length - 1];
             if (last.sent_at && daysBetween(last.sent_at, today) >= 5) {
               const t = draftText(st.message, r, ctx, rc, { reminder: true, sentDate: last.sent_at });
@@ -260,6 +260,13 @@ async function evaluate(pool) {
 // Prefill who a checklist's messages go to, from what the system already knows.
 async function contactFor(pool, kind, id) {
   const q = async (sql, vals) => { try { return (await pool.query(sql, vals)).rows[0]; } catch (e) { return null; } };
+  // The contacts record knows best (it's kept current from everywhere).
+  if (["pipeline", "grant", "member"].includes(kind) && id) {
+    const C = require("./contacts");
+    await C.sync(pool).catch(() => {});
+    const hit = await C.lookupEmail(pool, kind, id);
+    if (hit.email) return hit;
+  }
   if (kind === "grant") { const g = await q("SELECT contact_name, contact_email FROM gm_applications WHERE id = $1", [id]); return g ? { name: g.contact_name, email: g.contact_email } : {}; }
   if (kind === "member") { const m = await q("SELECT name, email FROM gov_members WHERE id = $1", [id]); return m ? { name: m.name, email: m.email } : {}; }
   if (kind === "pipeline") {

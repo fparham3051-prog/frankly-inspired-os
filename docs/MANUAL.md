@@ -68,6 +68,23 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   a year's checklist; tick items off), Policies (add the standard set, record
   adoption and reviews).
 
+- **Contacts**: one record per person and organization, built automatically
+  from the pipeline, prospects, grant applications, donors and the board (the
+  same person in several places is one record). Open a person for their deals,
+  grants, gifts, board role, checklists, messages and feedback. Fixing an email
+  here updates their board, donor and grant records, open checklists and any
+  message waiting for approval. Merge duplicates from the person's page.
+- **Connected email** (Settings, owner): connect one or more Google accounts so
+  approved messages go out from your own address (including a "Send mail as"
+  business address), sit in your Sent folder, keep follow-ups in the same
+  thread, and replies show up on the checklist, the person, and Today. Nothing
+  is sent without approval. Without a connection, approving opens the message
+  in your email program.
+- **Automation runs on its own**: every 15 minutes while the app is awake, and
+  every 3 hours from a scheduled task, the system refreshes contacts, ticks
+  checklist steps it can see are done, drafts messages and follow-ups for
+  approval, and checks Gmail for replies (`POST /api/admin/tick`, status key).
+
 ## InstitutionalOS (grantpass-backend)
 - Console: each client in five tabs (Home, Health, Priority, 90-Day Plan,
   Evidence), the same tabs the client sees in their portal.
@@ -86,6 +103,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 | Daily reminders | 11:17am ET daily | 90-day re-check emails and client weekly check-in reminders |
 | Nightly backup and retention | 2:37am ET daily | Saves a full-system backup to Google Drive, keeps 30, applies data retention |
 | Weekly DMV market scan refresh | Sundays 2:23am ET | Refreshes the market scan |
+| Checklist automation | every 3 hours | Runs the automation pass; notifies only when new messages are waiting or replies came in |
 
 ## Backups
 - What: every table in all three databases, one JSON file per night, from

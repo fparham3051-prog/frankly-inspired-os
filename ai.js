@@ -62,7 +62,13 @@ async function ask(pool, { system, prompt, docs, maxTokens, json }) {
     signal: AbortSignal.timeout(180000),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw Object.assign(new Error(j.error || "The AI service didn't answer (status " + r.status + ")."), { status: 502 });
+  const note = (v) => pool.query("INSERT INTO app_settings (key, value) VALUES ('ai_last', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [JSON.stringify(v)]).catch(() => {});
+  if (!r.ok || !j.ok) {
+    const msg = j.error || "The AI service didn't answer (status " + r.status + ").";
+    await note({ ok: false, at: new Date().toISOString(), error: msg });
+    throw Object.assign(new Error(/x-api-key|authentication/i.test(msg) ? "The website server's Anthropic key was rejected; replace ANTHROPIC_API_KEY on the website server (Render)." : msg), { status: 502 });
+  }
+  await note({ ok: true, at: new Date().toISOString() });
   if (!json) return j.text;
   const m = /\{[\s\S]*\}/.exec(j.text || "");
   try { return JSON.parse(m ? m[0] : j.text); } catch (e) { throw Object.assign(new Error("The AI answer wasn't in the expected format; try again."), { status: 502 }); }
@@ -74,7 +80,9 @@ async function status(pool) {
   if (BASE() && SECRET()) {
     try { const r = await fetch(BASE() + "/api/admin/ai", { headers: { "X-Reminder-Secret": SECRET() }, signal: AbortSignal.timeout(60000) }); relay = await r.json().catch(() => null); } catch (e) { relay = null; }
   }
-  return { enabled: on, ready: !!(on && relay && relay.configured), relay: relay ? { configured: !!relay.configured, model: relay.model } : null, usage: await usage(pool) };
+  let last = null; try { last = JSON.parse(((await pool.query("SELECT value FROM app_settings WHERE key = 'ai_last'")).rows[0] || {}).value || "null"); } catch (e) { last = null; }
+  const keyBad = !!(last && !last.ok && /x-api-key|authentication|invalid api key/i.test(last.error || ""));
+  return { enabled: on, ready: !!(on && relay && relay.configured && !keyBad), keyRejected: keyBad, last, relay: relay ? { configured: !!relay.configured, model: relay.model } : null, usage: await usage(pool) };
 }
 
 module.exports = { ask, enabled, status, usage, voice };

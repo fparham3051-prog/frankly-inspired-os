@@ -61,7 +61,7 @@
       var h = '<div class="fd-toolbar"><button type="button" class="btn secondary" data-go-view="practice">&larr; Pipeline &amp; Money</button></div>' +
         '<div class="view-head"><h2>' + esc(d.deal.org || d.deal.name) + '</h2><span class="tag">AI assistant</span></div>' +
         '<p class="view-intro">Next step: ' + esc(d.deal.nextStep || "none set") + (d.deal.nextStepDate ? " &middot; " + esc(fmtDate(d.deal.nextStepDate)) : "") + ". AI works only from what the system holds and the documents you add; you check and decide.</p>" +
-        (s.ready ? "" : '<p class="fd-small lb-note">' + pill("AI isn't available", "warn") + " " + esc(s.enabled ? "The website server isn't answering or has no AI key." : "AI assistance is off in Settings > Areas.") + "</p>");
+        (s.ready ? "" : '<p class="fd-small lb-note">' + pill("AI isn't available", "warn") + " " + esc(!s.enabled ? "AI assistance is off in Settings > Areas." : s.keyRejected ? "The website server's Anthropic key was rejected; see Settings > AI assistance." : "The website server isn't answering or has no AI key.") + "</p>");
       // pre-call
       var pc = d.precall;
       h += '<div class="fw-card"><div class="fd-row"><h3 style="margin:0">Pre-call brief</h3>' + (ro ? "" : '<button type="button" class="btn secondary fd-sm" id="aix-precall">' + (pc ? "Refresh" : "Write the brief") + "</button>") + "</div>" +
@@ -278,6 +278,7 @@
     status().then(function (s) {
       body.innerHTML = '<p class="fd-small">' + (s.ready ? pill("Ready", "good") + " Working through your website server" + (s.relay && s.relay.model ? " (" + esc(s.relay.model) + ")" : "") + "."
         : !s.enabled ? pill("Off") + " Turn on “AI assistance” under Areas."
+        : s.keyRejected ? pill("Key rejected", "warn") + " Anthropic turned down the website server's key. Create a new key at console.anthropic.com and put it in ANTHROPIC_API_KEY on the frankly-inspired-api service in Render. It starts working on the next request."
         : pill("Not reachable", "warn") + " The website server " + (s.relay ? "has no AI key (ANTHROPIC_API_KEY on its Render service)." : "didn't answer; it may be waking up. Try again in a minute.")) + "</p>" +
         '<p class="fd-small">Used today: ' + s.usage.today + " of " + s.usage.limit + " requests (the limit resets daily).</p>" +
         '<p class="fd-small fd-dim">What it does: briefs and first replies for new website leads; pre-call briefs; call notes into records; Diagnostic first passes from documents; reading replies; a monthly field note draft; grant first reads, report summaries, and minutes drafts; and Ask the system on Today. Every message it writes waits in Messages to approve. Client documents are sent to the AI service (Anthropic) for that one request and not kept.</p>';

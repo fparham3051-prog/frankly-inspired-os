@@ -80,6 +80,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   thread, and replies show up on the checklist, the person, and Today. Nothing
   is sent without approval. Without a connection, approving opens the message
   in your email program.
+- **System setup checklist** (Process Library > In progress): the owner's one-time setup work, dated over about six weeks, started automatically. Gmail, the test message, and two-step sign-in tick themselves; the rest you tick.
 - **Automation runs on its own**: every 15 minutes while the app is awake, and
   every 3 hours from a scheduled task, the system refreshes contacts, ticks
   checklist steps it can see are done, drafts messages and follow-ups for

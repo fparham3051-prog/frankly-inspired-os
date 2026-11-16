@@ -395,7 +395,7 @@ async function t(name, fn) {
   await t("library: starter checklists and materials load once", async () => {
     const r = await req("owner1", "GET", "/api/proc/processes");
     assert.strictEqual(r.status, 200);
-    assert.strictEqual(r.data.items.length, 10);
+    assert.strictEqual(r.data.items.length, 11);
     P.diag = r.data.items.find((x) => x.name === "Running an InstitutionalOS Diagnostic");
     assert.ok(P.diag && P.diag.steps.length === 10 && P.diag.suggestOn === "pipeline:assessment");
     assert.match(P.diag.docLink, /^https:/, "linked to the runbook");
@@ -404,7 +404,7 @@ async function t(name, fn) {
     assert.ok(m.some((x) => x.audience === "client-safe") && m.some((x) => x.audience === "internal"));
     await req("owner1", "DELETE", "/api/proc/materials/" + m[0].id);
     assert.strictEqual((await req("owner1", "GET", "/api/proc/materials")).data.items.length, 15, "removing one doesn't reload the starter set");
-    assert.strictEqual((await req("owner1", "GET", "/api/proc/processes")).data.items.length, 10);
+    assert.strictEqual((await req("owner1", "GET", "/api/proc/processes")).data.items.length, 11);
   });
   await t("library: a deal at the Diagnostic stage suggests the Diagnostic checklist", async () => {
     const d = await req("owner1", "POST", "/api/pipeline", { name: "Dana Ruiz", org: "Riverside Arts Collective", stage: "assessment" });
@@ -609,6 +609,14 @@ async function t(name, fn) {
     assert.match(act, /Reply received from Avery Cole/);
     const sum = (await req("owner1", "GET", "/api/proc/summary")).data;
     assert.ok(sum.replies.some((r) => r.runId === run.id));
+  });
+  await t("setup: the System setup checklist started on its own, dated, and ticks what the system can see", async () => {
+    const run = (await req("owner1", "GET", "/api/proc/runs")).data.items.find((x) => x.processName === "System setup");
+    assert.ok(run, "started automatically"); assert.strictEqual(run.steps.length, 17);
+    assert.ok(run.steps.every((x) => x.dueOn), "every step has a date");
+    assert.ok(run.steps[0].doneOn && run.steps[0].by === "Automatic", "Gmail connected ticks step 1");
+    assert.ok(run.steps[2].doneOn, "a message sent through Gmail ticks the test-message step");
+    assert.strictEqual((await req("owner1", "GET", "/api/proc/processes")).data.items.filter((x) => x.name === "System setup").length, 1);
   });
   await t("tick: needs a key; reports only new drafts since the last notice", async () => {
     assert.strictEqual((await req("anon", "POST", "/api/admin/tick", null)).status, 401);

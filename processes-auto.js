@@ -37,6 +37,7 @@ const AUTOMATION = {
     { message: "diag.portal", auto: "sent" }, { message: "diag.book90", auto: "sent" }],
   "90-day plan and weekly check-ins": [
     {}, { message: "plan.checkin", auto: "ios.checkin" }, {}, {}, {}, A("ios.review90"), {}],
+  "System setup": [A("sys.gmail", { action: "settings" }), {}, A("sys.gmailSent"), A("sys.twostep", { action: "settings" }), {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
   "Closing out an engagement": [
     A("pipe.invoiceSent"), { message: "close.feedback", auto: "feedback.received" }, { message: "close.casestudy", auto: "sent" }, {},
     A("pipe.invoicePaid"), { message: "close.thanks", auto: "sent" }],
@@ -108,6 +109,11 @@ async function loadCtx(pool, runs) {
     coi: await q("SELECT * FROM gov_coi WHERE year >= $1", [year - 1]),
     users: new Set((await q("SELECT lower(email) AS e FROM app_users WHERE NOT COALESCE(disabled, false)")).map((r) => r.e)),
     checklist: await q("SELECT fiscal_year, item_key, done_on FROM gov_checklist"),
+    sys: {
+      gmail: !!(await q("SELECT 1 FROM app_settings WHERE key = 'gmail_accounts' AND value <> ''")).length && !!(await q("SELECT 1 FROM app_settings WHERE key = 'gmail_default'")).length,
+      gmailSent: !!(await q("SELECT 1 FROM proc_outbox WHERE sent_via LIKE 'gmail:%' LIMIT 1")).length,
+      twostep: !!(await q("SELECT 1 FROM app_users WHERE role = 'owner' AND totp_on AND NOT COALESCE(disabled, false) LIMIT 1")).length,
+    },
     monthInvoices: await q("SELECT issued_date FROM invoices WHERE archived_at IS NULL AND issued_date >= $1", [addDays(todayIso(), -40)]),
     outbox: await q("SELECT * FROM proc_outbox WHERE run_id = ANY($1) ORDER BY created_at", [runs.map((r) => r.id)]),
     year,
@@ -150,6 +156,9 @@ function detect(key, run, ctx, stepIndex) {
     case "year.990": return ctx.checklist.some((c) => c.fiscal_year === F.fiscalYear(-1, run.started_on).label || c.fiscal_year === F.fiscalYear(0, run.started_on).label);
     case "year.990filed": { const fy = F.fiscalYear(-1, addDays(run.started_on, 40)).label; return ctx.checklist.some((c) => c.fiscal_year === fy && c.item_key === "file" && c.done_on); }
     case "year.coiAll": { const y = Number(run.subject_id) || ctx.year; return ctx.members.length > 0 && ctx.members.every((x) => { const c = coiFor(x.id, y); return c && c.signed_on; }); }
+    case "sys.gmail": return ctx.sys.gmail;
+    case "sys.gmailSent": return ctx.sys.gmail && ctx.sys.gmailSent;
+    case "sys.twostep": return ctx.sys.twostep;
     case "month.invoices": return ctx.monthInvoices.some((i) => (i.issued_date || "").slice(0, 7) === String(run.subject_id || "").slice(0, 7) || (i.issued_date || "") >= run.started_on);
     default: return false;
   }
@@ -283,6 +292,7 @@ async function contactFor(pool, kind, id) {
 // Apply the automation to the starter checklists (and checklists already
 // started from them), matching steps by their text so edits are respected.
 async function upgradeStarter(pool) {
+  await ensureSetup(pool);
   const done = (await pool.query("SELECT value FROM app_settings WHERE key = 'library_auto_v1'")).rows[0];
   if (done) return;
   if (!(await pool.query("SELECT 1 FROM proc_processes LIMIT 1")).rows.length) return; // starter set not loaded yet
@@ -305,6 +315,34 @@ async function upgradeStarter(pool) {
     const s = apply(r.process_name, parseJson(r.steps, [])); if (s) await pool.query("UPDATE proc_runs SET steps = $1 WHERE id = $2", [JSON.stringify(s), r.id]);
   }
   await pool.query("INSERT INTO app_settings (key, value) VALUES ('library_auto_v1', '1') ON CONFLICT (key) DO NOTHING");
+}
+
+// One time: add the "System setup" checklist to the library and start it, so
+// the owner's remaining setup work is dated and shows on Today.
+async function ensureSetup(pool) {
+  if ((await pool.query("SELECT 1 FROM app_settings WHERE key = 'library_setup_v1'")).rows.length) return;
+  if (!(await pool.query("SELECT 1 FROM proc_processes LIMIT 1")).rows.length) return;
+  const { STARTER } = require("./processes");
+  const p = STARTER.find((x) => x.name === "System setup");
+  let proc = (await pool.query("SELECT * FROM proc_processes WHERE name = $1 AND archived_at IS NULL", [p.name])).rows[0];
+  if (!proc) {
+    const steps = p.steps.map((x, i) => Object.assign({}, x, AUTOMATION[p.name][i] || {}));
+    proc = await F.insertRow(pool, "proc_processes", Object.assign({ reviewEveryMonths: 12, owner: "Owner" }, p, { steps }));
+  }
+  const pid = proc.id;
+  if (!(await pool.query("SELECT 1 FROM proc_runs WHERE process_id = $1", [pid])).rows.length) {
+    const start = todayIso();
+    const steps = p.steps.map((x, i) => {
+      const st = { text: x.text, dueOn: x.days === "" ? "" : addDays(start, Number(x.days)), doneOn: "", by: "" };
+      const a = AUTOMATION[p.name][i] || {};
+      for (const k of ["auto", "action"]) if (a[k]) st[k] = a[k];
+      return st;
+    });
+    const org = (ORG.org || {}).name || "the organization";
+    const row = await F.insertRow(pool, "proc_runs", { processId: pid, processName: p.name, subjectKind: "other", subjectId: "", subjectLabel: org, startedOn: start, steps, owner: "Owner" });
+    await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1,$2,$3,$4)", [newId(), row.id, nowIso(), "Started automatically"]);
+  }
+  await pool.query("INSERT INTO app_settings (key, value) VALUES ('library_setup_v1', '1') ON CONFLICT (key) DO NOTHING");
 }
 
 module.exports = { AUTOMATION, TEMPLATES: T, evaluate, contactFor, upgradeStarter, detect };

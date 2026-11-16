@@ -89,6 +89,30 @@ const STARTER = [
     purpose: "Close the year and file on time with the governance answers already documented.", steps: [
       s("Start the year's Form 990 checklist (Board & Governance > Form 990)", 0), s("Create and send this year's conflict-of-interest statements", 7),
       s("Review any policies due for review", 30), s("Send year-end giving letters to donors", 30), s("Work the 990 checklist through to filing", "")] },
+  { name: "System setup", area: "operations", suggestOn: "", usedWhen: "Once, when the system is first set up for an organization (it starts on its own).",
+    purpose: "Everything only the owner can do to take the system from built to fully working: email, security, the domain, real data, and the professional reviews.", steps: [
+      // Week 1: email and security
+      s("Finish the Google Cloud setup (Branding, publish the app, create the Web client, enable the Gmail API) and connect Gmail in Settings > Connected email", 1),
+      s("Find out where the business email is hosted: connect it directly if it's Google Workspace, otherwise add it in Gmail as a \"Send mail as\" address; then choose it as the sender", 2),
+      s("Approve one test message to yourself and confirm it arrives from the right address", 2),
+      s("Turn on two-step sign-in for the owner account (Settings > Your account)", 2),
+      s("Open last night's backup in Google Drive (Frankly Inspired Backups) and confirm it's there", 4),
+      // Week 2: the domain
+      s("In Resend, add the sending domain and copy its DNS records (SPF, DKIM) into the domain registrar", 7),
+      s("Add a DMARC record at the registrar (start with p=none)", 7),
+      s("Confirm the domain and its www address both show the current website", 7),
+      s("When Resend shows Verified: switch the website's sender to the business address and send a test reminder", 9),
+      // Weeks 3-4: real data
+      s("Contacts: add an email for everyone missing one and merge duplicates", 14),
+      s("Pipeline: every live deal has a contact, a stage, and a dated next step", 14),
+      s("Money: enter open invoices and payments so Today and the monthly report are accurate", 14),
+      s("Run one real or practice case through each checklist you use and fix any step that doesn't fit", 18),
+      // Weeks 4-5: professional reviews
+      s("Attorney review: engagement letter terms, website privacy policy and terms, client data handling, grant agreement and conflict-of-interest templates", 30),
+      s("CPA review: invoicing and revenue tracking, bookkeeping and bank reconciliation, gift receipt wording, the Form 990 checklist", 30),
+      // By year end
+      s("Decide whether to move the operations app to a paid Render plan so it doesn't sleep (first load after idle takes up to a minute)", 45),
+      s("Plan the next organization's copy of the system (docs/NEW-ORGANIZATION.md): start date and which areas to turn on", 45)] },
   { name: "Onboarding a board or staff member", area: "board", suggestOn: "member:new", usedWhen: "Someone joins the board or staff.",
     purpose: "Ready to contribute by their first meeting.", steps: [
       s("Add them to Board members with their term dates", 0), s("Create their sign-in (Settings > People: Board or Staff)", 1),

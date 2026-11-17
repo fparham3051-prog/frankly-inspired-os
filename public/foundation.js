@@ -637,6 +637,7 @@
         (pr.replies || []).filter(function (x) { return x.at && x.at.slice(0, 10) >= new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10); }).slice(0, 3).forEach(function (x) { add(0, "Reply", (x.from || "Someone") + (x.summary ? ": " + x.summary : " replied: " + x.subject), x.runId ? "run:" + x.runId : "lib:lb-outbox"); });
         (pr.precalls || []).forEach(function (x) { add(1, "Pre-call brief", x.label + (x.date ? " (" + fmtDate(x.date) + ")" : ""), "deal:" + x.id); });
         if (pr.noteDrafts) add(1, "Field notes", pr.noteDrafts + " draft" + (pr.noteDrafts === 1 ? "" : "s") + " to review and publish", "notes:");
+        if (pr.weekly && pr.weekly.ready && !pr.weekly.held) add(1, "Weekly Meeting", "Your brief for the week of " + fmtDate(pr.weekly.weekOf) + " is ready: confirm the numbers, mark priorities, pick one issue", "session:");
         if (pr.drafts) add(0, "Messages", pr.drafts + " message" + (pr.drafts === 1 ? "" : "s") + " waiting for your approval", "lib:lb-outbox");
         if (sug.length) add(2, "Process Library", sug.length === 1 ? "Ready to start: " + sug[0].processName + " for " + sug[0].subjectLabel : sug.length + " checklists ready to start", "lib:lb-work");
       }
@@ -656,6 +657,7 @@
       e.preventDefault();
       var parts = b.getAttribute("data-today-go").split(":"), kind = parts[0], arg = parts[1];
       if (kind === "deal" && window.AIX) { window.AIX.deal(arg); return; }
+      if (kind === "session") { var sb = document.querySelector('.rail-btn[data-view="session"]'); if (sb) sb.click(); return; }
       if (kind === "notes") { var fb = document.querySelector('.rail-btn[data-view="fieldnotes"]'); if (fb) fb.click(); return; }
       var view = { grants: "grants", fundraising: "fundraising", donor: "fundraising", board: "board", meeting: "board", lib: "process", run: "process" }[kind];
       var rail = document.querySelector('.rail-btn[data-view="' + view + '"]');

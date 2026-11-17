@@ -792,6 +792,42 @@ async function t(name, fn) {
     assert.strictEqual(r.status, 429); assert.match(r.data.error, /limit/);
     await Q.query("DELETE FROM app_settings WHERE key = 'ai_usage'");
   });
+  await t("weekly: last week's numbers fill themselves in, the brief flags issues, the meeting records a decision", async () => {
+    const W = require("../weekly");
+    const wk = W.lastWeek(), b = W.bounds(wk), mid = new Date(Date.parse(b.fromTs) + 2 * 864e5).toISOString(), day = wk.slice(0, 8) + String(Number(wk.slice(8)) + 0).padStart(2, "0");
+    const midDay = mid.slice(0, 10);
+    await Q.query("INSERT INTO prospects (id, name, org, source, status, created_at) VALUES ('wk-p1','A','Org A','referral','new',$1), ('wk-p2','B','Org B','linkedin','new',$1), ('wk-p3','C','Org C','market-scan','new',$1)", [mid]);
+    await Q.query("INSERT INTO pipeline (id, name, org, source, stage, created_at, updated_at, next_step_date) VALUES ('wk-d1','D','Org D','Prospecting: referral','lead',$1,$1,'2000-01-01')", [mid]);
+    await Q.query("UPDATE pipeline SET stage = 'engaged' WHERE id = 'wk-d1'");
+    const ev = (await Q.query("SELECT * FROM pipeline_stage_events WHERE pipeline_id = 'wk-d1' ORDER BY id")).rows;
+    assert.deepStrictEqual(ev.map((e) => e.to_stage), ["lead", "engaged"], "the database records stage changes");
+    await Q.query("UPDATE pipeline_stage_events SET at = $1 WHERE pipeline_id = 'wk-d1'", [mid]);
+    await Q.query("INSERT INTO encounters (id, pipeline_id, occurred_at, created_at) VALUES ('wk-e1','wk-d1',$1,$2), ('wk-e2','wk-d1',$1,$2)", [midDay, mid]);
+    await Q.query("INSERT INTO invoices (id, pipeline_id, amount, issued_date, due_date, paid_date, status, created_at) VALUES ('wk-i1','wk-d1',4500,$1,$1,$1,'paid',$2), ('wk-i2','wk-d1',1200,$1,'2000-01-01','','sent',$2)", [midDay, mid]);
+    const br = (await req("owner1", "GET", "/api/weekly/brief")).data;
+    assert.strictEqual(br.weekOf, wk);
+    assert.strictEqual(br.numbers.leads, 2, "research imports are not leads; promoted deals are not double counted");
+    assert.strictEqual(br.numbers.referrals, 1); assert.strictEqual(br.numbers.calls, 2); assert.strictEqual(br.numbers.won, 1);
+    assert.strictEqual(br.numbers.revenueBooked, 5700); assert.strictEqual(br.numbers.revenueCollected, 4500);
+    assert.strictEqual(br.scorecard.auto, true); assert.strictEqual(br.scorecard.confirmed, false);
+    assert.ok(br.flags.some((f) => /overdue/.test(f.text) && /\$1,200/.test(f.text)), JSON.stringify(br.flags));
+    assert.ok(br.suggestions.some((x) => /overdue invoices/.test(x)));
+    // Confirm with a correction; the system never overwrites it afterwards.
+    const cf = (await req("owner1", "POST", "/api/weekly/confirm", Object.assign({}, br.numbers, { weekOf: wk, calls: 3 }))).data;
+    assert.strictEqual(cf.scorecard.confirmed, true); assert.strictEqual(cf.numbers.calls, 3);
+    await W.fillWeek(Q, wk);
+    const sc = (await req("owner1", "GET", "/api/state")).data.scorecard.filter((x) => x.weekOf === wk);
+    assert.strictEqual(sc.length, 1); assert.strictEqual(sc[0].calls, 3); assert.ok(sc[0].confirmedAt);
+    // Today shows the brief until the meeting is closed.
+    assert.deepStrictEqual((await req("owner1", "GET", "/api/proc/summary")).data.weekly, { weekOf: wk, ready: true, held: false });
+    const is = (await req("owner1", "POST", "/api/issues", { title: br.suggestions[0], detail: "" })).data;
+    assert.strictEqual((await req("owner1", "POST", "/api/weekly/decision", { weekOf: wk, decision: "" })).status, 400);
+    const d = (await req("owner1", "POST", "/api/weekly/decision", { weekOf: wk, decision: "Call Org D about the invoice by Wednesday.", issueId: is.id })).data;
+    assert.ok(d.heldAt); assert.strictEqual(d.issueId, is.id);
+    assert.strictEqual((await req("owner1", "GET", "/api/proc/summary")).data.weekly.held, true);
+    assert.match((await req("owner1", "GET", "/api/weekly/history")).data.items[0].decision, /Org D/);
+    assert.strictEqual((await W.tick(Q)).status, "held", "a closed meeting isn't rebuilt");
+  });
   await t("tick: needs a key; reports only new drafts since the last notice", async () => {
     assert.strictEqual((await req("anon", "POST", "/api/admin/tick", null)).status, 401);
     await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" });

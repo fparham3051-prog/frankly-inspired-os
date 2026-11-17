@@ -981,3 +981,42 @@ CREATE TABLE IF NOT EXISTS field_notes (
   created_at TEXT,
   updated_at TEXT
 );
+
+-- ---------- Weekly Meeting automation ----------
+-- Every change to a deal's stage, recorded by the database itself so wins
+-- and losses can be counted per week no matter which screen made the change.
+CREATE TABLE IF NOT EXISTS pipeline_stage_events (
+  id BIGSERIAL PRIMARY KEY,
+  pipeline_id TEXT,
+  from_stage TEXT,
+  to_stage TEXT,
+  at TEXT DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+);
+CREATE INDEX IF NOT EXISTS pipeline_stage_events_at ON pipeline_stage_events (at);
+CREATE OR REPLACE FUNCTION fi_pipeline_stage_log() RETURNS trigger AS $fn$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO pipeline_stage_events (pipeline_id, from_stage, to_stage) VALUES (NEW.id, NULL, NEW.stage);
+  ELSIF NEW.stage IS DISTINCT FROM OLD.stage THEN
+    INSERT INTO pipeline_stage_events (pipeline_id, from_stage, to_stage) VALUES (NEW.id, OLD.stage, NEW.stage);
+  END IF;
+  RETURN NEW;
+END
+$fn$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS pipeline_stage_log ON pipeline;
+CREATE TRIGGER pipeline_stage_log AFTER INSERT OR UPDATE OF stage ON pipeline FOR EACH ROW EXECUTE FUNCTION fi_pipeline_stage_log();
+
+ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS auto BOOLEAN DEFAULT false;
+ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS confirmed_at TEXT DEFAULT '';
+ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT '';
+
+-- One row per meeting week: the prepared brief and what was decided.
+CREATE TABLE IF NOT EXISTS weekly_meetings (
+  week_of TEXT PRIMARY KEY,               -- Monday of the week being reviewed
+  brief TEXT DEFAULT '{}',
+  ai_summary TEXT DEFAULT '',
+  decision TEXT DEFAULT '',
+  issue_id TEXT DEFAULT '',
+  generated_at TEXT DEFAULT '',
+  held_at TEXT DEFAULT ''
+);

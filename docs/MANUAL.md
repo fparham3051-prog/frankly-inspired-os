@@ -104,7 +104,18 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 
 ## Daily and weekly rhythm
 - Morning: open Today.
-- Weekly: Weekly Meeting; each client's 15-minute check-in happens in their portal.
+- Weekly (Monday): Weekly Meeting, about 15 minutes. The system prepares it
+  early Monday: last week's numbers counted from the data (conversations from
+  Prospect Reports, new leads and referrals from Prospecting and the pipeline,
+  wins and losses from deal stage changes, revenue booked and collected from
+  invoices), the four-week average, what needs attention (overdue invoices,
+  deals with late next steps or no activity, priorities off track or due soon,
+  overdue checklist steps, messages waiting), and up to three suggested issues.
+  With AI on, a short summary at the top. Today shows "Weekly Meeting" until
+  you close it. Your part: confirm or correct the numbers, mark each priority,
+  add the issue that matters, and save the one decision. Confirmed numbers are
+  never overwritten; past decisions are listed on the Recap step.
+- Each client's 15-minute check-in happens in their portal.
 - Monthly: Insights > Funnel, then print the monthly report.
 
 ## Scheduled tasks (run on their own)
@@ -114,7 +125,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 | Daily reminders | 11:17am ET daily | 90-day re-check emails and client weekly check-in reminders |
 | Nightly backup and retention | 2:37am ET daily | Saves a full-system backup to Google Drive, keeps 30, applies data retention |
 | Weekly DMV market scan refresh | Sundays 2:23am ET | Refreshes the market scan |
-| Checklist automation | every 3 hours | Runs the automation pass; notifies only when new messages are waiting or replies came in |
+| Checklist automation | every 3 hours | Runs the automation pass (also fills in last week's Weekly Log and prepares the meeting brief); notifies only when new messages are waiting or replies came in |
 
 ## Backups
 - What: every table in all three databases, one JSON file per night, from

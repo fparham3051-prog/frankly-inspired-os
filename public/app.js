@@ -1227,7 +1227,7 @@
       var denom = won + lost;
       var closeRate = denom > 0 ? Math.round((won/denom)*100) + "%" : "n/a";
       return '<tr data-id="' + esc(s.id) + '">' +
-        '<td>' + fmtDate(s.weekOf) + '</td>' +
+        '<td>' + fmtDate(s.weekOf) + (s.auto ? (s.confirmedAt ? '<div class="dim">counted, confirmed</div>' : '<div class="dim">counted, not confirmed</div>') : '') + '</td>' +
         '<td>' + esc(s.calls || 0) + '</td>' +
         '<td>' + esc(s.leads || 0) + '</td>' +
         '<td>' + esc(s.active || 0) + '</td>' +
@@ -2833,49 +2833,75 @@
     else renderSessionRecap();
   }
 
-  function renderSessionScorecard(){
-    var wk = mondayOf();
-    var existing = state.scorecard.filter(function(s){ return s.weekOf === wk; })[0];
-    var loggedEl = document.getElementById("session-scorecard-logged");
-    var formEl = document.getElementById("session-scorecard-form");
-    var weekInput = document.getElementById("sess-week");
-    if(weekInput && !weekInput.value) weekInput.value = wk;
-    if(existing){
-      loggedEl.hidden = false;
-      formEl.hidden = true;
-      document.getElementById("session-week-label").textContent = fmtDate(existing.weekOf);
-      document.getElementById("session-week-summary").textContent =
-        (existing.calls||0) + " calls, " + (existing.leads||0) + " new leads, " + (existing.won||0) + " won, " + (existing.lost||0) + " lost";
-    } else {
-      loggedEl.hidden = true;
-      formEl.hidden = false;
-    }
+  // Step 1: the prepared brief. The server fills in last week's numbers
+  // from the data (weekly.js); the owner confirms or corrects them here.
+  var WK = null;
+  var WK_ROWS = [
+    ["calls", "Conversations logged", "Prospect Reports dated that week"],
+    ["leads", "New leads", "Prospects and new deals added (research imports not counted)"],
+    ["referrals", "Of those, referrals", "Source marked as a referral"],
+    ["active", "Active deals", "Discovery, Diagnostic, or Engaged right now"],
+    ["won", "Won", "Deals moved into Diagnostic or Engaged"],
+    ["lost", "Lost", "Deals moved to Lost, No Fit"],
+    ["revenueBooked", "Revenue booked", "Invoices issued that week"],
+    ["revenueCollected", "Revenue collected", "Invoices paid that week"]
+  ];
+  function wkMoney(k){ return k === "revenueBooked" || k === "revenueCollected"; }
+  function loadWeekly(force){
+    if(WK && !force) return Promise.resolve(WK);
+    return apiFetch("/api/weekly/brief").then(function(b){ WK = b; return b; });
   }
-  document.getElementById("session-scorecard-form").addEventListener("submit", function(e){
+  function renderSessionScorecard(){
+    var st = document.getElementById("wk-status");
+    loadWeekly(true).then(function(b){
+      document.getElementById("wk-range").textContent = "(" + fmtDate(b.weekOf) + " to " + fmtDate(b.sunday) + ")";
+      var sc = b.scorecard || {};
+      st.textContent = b.heldAt ? "Meeting closed " + fmtDate(b.heldAt.slice(0,10)) + "." :
+        (sc.confirmed ? "Numbers confirmed. Next: priorities." : "Counted from your data. Check them, correct anything that looks wrong, then confirm.");
+      var ai = document.getElementById("wk-ai");
+      ai.hidden = !b.aiSummary;
+      ai.innerHTML = b.aiSummary ? '<span class="pill ai-pill" title="Written with AI">AI</span> ' + esc(b.aiSummary) : "";
+      var avg = b.average || null;
+      document.getElementById("wk-numbers").innerHTML = WK_ROWS.map(function(r){
+        var v = Number((b.numbers || {})[r[0]] || 0), a = avg ? avg[r[0]] : null;
+        var cmp = a === null ? '<span class="dim">not enough weeks yet</span>' : (wkMoney(r[0]) ? fmtMoneyShort(a) : esc(a));
+        return '<tr><td><strong>' + esc(r[1]) + '</strong><div class="dim">' + esc(r[2]) + '</div></td>' +
+          '<td><input type="number" min="0" step="' + (wkMoney(r[0]) ? "0.01" : "1") + '" class="wk-num" data-k="' + r[0] + '" value="' + v + '" aria-label="' + esc(r[1]) + '"></td>' +
+          '<td>' + cmp + '</td></tr>';
+      }).join("");
+      var since = (b.numbers || {}).stageTrackingSince;
+      document.getElementById("wk-note").textContent = "Won and lost come from deal stage changes, which the system records automatically" + (since ? " starting " + fmtDate(since) : "") + ".";
+      document.getElementById("wk-confirm").textContent = sc.confirmed ? "Save changes" : "Confirm these numbers";
+      var fl = b.flags || [];
+      document.getElementById("wk-flags").innerHTML = fl.length ? fl.map(function(f){
+        return '<li><span>' + dotHtml(f.level === "warn" ? "warn" : "attn") + '<span>' + esc(f.text) + '</span></span></li>';
+      }).join("") : '<li class="session-empty">Nothing flagged. A clean week.</li>';
+    }).catch(function(err){ st.textContent = "Could not load the brief: " + err.message; });
+  }
+  document.getElementById("wk-numbers-form").addEventListener("submit", function(e){
     e.preventDefault();
-    var statusEl = document.getElementById("sess-sc-status");
-    var week = document.getElementById("sess-week").value;
-    if(!week) return;
-    var data = {
-      weekOf: week,
-      calls: Number(document.getElementById("sess-calls").value || 0),
-      leads: Number(document.getElementById("sess-leads").value || 0),
-      active: 0,
-      won: Number(document.getElementById("sess-won").value || 0),
-      lost: Number(document.getElementById("sess-lost").value || 0),
-      referrals: 0,
-      notes: ""
-    };
-    apiFetch("/api/scorecard", { method: "POST", body: data }).then(function(){
-      statusEl.textContent = "Logged.";
+    var statusEl = document.getElementById("wk-num-status");
+    var data = { weekOf: WK ? WK.weekOf : "" };
+    document.querySelectorAll("#wk-numbers .wk-num").forEach(function(i){ data[i.getAttribute("data-k")] = Number(i.value || 0); });
+    apiFetch("/api/weekly/confirm", { method: "POST", body: data }).then(function(b){
+      WK = b; statusEl.textContent = "Confirmed.";
       setTimeout(function(){ statusEl.textContent = ""; }, 2200);
       return refreshAndRender();
-    }).then(function(){
-      if(sessionStep === 0) renderSessionScorecard();
-    }).catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+    }).then(function(){ if(sessionStep === 0) renderSessionScorecard(); })
+      .catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
+  document.getElementById("wk-refresh").addEventListener("click", function(){
+    var statusEl = document.getElementById("wk-num-status");
+    if(WK && WK.scorecard && WK.scorecard.confirmed && !confirm("These numbers are confirmed. Recounting only refreshes the brief; your confirmed numbers stay. Continue?")) return;
+    apiFetch("/api/weekly/refresh", { method: "POST", body: { weekOf: WK ? WK.weekOf : "" } }).then(function(b){
+      WK = b; statusEl.textContent = "Recounted.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 2200);
+      renderSessionScorecard();
+    }).catch(function(err){ statusEl.textContent = "Could not recount: " + err.message; });
   });
 
   function renderSessionRocks(){
+    loadWeekly(false).catch(function(){});
     var list = document.getElementById("session-rocks-list");
     var rows = state.rocks.slice().sort(function(a,b){ return (a.dueDate || "9999").localeCompare(b.dueDate || "9999"); });
     if(rows.length === 0){
@@ -2904,6 +2930,14 @@
   });
 
   function renderSessionIssues(){
+    loadWeekly(false).then(function(b){
+      var open = {}; state.issues.forEach(function(i){ if(i.status !== "solved") open[(i.title || "").toLowerCase()] = 1; });
+      var sug = (b.suggestions || []).filter(function(t){ return !open[t.toLowerCase()]; });
+      document.getElementById("wk-suggest-wrap").hidden = sug.length === 0;
+      document.getElementById("wk-suggest").innerHTML = sug.map(function(t){
+        return '<li><span>' + dotHtml("attn") + '<span class="who">' + esc(t) + '</span></span><span><button type="button" class="btn secondary wk-add-issue" data-title="' + esc(t) + '">Add to issues</button></span></li>';
+      }).join("");
+    }).catch(function(){ document.getElementById("wk-suggest-wrap").hidden = true; });
     var list = document.getElementById("session-issues-list");
     var rows = state.issues.filter(function(i){ return i.status !== "solved"; })
       .sort(function(a,b){ return (a.createdAt || "").localeCompare(b.createdAt || ""); });
@@ -2925,6 +2959,14 @@
       .then(refreshAndRender)
       .then(function(){ if(sessionStep === 2) renderSessionIssues(); })
       .catch(function(err){ console.error(err); });
+  });
+  document.getElementById("wk-suggest").addEventListener("click", function(e){
+    var btn = e.target.closest(".wk-add-issue"); if(!btn) return;
+    btn.disabled = true;
+    apiFetch("/api/issues", { method: "POST", body: { title: btn.getAttribute("data-title"), detail: "Suggested by the weekly brief." } })
+      .then(refreshAndRender)
+      .then(function(){ if(sessionStep === 2) renderSessionIssues(); })
+      .catch(function(err){ btn.disabled = false; console.error(err); });
   });
   document.getElementById("session-issue-form").addEventListener("submit", function(e){
     e.preventDefault();
@@ -2955,17 +2997,18 @@
   }
 
   function renderSessionRecap(){
+    if(!WK){ loadWeekly(false).then(renderSessionRecap).catch(function(){}); }
     var openIssues = state.issues.filter(function(i){ return i.status !== "solved"; });
     var offTrack = state.rocks.filter(function(r){ return r.status === "off-track"; });
     var onTrack = state.rocks.filter(function(r){ return r.status === "on-track"; });
-    var wk = mondayOf();
-    var thisWeek = state.scorecard.filter(function(s){ return s.weekOf === wk; })[0];
+    var wk = WK ? WK.weekOf : "";
+    var thisWeek = state.scorecard.filter(function(s){ return s.weekOf === wk && (!s.auto || s.confirmedAt); })[0];
     var waiting = state.prospects.filter(function(p){ return p.status !== "not-fit"; }).length;
 
     var lines = [
       { dot: thisWeek ? "good" : "neutral", text: thisWeek
-        ? (thisWeek.calls||0) + " calls and " + (thisWeek.leads||0) + " new leads logged this week."
-        : "This week's numbers are not logged yet." },
+        ? "Numbers confirmed: " + (thisWeek.calls||0) + " conversations, " + (thisWeek.leads||0) + " new leads, " + (thisWeek.won||0) + " won."
+        : "Last week's numbers aren't confirmed yet (step 1)." },
       { dot: offTrack.length ? "warn" : "good", text: offTrack.length
         ? offTrack.length + " priorit" + (offTrack.length === 1 ? "y" : "ies") + " off track this quarter."
         : onTrack.length + " priorit" + (onTrack.length === 1 ? "y" : "ies") + " on track, none off track." },
@@ -2979,7 +3022,33 @@
     document.getElementById("session-recap").innerHTML = lines.map(function(l){
       return '<div class="session-recap-line">' + dotHtml(l.dot) + '<span>' + esc(l.text) + '</span></div>';
     }).join("");
+    var sel = document.getElementById("wk-issue");
+    sel.innerHTML = '<option value="">None of these (decision only)</option>' + openIssues.map(function(i){
+      return '<option value="' + esc(i.id) + '"' + ((WK && WK.issueId === i.id) || (!(WK && WK.issueId) && openIssues.length === 1) ? " selected" : "") + '>' + esc(i.title || "Untitled") + '</option>';
+    }).join("");
+    var dec = document.getElementById("wk-decision");
+    if(WK && WK.decision && !dec.value) dec.value = WK.decision;
+    document.getElementById("wk-decision-save").textContent = WK && WK.heldAt ? "Update the decision" : "Save and close the meeting";
+    apiFetch("/api/weekly/history").then(function(h){
+      var items = (h.items || []).filter(function(x){ return !WK || x.weekOf !== WK.weekOf; }).slice(0, 6);
+      document.getElementById("wk-history-wrap").hidden = items.length === 0;
+      document.getElementById("wk-history").innerHTML = items.map(function(x){
+        return '<li><span><span class="who">Week of ' + esc(fmtDate(x.weekOf)) + (x.issue ? ' · ' + esc(x.issue) : '') + '</span><br>' + esc(x.decision) + '</span></li>';
+      }).join("");
+    }).catch(function(){});
   }
+  document.getElementById("wk-decision-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var statusEl = document.getElementById("wk-dec-status");
+    var decision = document.getElementById("wk-decision").value.trim();
+    if(!decision){ statusEl.textContent = "Write down the decision first."; return; }
+    apiFetch("/api/weekly/decision", { method: "POST", body: { weekOf: WK ? WK.weekOf : "", decision: decision, issueId: document.getElementById("wk-issue").value } }).then(function(b){
+      WK = b; statusEl.textContent = "Saved. Meeting closed.";
+      setTimeout(function(){ statusEl.textContent = ""; }, 3000);
+      return refreshAndRender();
+    }).then(function(){ renderSessionRecap(); if(window.FD) window.FD.renderToday(); })
+      .catch(function(err){ statusEl.textContent = "Could not save: " + err.message; });
+  });
 
   document.getElementById("session-steps").addEventListener("click", function(e){
     var btn = e.target.closest(".session-step");

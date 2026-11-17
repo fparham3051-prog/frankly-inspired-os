@@ -249,7 +249,7 @@ function rowToFeedback(r) {
   return { id: r.id, sourceRef: r.source_ref, name: r.name, email: r.email, role: r.role, organization: r.organization, rating: r.rating, result: r.result, quote: r.quote, permission: r.permission, status: r.status, createdAt: r.created_at };
 }
 function rowToScorecard(r) {
-  return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at };
+  return { id: r.id, weekOf: r.week_of, calls: r.calls, leads: r.leads, active: r.active, won: r.won, lost: r.lost, referrals: r.referrals, notes: r.notes, revenueBooked: r.revenue_booked === null ? 0 : Number(r.revenue_booked), revenueCollected: r.revenue_collected === null ? 0 : Number(r.revenue_collected), createdAt: r.created_at, auto: !!r.auto, confirmedAt: r.confirmed_at || "" };
 }
 function rowToIssue(r) {
   return { id: r.id, title: r.title, detail: r.detail, status: r.status, createdAt: r.created_at, resolvedAt: r.resolved_at };
@@ -1776,6 +1776,7 @@ require("./contacts").mount(app, { pool, requireAuth });
 require("./gmail").mount(app, { pool, requireAuth });
 require("./sheets").mount(app, { pool, requireAuth });
 require("./ai-features").mount(app, { pool, requireAuth });
+require("./weekly").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task
@@ -1788,6 +1789,7 @@ async function automationTick() {
   try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
   try { await require("./processes").ensureStarter(pool); await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
   try { out.ai = await require("./ai-features").tick(pool); } catch (e) { out.aiError = String(e.message || e); }
+  try { out.weekly = await require("./weekly").tick(pool); } catch (e) { out.weeklyError = String(e.message || e); }
   try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
   const drafts = (await pool.query("SELECT o.id FROM proc_outbox o LEFT JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND (r.id IS NULL OR r.archived_at IS NULL)").catch(() => ({ rows: [] }))).rows.map((r) => r.id);

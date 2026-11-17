@@ -918,3 +918,13 @@ a.btn{text-decoration:none;display:inline-block}
 .ai-minutes summary{cursor:pointer;font-weight:600}
 .ai-minutes textarea{width:100%;box-sizing:border-box}
 .fn-card .fd-form textarea{min-height:3.2em}
+
+/* Weekly Meeting brief */
+.wk-summary { background: var(--surface-2, #f6f4ee); border-left: 3px solid var(--accent, #B28E42); padding: 10px 14px; border-radius: 6px; margin: 0 0 14px; line-height: 1.5; }
+.wk-table { width: 100%; border-collapse: collapse; }
+.wk-table th, .wk-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border, #e3e0d8); vertical-align: top; }
+.wk-table th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #5b6570); }
+.wk-table td .dim { font-size: .8rem; }
+.wk-table input.wk-num { width: 110px; padding: 6px 8px; font: inherit; }
+.wk-note { font-size: .82rem; margin: 6px 0 0; }
+@media (max-width: 600px) { .wk-table th:nth-child(3), .wk-table td:nth-child(3) { display: none; } .wk-table input.wk-num { width: 90px; } }

@@ -438,7 +438,13 @@ function mount(app, { pool, requireAuth }) {
     const noteDrafts = (await pool.query("SELECT count(*)::int AS n FROM field_notes WHERE status = 'draft'").catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n;
 const replies = (await pool.query("SELECT o.run_id, o.subject, o.reply_from, o.replied_at, o.reply_kind, o.reply_summary, COALESCE(r.subject_label, o.subject_label) AS subject_label FROM proc_outbox o LEFT JOIN proc_runs r ON r.id = o.run_id WHERE o.replied_at >= $1 AND (r.id IS NULL OR r.archived_at IS NULL) ORDER BY o.replied_at DESC LIMIT 10", [addDays(today, -7)])).rows
       .map((x) => ({ runId: x.run_id || "", subject: x.subject, from: (x.reply_from || "").replace(/<.*>/, "").trim() || x.reply_from, at: x.replied_at, subjectLabel: x.subject_label, kind: x.reply_kind || "", summary: x.reply_summary || "" }));
-    res.json({ suggestions, open, stepsDue, reviews, drafts, replies, precalls, noteDrafts, counts: { processes: procs.length, open: open.length, completed: runs.filter((r) => !r.skipped && r.completed_on).length } });
+    let weekly = null;
+    try {
+      const W = require("./weekly"), wk = W.lastWeek();
+      const m = (await pool.query("SELECT held_at, generated_at FROM weekly_meetings WHERE week_of = $1", [wk])).rows[0];
+      weekly = { weekOf: wk, ready: !!(m && m.generated_at), held: !!(m && m.held_at) };
+    } catch (e) { weekly = null; }
+    res.json({ suggestions, open, stepsDue, reviews, drafts, replies, precalls, noteDrafts, weekly, counts: { processes: procs.length, open: open.length, completed: runs.filter((r) => !r.skipped && r.completed_on).length } });
   }));
 }
 

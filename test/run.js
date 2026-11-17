@@ -857,6 +857,15 @@ async function t(name, fn) {
     assert.strictEqual(row.status, "applied"); assert.strictEqual(row.text, "", "raw text cleared once applied");
     assert.strictEqual((await req("owner1", "POST", "/api/meetings/check", {})).data.added, 0, "each email is read once");
   });
+  await t("field notes: research drafts arrive as drafts only, once", async () => {
+    const body = { notes: [{ title: "Test research note", signal: "s", assumption: "a", constraint: "c", evidence: "e", action: "x", trigger: "funder" }] };
+    assert.strictEqual((await req("anon", "POST", "/api/admin/field-note-drafts", body)).status, 401);
+    const r1 = (await req("anon", "POST", "/api/admin/field-note-drafts", body, { "X-Admin-Token": "test-token" })).data;
+    const r2 = (await req("anon", "POST", "/api/admin/field-note-drafts", body, { "X-Admin-Token": "test-token" })).data;
+    assert.strictEqual(r1.ids[0], r2.ids[0]);
+    const n = (await Q.query("SELECT status, source FROM field_notes WHERE id = $1", [r1.ids[0]])).rows[0];
+    assert.deepStrictEqual(n, { status: "draft", source: "research" });
+  });
   await t("gmail: disconnect goes back to opening in my email", async () => {
     assert.strictEqual((await req("owner1", "POST", "/api/gmail/disconnect", { account: "owner@gmail.test" })).status, 200);
     const out = (await req("owner1", "GET", "/api/proc/outbox")).data;

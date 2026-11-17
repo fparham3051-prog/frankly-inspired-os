@@ -1806,6 +1806,22 @@ setInterval(() => {
   if (tickBusy) return; tickBusy = true;
   automationTick().catch((e) => console.error("automation tick", e)).finally(() => { tickBusy = false; });
 }, 15 * 60 * 1000).unref();
+// Research note drafts from outside the app (e.g. the DMV brief). Always
+// saved as drafts for the owner to review in Field Notes; never published here.
+app.post("/api/admin/field-note-drafts", requireAdminScope("status"), async (req, res) => {
+  const notes = Array.isArray((req.body || {}).notes) ? req.body.notes.slice(0, 10) : [];
+  const clip = (v, n) => String(v == null ? "" : v).slice(0, n), now = new Date().toISOString(), ids = [];
+  for (const n of notes) {
+    if (!n || !n.title) continue;
+    const dup = (await pool.query("SELECT id FROM field_notes WHERE lower(title) = lower($1)", [clip(n.title, 160)])).rows[0];
+    if (dup) { ids.push(dup.id); continue; }
+    const id = crypto.randomUUID();
+    await pool.query("INSERT INTO field_notes (id, title, signal, assumption, constraint_text, evidence, action, trigger_key, status, source, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft','research',$9,$9)",
+      [id, clip(n.title, 160), clip(n.signal, 600), clip(n.assumption, 600), clip(n.constraint, 600), clip(n.evidence, 600), clip(n.action, 600), clip(n.trigger, 30), now]);
+    ids.push(id);
+  }
+  res.json({ ok: true, ids });
+});
 app.post("/api/admin/tick", requireAdminScope("status"), async (req, res) => {
   try {
     const { out, drafts } = await automationTick();

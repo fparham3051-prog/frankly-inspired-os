@@ -1020,3 +1020,22 @@ CREATE TABLE IF NOT EXISTS weekly_meetings (
   generated_at TEXT DEFAULT '',
   held_at TEXT DEFAULT ''
 );
+
+-- Meeting summaries emailed by note-takers (Meet, Zoom, Fathom, Otter...),
+-- waiting to be applied to a deal. Text is cleared once applied or dismissed.
+CREATE TABLE IF NOT EXISTS meeting_notes (
+  id TEXT PRIMARY KEY,
+  account TEXT DEFAULT '',
+  gmail_id TEXT UNIQUE,
+  received_at TEXT DEFAULT '',
+  source TEXT DEFAULT '',
+  subject TEXT DEFAULT '',
+  text TEXT DEFAULT '',
+  deal_id TEXT DEFAULT '',
+  match_how TEXT DEFAULT '',
+  status TEXT DEFAULT 'unmatched',        -- unmatched | matched | ready | applied | dismissed | skipped
+  proposal TEXT DEFAULT '',
+  error TEXT DEFAULT '',
+  created_at TEXT,
+  applied_at TEXT DEFAULT ''
+);

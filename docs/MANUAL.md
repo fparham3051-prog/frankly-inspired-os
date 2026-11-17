@@ -116,6 +116,18 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   add the issue that matters, and save the one decision. Confirmed numbers are
   never overwritten; past decisions are listed on the Recap step.
 - Each client's 15-minute check-in happens in their portal.
+- After any call: if you use a note-taker (Google Meet's Gemini notes, Zoom AI
+  Companion, Fathom, Otter, Fireflies, Read.ai), its emailed summary is picked
+  up from your connected Gmail every few hours (or "Check email now"), matched
+  to the deal by attendee email or the organization's name in the title, and
+  turned into a proposal: deal notes, stage, next step, a problem log entry,
+  and a follow-up draft. It waits in Meeting notes (Today shows the count;
+  also linked from Prospect Reports) until you press Apply, which also logs
+  the meeting as a conversation for the Weekly Log. Titles containing
+  "coaching", "confidential", or "private" are skipped and never stored; the
+  raw email text is cleared once a summary is applied or dismissed. Maryland
+  requires everyone on a call to agree before it's recorded: say so at the
+  start or put it in the invitation.
 - Monthly: Insights > Funnel, then print the monthly report.
 
 ## Scheduled tasks (run on their own)
@@ -125,7 +137,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 | Daily reminders | 11:17am ET daily | 90-day re-check emails and client weekly check-in reminders |
 | Nightly backup and retention | 2:37am ET daily | Saves a full-system backup to Google Drive, keeps 30, applies data retention |
 | Weekly DMV market scan refresh | Sundays 2:23am ET | Refreshes the market scan |
-| Checklist automation | every 3 hours | Runs the automation pass (also fills in last week's Weekly Log and prepares the meeting brief); notifies only when new messages are waiting or replies came in |
+| Checklist automation | every 3 hours | Runs the automation pass (also picks up meeting summaries, fills in last week's Weekly Log, and prepares the meeting brief); notifies only when new messages are waiting or replies came in |
 
 ## Backups
 - What: every table in all three databases, one JSON file per night, from

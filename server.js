@@ -1777,6 +1777,7 @@ require("./gmail").mount(app, { pool, requireAuth });
 require("./sheets").mount(app, { pool, requireAuth });
 require("./ai-features").mount(app, { pool, requireAuth });
 require("./weekly").mount(app, { pool, requireAuth });
+require("./meetings").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task
@@ -1789,6 +1790,7 @@ async function automationTick() {
   try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
   try { await require("./processes").ensureStarter(pool); await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
   try { out.ai = await require("./ai-features").tick(pool); } catch (e) { out.aiError = String(e.message || e); }
+  try { out.meetings = await require("./meetings").ingest(pool); } catch (e) { out.meetingsError = String(e.message || e); }
   try { out.weekly = await require("./weekly").tick(pool); } catch (e) { out.weeklyError = String(e.message || e); }
   try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }

@@ -41,7 +41,7 @@ async function t(name, fn) {
   await pool.end();
   // A stand-in for Google (OAuth + Gmail API) so the Gmail connection can be tested end to end.
   const http = require("http");
-  const MOCK = { sends: [], threads: {}, port: 0, ai: [], inbox: [], from: {}, siteNotes: null };
+  const MOCK = { sends: [], threads: {}, port: 0, ai: [], inbox: [], from: {}, siteNotes: null, meet: {} };
   const mock = http.createServer((q, r) => {
     let body = ""; q.on("data", (d) => (body += d)); q.on("end", () => {
       const u = new URL(q.url, "http://x"), json = (o, st) => { r.writeHead(st || 200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
@@ -96,6 +96,8 @@ async function t(name, fn) {
         return json({ id: "m" + n, threadId });
       }
       let m;
+      if (u.pathname === "/gmail/v1/users/me/messages" && q.method === "GET" && /gemini-notes/.test(u.searchParams.get("q") || "")) return json({ messages: Object.keys(MOCK.meet).map((id) => ({ id })) });
+      if ((m = /^\/gmail\/v1\/users\/me\/messages\/(\w+)$/.exec(u.pathname)) && MOCK.meet[m[1]]) { const x = MOCK.meet[m[1]]; return json({ id: m[1], internalDate: String(Date.now()), payload: { mimeType: "text/plain", body: { data: Buffer.from(x.text).toString("base64url") }, headers: [{ name: "From", value: x.from }, { name: "Subject", value: x.subject }] } }); }
       if (u.pathname === "/gmail/v1/users/me/messages" && q.method === "GET") return json({ messages: MOCK.inbox.map((id) => ({ id })) });
       if ((m = /^\/gmail\/v1\/users\/me\/messages\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], snippet: "Could we talk Tuesday?", payload: { mimeType: "text/plain", body: { data: Buffer.from("Could we talk Tuesday?\n\nOn Mon someone wrote:\n> old").toString("base64url") }, headers: [{ name: "Message-ID", value: "<" + m[1] + "@mail.test>" }].concat(MOCK.from[m[1]] ? [{ name: "From", value: MOCK.from[m[1]] }] : []) } });
       if ((m = /^\/gmail\/v1\/users\/me\/threads\/(\w+)$/.exec(u.pathname))) return json({ id: m[1], messages: MOCK.threads[m[1]] || [] });
@@ -833,6 +835,27 @@ async function t(name, fn) {
     await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" });
     const t2 = (await req("anon", "POST", "/api/admin/tick?markNotified=1", null, { "X-Admin-Token": "test-token" })).data;
     assert.strictEqual(t2.newSinceLastNotice, 0); assert.ok(t2.waiting >= 1);
+  });
+  await t("meetings: note-taker summaries are matched to the deal, proposed, applied, and counted; private ones skipped", async () => {
+    MOCK.meet.mt1 = { from: "Google Meet <gemini-notes@google.com>", subject: "Notes: Northside Arts strategy call", text: "Summary: Jamie said the board is disengaged and the founder holds every funder relationship. Next: send a Diagnostic proposal by Friday." };
+    MOCK.meet.mt2 = { from: "Google Meet <gemini-notes@google.com>", subject: "Notes: Coaching session with Sam", text: "Personal matters." };
+    MOCK.meet.mt3 = { from: "Zoom <no-reply@zoom.us>", subject: "Your cloud recording is available", text: "Recording link." };
+    const r = (await req("owner1", "POST", "/api/meetings/check", {})).data;
+    assert.strictEqual(r.added, 1, JSON.stringify(r));
+    const list = (await req("owner1", "GET", "/api/meetings")).data;
+    const m = list.items.find((x) => x.subject === "Notes: Northside Arts strategy call");
+    assert.strictEqual(m.dealId, CT.deal); assert.strictEqual(m.status, "ready"); assert.strictEqual(m.proposal.stage, "assessment");
+    const sk = list.items.find((x) => /Coaching/.test(x.subject));
+    assert.strictEqual(sk.status, "skipped"); assert.strictEqual(sk.preview, "", "private text is never stored");
+    assert.ok(!list.items.some((x) => /recording/.test(x.subject)), "non-summary emails ignored");
+    assert.strictEqual((await req("owner1", "GET", "/api/proc/summary")).data.meetings, 1);
+    const before = (await Q.query("SELECT count(*)::int AS n FROM encounters WHERE pipeline_id = $1", [CT.deal])).rows[0].n;
+    const ap = (await req("owner1", "POST", "/api/meetings/" + m.id + "/apply", m.proposal)).data;
+    assert.ok(ap.outboxId, JSON.stringify(ap));
+    assert.strictEqual((await Q.query("SELECT count(*)::int AS n FROM encounters WHERE pipeline_id = $1", [CT.deal])).rows[0].n, before + 1, "logged as a conversation");
+    const row = (await Q.query("SELECT status, text FROM meeting_notes WHERE id = $1", [m.id])).rows[0];
+    assert.strictEqual(row.status, "applied"); assert.strictEqual(row.text, "", "raw text cleared once applied");
+    assert.strictEqual((await req("owner1", "POST", "/api/meetings/check", {})).data.added, 0, "each email is read once");
   });
   await t("gmail: disconnect goes back to opening in my email", async () => {
     assert.strictEqual((await req("owner1", "POST", "/api/gmail/disconnect", { account: "owner@gmail.test" })).status, 200);

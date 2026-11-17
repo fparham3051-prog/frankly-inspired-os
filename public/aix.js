@@ -291,5 +291,79 @@
   if (document.querySelector('.view[data-view="fieldnotes"]') && !document.querySelector('.view[data-view="fieldnotes"]').hidden) fieldNotes();
   var sv = document.querySelector('.view[data-view="settings"]'); if (sv && !sv.hidden) settingsCard();
 
-  window.AIX = { briefHtml: briefHtml, deal: deal, fieldNotes: fieldNotes };
+  /* ---------- meeting notes (summaries emailed by note-takers) ---------- */
+  var MEET = null;
+  function propForm(p, mid) {
+    var c = p.contact || {}, pr = p.problem || {};
+    return '<form class="fd-form ai-proposal mt-prop" data-mid="' + esc(mid) + '" data-prop="' + esc(JSON.stringify(p)) + '"><h4 class="settings-h4 fd-wide">' + AI_TAG + " Proposed changes (edit anything)</h4>" +
+      '<label>Stage<select name="stage">' + Object.keys(STAGES).map(function (k) { return '<option value="' + k + '"' + (k === p.stage ? " selected" : "") + ">" + STAGES[k] + "</option>"; }).join("") + "</select></label>" +
+      '<label>Next step<input name="nextStep" value="' + esc(p.nextStep) + '"></label><label>Next step date<input type="date" name="nextStepDate" value="' + esc(p.nextStepDate) + '"></label>' +
+      '<label class="fd-wide">Added to the deal notes<textarea name="summary" rows="3">' + esc(p.summary) + "</textarea></label>" +
+      '<label class="check-row fd-wide"><input type="checkbox" name="logProblem"' + (pr.presentingProblem ? " checked" : "") + "> Add to the problem log: presented “" + esc(pr.presentingProblem) + "”" + (pr.verifiedConstraint ? ", likely “" + esc(pr.verifiedConstraint) + "”" : "") + "</label>" +
+      '<label class="check-row fd-wide"><input type="checkbox" name="sendFollowUp" checked> Put this follow-up in Messages to approve</label>' +
+      '<label>To<input type="email" name="to" value="' + esc(c.email) + '" placeholder="their email"></label><label>Subject<input name="fuSubject" value="' + esc((p.followUp || {}).subject) + '"></label>' +
+      '<label class="fd-wide">Follow-up<textarea name="fuBody" rows="6">' + esc((p.followUp || {}).body) + "</textarea></label>" +
+      '<div class="fd-wide"><button type="button" class="btn mt-apply">Apply to the deal</button></div></form>';
+  }
+  function meetings() {
+    showDeal();
+    var el = document.getElementById("deal-panel");
+    el.innerHTML = '<p class="load-note">Loading...</p>';
+    Promise.all([api("/api/meetings"), status()]).then(function (r) {
+      var d = r[0], s = r[1]; MEET = d;
+      var ro = board();
+      var open = d.items.filter(function (m) { return ["ready", "matched", "unmatched"].indexOf(m.status) >= 0; });
+      var done = d.items.filter(function (m) { return open.indexOf(m) < 0; });
+      var dealOpts = '<option value="">Choose the deal</option>' + d.deals.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.label) + "</option>"; }).join("");
+      var h = '<div class="fd-toolbar"><button type="button" class="btn secondary" data-go-view="practice">&larr; Pipeline &amp; Money</button>' + (ro ? "" : ' <button type="button" class="btn secondary" id="mt-check">Check email now</button>') + "</div>" +
+        '<div class="view-head"><h2>Meeting notes</h2><span class="tag">from your note-taker</span></div>' +
+        '<p class="view-intro">When Google Meet, Zoom, Fathom, Otter, Fireflies, or Read.ai emails you a meeting summary, it shows up here, matched to the deal by who attended. AI turns it into a deal update, a problem log entry, and a follow-up draft. Nothing changes until you press Apply. Summaries with "coaching", "confidential", or "private" in the title are skipped and never stored. Ask everyone on the call before you record it.</p>' +
+        (d.gmail ? "" : '<p class="fd-small lb-note">' + pill("Gmail isn't connected", "warn") + " Connect it in Settings &gt; Connected email so summaries can be picked up.</p>") +
+        (s.ready ? "" : '<p class="fd-small lb-note">' + pill("AI isn't available", "warn") + " Summaries are still collected and matched; the proposal is written once AI is working.</p>");
+      h += open.length ? open.map(function (m) {
+        var head = '<div class="fd-row"><h3 style="margin:0">' + esc(m.subject || "Meeting") + '</h3><span class="fd-small fd-dim">' + esc(m.source) + " &middot; " + esc(fmtDate(m.receivedAt)) + "</span></div>";
+        var match = m.dealId ? '<p class="fd-small">Deal: <strong>' + esc(m.dealLabel) + "</strong> " + (m.matchHow ? '<span class="fd-dim">(matched by ' + esc(m.matchHow) + ")</span>" : "") + "</p>" : "";
+        var body = "";
+        if (!ro) {
+          if (!m.dealId || m.status === "unmatched") body += '<div class="fd-form"><label>Which deal is this?<select class="mt-deal" data-mid="' + esc(m.id) + '">' + dealOpts + '</select></label><p class="fd-wide"><button type="button" class="btn mt-match" data-mid="' + esc(m.id) + '">Match</button></p></div>';
+          else if (m.proposal) body += propForm(m.proposal, m.id);
+          else body += '<p><button type="button" class="btn mt-propose" data-mid="' + esc(m.id) + '">Write the proposal</button>' + (m.error ? ' <span class="fd-small fd-dim">' + esc(m.error) + "</span>" : "") + "</p>";
+        }
+        return '<div class="fw-card">' + head + match + body +
+          '<details class="fd-small"><summary>The summary as emailed</summary><div class="ai-doc">' + lines(m.preview) + "</div></details>" +
+          (ro ? "" : '<p class="fd-small"><button type="button" class="btn secondary fd-sm mt-dismiss" data-mid="' + esc(m.id) + '">Dismiss (not a client meeting)</button></p>') + "</div>";
+      }).join("") : '<div class="fw-card"><p class="empty-note" style="border:none">No meeting summaries waiting.</p></div>';
+      if (done.length) h += '<div class="fw-card"><h3>Last 30 days</h3><ul class="action-list">' + done.map(function (m) {
+        return "<li><span>" + esc(m.subject || "Meeting") + ' <span class="fd-dim fd-small">' + esc(m.source) + " &middot; " + esc(fmtDate(m.receivedAt)) + "</span></span><span>" + (m.status === "applied" ? pill("Applied to " + (m.dealLabel || "deal"), "good") : pill("Skipped: private")) + "</span></li>";
+      }).join("") + "</ul></div>";
+      el.innerHTML = h;
+    }).catch(function (err) { el.innerHTML = '<p class="empty-note">' + esc(err.message) + "</p>"; });
+  }
+  document.addEventListener("click", function (e) {
+    var b;
+    if ((b = e.target.closest("#mt-check"))) { var d0 = busy(b, "Checking..."); api("/api/meetings/check", { method: "POST", body: {} }).then(function (r) { toast(r.added ? r.added + " new summar" + (r.added === 1 ? "y" : "ies") + " found." : "No new summaries."); meetings(); }).catch(function (err) { toast(err.message); d0(); }); return; }
+    if ((b = e.target.closest(".mt-match"))) {
+      var mid = b.getAttribute("data-mid"), sel = document.querySelector('.mt-deal[data-mid="' + mid + '"]');
+      if (!sel || !sel.value) { toast("Choose the deal first."); return; }
+      var d1 = busy(b, "Matching..."); api("/api/meetings/" + mid + "/match", { method: "POST", body: { dealId: sel.value } }).then(meetings).catch(function (err) { toast(err.message); d1(); }); return;
+    }
+    if ((b = e.target.closest(".mt-propose"))) { var d2 = busy(b, "Reading the summary..."); api("/api/meetings/" + b.getAttribute("data-mid") + "/propose", { method: "POST", body: {} }).then(meetings).catch(function (err) { toast(err.message); d2(); }); return; }
+    if ((b = e.target.closest(".mt-dismiss"))) { api("/api/meetings/" + b.getAttribute("data-mid") + "/dismiss", { method: "POST", body: {} }).then(meetings).catch(function (err) { toast(err.message); }); return; }
+    if ((b = e.target.closest(".mt-apply"))) {
+      var f = b.closest(".mt-prop"), prop = JSON.parse(f.getAttribute("data-prop"));
+      ["stage", "nextStep", "nextStepDate", "summary"].forEach(function (k) { var i = f.querySelector('[name="' + k + '"]'); if (i) prop[k] = i.value; });
+      prop.followUp = { subject: f.querySelector('[name="fuSubject"]').value, body: f.querySelector('[name="fuBody"]').value };
+      prop.to = f.querySelector('[name="to"]').value;
+      prop.sendFollowUp = f.querySelector('[name="sendFollowUp"]').checked;
+      if (!f.querySelector('[name="logProblem"]').checked) prop.problem = {};
+      var d3 = busy(b, "Applying...");
+      api("/api/meetings/" + f.getAttribute("data-mid") + "/apply", { method: "POST", body: prop }).then(function (r) {
+        toast("Deal updated" + (r.problemId ? ", problem logged" : "") + (r.outboxId ? ", follow-up waiting in Messages to approve" : "") + ".");
+        if (window.LB && window.LB.setCount) window.LB.setCount();
+        meetings();
+      }).catch(function (err) { toast(err.message); d3(); });
+    }
+  });
+
+  window.AIX = { briefHtml: briefHtml, deal: deal, fieldNotes: fieldNotes, meetings: meetings };
 })();

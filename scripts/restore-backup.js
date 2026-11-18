@@ -37,7 +37,7 @@ const { Pool } = require("pg");
       const colTypes = Object.fromEntries((await client.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name=$1", [table])).rows.map((r) => [r.column_name, r.data_type]));
       for (const row of rows) {
         const cols = Object.keys(row).filter((c) => c in colTypes);
-        const vals = cols.map((c) => (row[c] !== null && typeof row[c] === "object" && /json/.test(colTypes[c]) ? JSON.stringify(row[c]) : row[c]));
+        const vals = cols.map((c) => (colTypes[c] === "bytea" && typeof row[c] === "string" ? Buffer.from(row[c], "base64") : row[c] !== null && typeof row[c] === "object" && /json/.test(colTypes[c]) ? JSON.stringify(row[c]) : row[c]));
         await client.query(`INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES (${cols.map((_, i) => "$" + (i + 1)).join(",")})`, vals);
       }
       if (colTypes.id && /integer|bigint/.test(colTypes.id)) {

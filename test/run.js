@@ -866,6 +866,121 @@ async function t(name, fn) {
     const n = (await Q.query("SELECT status, source FROM field_notes WHERE id = $1", [r1.ids[0]])).rows[0];
     assert.deepStrictEqual(n, { status: "draft", source: "research" });
   });
+  // ---------- Projects & Team (hub.js) ----------
+  const uid = async (email) => "u" + (await Q.query("SELECT id FROM app_users WHERE email = $1", [email])).rows[0].id;
+  const hubW = (who, ops) => req(who, "POST", "/api/hub/write", { ops });
+  const hubS = async (who, since = 0) => (await req(who, "GET", "/api/hub/sync?since=" + since + "&tab=t-" + who + "&pres=" + encodeURIComponent(JSON.stringify({ v: "projects", m: who })))).data;
+  await t("hub: a fresh board account for these checks", async () => {
+    assert.strictEqual((await req("owner1", "POST", "/api/users", { email: "hubboard@test.org", name: "Hub Board", role: "board", password: "board-password-2" })).status, 200);
+    assert.strictEqual((await req("board", "POST", "/api/login", { email: "hubboard@test.org", password: "board-password-2" })).status, 200);
+  });
+  const mailText = (raw) => { const i = raw.indexOf("\r\n\r\n") >= 0 ? raw.indexOf("\r\n\r\n") : raw.indexOf("\n\n"); const head = raw.slice(0, i), body = raw.slice(i).trim(); return head + "\n" + (/base64/i.test(head) ? Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf8") : body); };
+  await t("hub: the page needs a sign-in; signed-in people get it", async () => {
+    const anon = await fetch(BASE + "/hub/", { redirect: "manual" });
+    assert.strictEqual(anon.status, 302);
+    const r = await fetch(BASE + "/hub/", { headers: { Cookie: jar.staff } });
+    assert.strictEqual(r.status, 200); assert.match(await r.text(), /js\/fios\.js/);
+    assert.strictEqual((await fetch(BASE + "/hub/js/pm.js", { headers: { Cookie: jar.staff } })).status, 200);
+  });
+  await t("hub: team comes from sign-in accounts; clients come from the pipeline", async () => {
+    const d = await hubS("staff");
+    const names = d.team.map((m) => m.data.email);
+    assert.ok(names.includes("staff@test.org") && names.includes("owner@test.org"));
+    assert.ok(d.team.find((m) => m.data.email === "owner@test.org").data.lead);
+    assert.strictEqual(d.me.uid, await uid("staff@test.org"));
+    assert.ok(d.engagements.some((e) => e.data.org === "Northside Literacy"));
+  });
+  await t("hub: staff save a project and task; the owner sees them; board can't change anything", async () => {
+    assert.strictEqual((await hubW("staff", [{ path: "projects", id: "hp1", data: { name: "Board retreat", sections: [{ id: "s1", name: "To do" }] } }, { path: "tasks", id: "ht1", data: { title: "Book venue", project: "hp1", status: "assigned" } }])).status, 200);
+    const d = await hubS("owner1");
+    assert.ok(d.docs.some((x) => x.path === "tasks" && x.id === "ht1" && x.data.title === "Book venue"));
+    const bw = await hubW("board", [{ path: "tasks", id: "hb", data: { title: "x" } }]); assert.strictEqual(bw.status, 403, JSON.stringify(bw));
+    const later = await hubS("owner1", d.now);
+    assert.ok(!later.docs.some((x) => x.id === "ht1" && x.t <= d.now - 5000));
+  });
+  await t("hub: only the owner changes settings, rules and cost rates; staff can't read rates", async () => {
+    assert.strictEqual((await hubW("staff", [{ path: "config", id: "settings", data: { hubEmail: true } }])).status, 403);
+    assert.strictEqual((await hubW("staff", [{ path: "rules", id: "r1", data: { name: "x" } }])).status, 403);
+    assert.strictEqual((await hubW("owner1", [{ path: "config", id: "rates", data: { rates: { a: 1 } } }, { path: "rules", id: "r1", data: { name: "Done moves", on: "status" } }])).status, 200);
+    assert.ok(!(await hubS("staff")).docs.some((x) => x.path === "config" && x.id === "rates"));
+    assert.ok((await hubS("owner1")).docs.some((x) => x.path === "config" && x.id === "rates"));
+  });
+  await t("hub: check-ins stay private to the person and the owner", async () => {
+    const s = await uid("staff@test.org"), o = await uid("owner@test.org");
+    assert.strictEqual((await hubW("staff", [{ path: "pulses/" + s + "/entries", id: "p1", data: { energy: 4 } }])).status, 200);
+    assert.strictEqual((await hubW("staff", [{ path: "pulses/" + o + "/entries", id: "p2", data: { energy: 1 } }])).status, 403);
+    assert.strictEqual((await hubW("owner1", [{ path: "pulses/" + o + "/entries", id: "p3", data: { energy: 3 } }])).status, 200);
+    const st = await hubS("staff");
+    assert.ok(st.docs.some((x) => x.id === "p1") && !st.docs.some((x) => x.id === "p3"));
+    assert.ok((await hubS("owner1")).docs.some((x) => x.id === "p1"));
+    assert.strictEqual((await hubW("owner1", [{ path: "audit/" + s + "/entries", id: "a1", data: { action: "x" } }])).status, 403);
+  });
+  await t("hub: each person edits only their own team extras; names stay from the account", async () => {
+    const s = await uid("staff@test.org"), o = await uid("owner@test.org");
+    assert.strictEqual((await hubW("staff", [{ path: "team", id: s, data: { capacity: 30, digest: true, name: "Hacked" } }])).status, 200);
+    assert.strictEqual((await hubW("staff", [{ path: "team", id: o, data: { capacity: 1 } }])).status, 403);
+    const m = (await hubS("owner1")).team.find((x) => x.id === s).data;
+    assert.strictEqual(m.capacity, 30); assert.strictEqual(m.name, "staff");
+  });
+  await t("hub: time logged on a task linked to a deal shows up in time entries, once", async () => {
+    const deal = (await Q.query("SELECT id FROM pipeline WHERE org = 'Northside Literacy' LIMIT 1")).rows[0].id;
+    const task = { title: "Draft proposal", eng: deal, timeLog: [{ at: "2030-01-02T15:00:00.000Z", min: 45, by: "x" }] };
+    await hubW("staff", [{ path: "tasks", id: "ht2", data: task }]);
+    await hubW("staff", [{ path: "tasks", id: "ht2", data: Object.assign({}, task, { status: "done" }) }]);
+    await hubW("staff", [{ path: "tasks", id: "ht2", data: Object.assign({}, task, { timeLog: task.timeLog.concat([{ at: "2030-01-03T15:00:00.000Z", min: 30 }]) }) }]);
+    const rows = (await Q.query("SELECT minutes, entry_date, note FROM time_entries WHERE pipeline_id = $1 AND id LIKE 'hub-%' ORDER BY entry_date", [deal])).rows;
+    assert.deepStrictEqual(rows.map((r) => r.minutes), [45, 30]);
+    assert.match(rows[0].note, /Draft proposal/);
+  });
+  await t("hub: deletes reach other people", async () => {
+    const before = await hubS("owner1");
+    await hubW("staff", [{ path: "tasks", id: "ht1", data: null }]);
+    const after = await hubS("owner1", before.now);
+    assert.ok(after.docs.some((x) => x.id === "ht1" && x.data === null));
+    assert.ok(!(await hubS("owner1")).docs.some((x) => x.id === "ht1"));
+  });
+  await t("hub: who's here now", async () => {
+    await hubS("staff"); const d = await hubS("owner1"); const su = await uid("staff@test.org");
+    assert.ok(d.peers.some((p) => p.by === su && p.presence.v === "projects"));
+  });
+  await t("hub: files upload, download, and only the uploader or owner deletes them", async () => {
+    const up = await fetch(BASE + "/api/hub/files", { method: "POST", headers: { Cookie: jar.staff, "Content-Type": "text/plain", "X-File-Name": encodeURIComponent("notes.txt") }, body: "hello hub" });
+    const f = await up.json(); assert.strictEqual(up.status, 200); assert.strictEqual(f.sizeBytes, 9);
+    const dl = await fetch(BASE + f.url, { headers: { Cookie: jar.board } }); const dlt = await dl.text(); assert.strictEqual(dlt, "hello hub", dl.status + " " + dlt.slice(0, 200));
+    const html = await (await fetch(BASE + "/api/hub/files", { method: "POST", headers: { Cookie: jar.staff, "Content-Type": "text/html" }, body: "<script>x</script>" })).json();
+    const h = await fetch(BASE + html.url, { headers: { Cookie: jar.staff } }); assert.strictEqual(h.headers.get("content-type"), "application/octet-stream"); assert.match(h.headers.get("content-disposition"), /attachment/);
+    assert.strictEqual((await fetch(BASE + "/api/hub/files", { method: "POST", headers: { Cookie: jar.board }, body: "x" })).status, 403);
+    assert.strictEqual((await req("board", "DELETE", f.url)).status, 403);
+    assert.strictEqual((await req("staff", "DELETE", f.url)).status, 200);
+  });
+  await t("hub: Claude answers through the practice's AI relay", async () => {
+    const r = await req("staff", "POST", "/api/hub/ai", { prompt: "Reply with only a JSON object for the plan", json: true });
+    assert.strictEqual(r.status, 200); assert.deepStrictEqual(r.data.data, {});
+    assert.ok(MOCK.ai.some((x) => /Projects & Team/.test(x.system)));
+  });
+  await t("hub: email stays off until the owner turns it on, then sends from the connected Gmail", async () => {
+    const off = await req("staff", "POST", "/api/hub/email", { to: ["pat@test.org"], subject: "Hi", body: "Status" });
+    assert.strictEqual(off.status, 409, JSON.stringify(off.data));
+    await hubW("owner1", [{ path: "config", id: "settings", data: { hubEmail: true } }]);
+    const n = MOCK.sends.length;
+    const on = await req("staff", "POST", "/api/hub/email", { to: ["pat@test.org"], subject: "Project status", body: "On track" });
+    assert.strictEqual(on.status, 200, JSON.stringify(on.data)); assert.strictEqual(MOCK.sends.length, n + 1);
+    assert.match(mailText(MOCK.sends[n].raw), /On track/);
+    assert.strictEqual((await req("board", "POST", "/api/hub/email", { to: ["x@test.org"] })).status, 403);
+  });
+  await t("hub: the morning digest goes to people who opted in, once a day", async () => {
+    const s = await uid("staff@test.org");
+    await hubW("staff", [{ path: "tasks", id: "ht3", data: { title: "Overdue thing", owner: s, due: "2020-01-01", status: "assigned" } }]);
+    const n = MOCK.sends.length;
+    const r = await req("x", "POST", "/api/admin/hub-digest?force=1", null, { "X-Admin-Token": "test-token" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.data)); assert.strictEqual(r.data.count, 1);
+    assert.strictEqual(MOCK.sends.length, n + 1); assert.match(mailText(MOCK.sends[n].raw), /Overdue thing/); assert.match(MOCK.sends[n].raw, /staff@test\.org/);
+  });
+  await t("hub: bad addresses and oversized documents are refused", async () => {
+    assert.strictEqual((await hubW("staff", [{ path: "../x", id: "a", data: {} }])).status, 400);
+    assert.strictEqual((await hubW("staff", [{ path: "secrets", id: "a", data: {} }])).status, 403);
+    assert.strictEqual((await hubW("staff", [{ path: "tasks", id: "big", data: { x: "y".repeat(500000) } }])).status, 413);
+  });
   await t("gmail: disconnect goes back to opening in my email", async () => {
     assert.strictEqual((await req("owner1", "POST", "/api/gmail/disconnect", { account: "owner@gmail.test" })).status, 200);
     const out = (await req("owner1", "GET", "/api/proc/outbox")).data;

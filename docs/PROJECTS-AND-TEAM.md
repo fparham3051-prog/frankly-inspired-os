@@ -46,6 +46,7 @@ place reach the other within about 15 seconds.
 | Board & Governance annual checklist | Tasks in **Board & Governance checklist**, by fiscal year | Done and due date. |
 | Grantee reports due | Tasks in **Grant reports due** | Finishing one marks the report received. |
 | Donor touches with a next step | Tasks in **Donor follow-ups** | Done and due date. |
+| Prospects (except "not a fit") | "Reach out to …" tasks in **Prospects to reach**, section = status | Finishing one marks the prospect contacted; moving it to another section changes its status. Promote to a deal in Prospecting. |
 
 - Every mirrored task starts owned by the owner account (Franklin) and already marked seen.
   Reassign them like any task.

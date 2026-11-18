@@ -1061,6 +1061,19 @@ async function t(name, fn) {
     await hubW("owner1", [{ path: "tasks", id: "fios-step-run1-s1", data: Object.assign({}, s1, { status: "done", done: true }) }]);
     assert.ok((await Q.query("SELECT completed_on FROM proc_runs WHERE id = 'run1'")).rows[0].completed_on, "finishing every step completes the checklist");
   });
+  await t("flow: prospects become reach-out tasks; finishing one marks the prospect contacted", async () => {
+    const now = new Date().toISOString();
+    await Q.query("INSERT INTO prospects (id, name, org, status, created_at) VALUES ('pr1', 'Maya Chen', 'Southside Food Bank', 'new', $1), ('pr2', 'Not Fit', 'X', 'not-fit', $1)", [now]);
+    const d = await hubS("owner1");
+    const tk = (d.docs.find((x) => x.id === "fios-prospect-pr1") || {}).data;
+    assert.ok(tk); assert.strictEqual(tk.title, "Reach out to Maya Chen, Southside Food Bank"); assert.strictEqual(tk.owner, await firstOwner()); assert.strictEqual(tk.section, "new");
+    assert.ok(!d.docs.some((x) => x.id === "fios-prospect-pr2"), "not-a-fit prospects stay out");
+    await hubW("owner1", [{ path: "tasks", id: "fios-prospect-pr1", data: Object.assign({}, tk, { status: "done", done: true }) }]);
+    assert.strictEqual((await Q.query("SELECT status FROM prospects WHERE id = 'pr1'")).rows[0].status, "contacted");
+    const t2 = (await hubS("owner1")).docs.find((x) => x.id === "fios-prospect-pr1").data;
+    await hubW("owner1", [{ path: "tasks", id: "fios-prospect-pr1", data: Object.assign({}, t2, { section: "meeting" }) }]);
+    assert.strictEqual((await Q.query("SELECT status FROM prospects WHERE id = 'pr1'")).rows[0].status, "meeting");
+  });
   await t("flow: deleting a mirrored task doesn't bring it straight back", async () => {
     const iss = (await req("owner1", "POST", "/api/issues", { title: "Delete me" })).data.id;
     assert.ok(await hubDoc("staff", "tasks", "fios-issue-" + iss));

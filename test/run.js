@@ -1073,6 +1073,10 @@ async function t(name, fn) {
     const text = (b.brief || b).flags ? (b.brief || b).flags.map((f) => f.text).join(" | ") : JSON.stringify(b).slice(0, 300);
     assert.match(text, /blocked: Waiting on board minutes/); assert.match(text, /Project off track: Annual report/);
   });
+  await t("flow: the automation tick also brings Run the practice into the hub", async () => {
+    const r = await req("x", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    assert.strictEqual(r.status, 200); assert.ok(r.data.hubMirror && typeof r.data.hubMirror.mirrored === "number", JSON.stringify(r.data.hubMirror));
+  });
   await t("hub: bad addresses and oversized documents are refused", async () => {
     assert.strictEqual((await hubW("staff", [{ path: "../x", id: "a", data: {} }])).status, 400);
     assert.strictEqual((await hubW("staff", [{ path: "secrets", id: "a", data: {} }])).status, 403);

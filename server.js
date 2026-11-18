@@ -184,8 +184,21 @@ app.get("/api/session", (req, res) => {
   res.json({ authenticated: !!sess, role: sess ? sess.role : null });
 });
 
+// ---------- wake the sister services when someone opens the app ----------
+// The website server (AI relay, leads) and InstitutionalOS sleep on Render's free
+// tier and take up to a minute to wake. Nudging them as soon as the app loads means
+// they're awake by the time AI, the client console, or client data is needed.
+let warmedAt = 0;
+function warmSisters() {
+  if (Date.now() - warmedAt < 10 * 60 * 1000) return;
+  warmedAt = Date.now();
+  const urls = [(process.env.WEBSITE_API_URL || "https://frankly-inspired-api.onrender.com").replace(/\/$/, "") + "/api/health", (process.env.GRANTPASS_API || "https://grantpass-backend.onrender.com").replace(/\/$/, "") + "/"];
+  for (const u of urls) fetch(u, { signal: AbortSignal.timeout(90000) }).catch(() => {});
+}
+
 // ---------- bootstrap: everything the app needs in one call ----------
 app.get("/api/state", requireAuth, async (req, res) => {
+  warmSisters();
   try {
     const [pipeline, scorecard, issues, rocks, prospects, digest, gifts, visionRes, orgLinks, invoices, engagementModules, timeEntries, encounters, advancementStateRes, quizAttempts, weekEventsRes, giftPatternsRes, problemLog, feedbackRes] = await Promise.all([
       pool.query("SELECT * FROM pipeline WHERE archived_at IS NULL ORDER BY created_at DESC"),

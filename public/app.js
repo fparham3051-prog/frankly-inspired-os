@@ -885,6 +885,24 @@
     document.getElementById("today-clients").innerHTML = items.length ? items.slice(0, 8).map(function(it){
       return '<li' + (it.rank === 0 ? ' class="row-overdue"' : '') + '><span><span class="who">' + esc(it.who) + '</span><br>' + esc(it.what) + '</span></li>';
     }).join("") : '<li class="empty-note" style="border:none;">No client follow-ups due.</li>';
+
+    // 4. Your tasks from Projects & Team.
+    renderTodayHub();
+  }
+  var hubTodayAt = 0;
+  function renderTodayHub(){
+    var el = document.getElementById("today-hub"); if(!el) return;
+    if(Date.now() - hubTodayAt < 20000) return; hubTodayAt = Date.now();
+    var WHY = { blocked: "Blocked", approval: "Needs your approval", overdue: "Overdue", today: "Today", soon: "" };
+    apiFetch("/api/hub/today").then(function(d){
+      var items = d.items || [];
+      document.getElementById("today-hub-sub").textContent = d.open ? (d.open + " open task" + (d.open === 1 ? "" : "s") + " are yours in Projects & Team" + (d.risky && d.risky.length ? "; " + d.risky.length + " project" + (d.risky.length === 1 ? " needs" : "s need") + " attention." : ".")) : "Nothing open in Projects & Team.";
+      el.innerHTML = items.length ? items.map(function(t){
+        var hot = t.why === "blocked" || t.why === "overdue" || t.why === "approval";
+        return '<li' + (hot ? ' class="row-overdue"' : '') + '><span><a class="who" href="/hub/#task/' + encodeURIComponent(t.id) + '">' + esc(t.title) + '</a>' + (t.project ? '<br>' + esc(t.project) : '') + '</span>' +
+          '<span class="when">' + (t.due ? (t.why === "today" ? "Today" : fmtDate(t.due)) : "") + (WHY[t.why] && t.why !== "today" ? ' <span class="overdue-tag">' + WHY[t.why] + '</span>' : '') + '</span></li>';
+      }).join("") + (d.more ? '<li class="empty-note" style="border:none;">and ' + d.more + ' more in Projects &amp; Team</li>' : '') : '<li class="empty-note" style="border:none;">Nothing due in the next three days.</li>';
+    }).catch(function(){ el.innerHTML = '<li class="empty-note" style="border:none;">Projects &amp; Team didn\'t answer. <a href="/hub/">Open it</a>.</li>'; });
   }
 
   function renderCommandCenter(){

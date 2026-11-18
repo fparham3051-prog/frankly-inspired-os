@@ -890,6 +890,26 @@ async function t(name, fn) {
     assert.strictEqual(d.me.uid, await uid("staff@test.org"));
     assert.ok(d.engagements.some((e) => e.data.org === "Northside Literacy"));
   });
+  await t("hub: Today shows my overdue and blocked tasks, not other people's or finished ones", async () => {
+    const me = await uid("staff@test.org"), other = await uid("owner@test.org");
+    const y = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+    assert.strictEqual((await hubW("staff", [
+      { path: "projects", id: "tp1", data: { name: "Today check", status: "at_risk", sections: [{ id: "s1", name: "To do" }] } },
+      { path: "tasks", id: "tt1", data: { title: "Late thing", project: "tp1", owner: me, due: y, status: "assigned" } },
+      { path: "tasks", id: "tt2", data: { title: "Stuck thing", project: "tp1", owner: me, status: "blocked" } },
+      { path: "tasks", id: "tt3", data: { title: "Someone else's", project: "tp1", owner: other, due: y, status: "assigned" } },
+      { path: "tasks", id: "tt4", data: { title: "Finished", project: "tp1", owner: me, due: y, status: "done" } },
+    ])).status, 200);
+    const d = (await req("staff", "GET", "/api/hub/today")).data;
+    const ids = d.items.map((x) => x.id);
+    assert.ok(ids.includes("tt1") && ids.includes("tt2"), JSON.stringify(d));
+    assert.ok(!ids.includes("tt3") && !ids.includes("tt4"));
+    assert.strictEqual(d.items.find((x) => x.id === "tt2").why, "blocked");
+    assert.strictEqual(d.items.find((x) => x.id === "tt1").project, "Today check");
+    assert.ok(d.risky.some((p) => p.id === "tp1"));
+    assert.strictEqual((await req("anon", "GET", "/api/hub/today")).status, 401);
+    await hubW("staff", ["tt1", "tt2", "tt3", "tt4"].map((id) => ({ path: "tasks", id, data: null })).concat([{ path: "projects", id: "tp1", data: null }]));
+  });
   await t("hub: staff save a project and task; the owner sees them; board can't change anything", async () => {
     assert.strictEqual((await hubW("staff", [{ path: "projects", id: "hp1", data: { name: "Board retreat", sections: [{ id: "s1", name: "To do" }] } }, { path: "tasks", id: "ht1", data: { title: "Book venue", project: "hp1", status: "assigned" } }])).status, 200);
     const d = await hubS("owner1");

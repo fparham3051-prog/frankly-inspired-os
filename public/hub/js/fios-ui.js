@@ -47,3 +47,15 @@
   const _ar = afterRender;
   afterRender = function(){ _ar(); const root = document.getElementById('main'); if(!root) return; const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n; while((n = w.nextNode())){ if(/claude\.ai|Editor|Contributor/.test(n.nodeValue)) n.nodeValue = fix(n.nodeValue); } };
 })();
+(function(){
+  if(window.FLOWHUB_HOST !== 'fios') return;
+  // Links from the operations app: /hub/#task/<id> and /hub/#project/<id>
+  const m = /^#(task|project)\/(.+)$/.exec(location.hash || ''); if(!m) return;
+  const kind = m[1], id = decodeURIComponent(m[2]); let tries = 0;
+  const go = () => {
+    if(kind === 'task' && S.tasks[id]){ history.replaceState(null, '', '#today'); route(); openTask(id); return; }
+    if(kind === 'project' && S.projects[id]){ S.projectOpen = id; S.pTab = 'list'; history.replaceState(null, '', '#project'); route(); return; }
+    if(++tries < 40) setTimeout(go, 250);
+  };
+  window.FIOS_HUB.ready.then(() => setTimeout(go, 100));
+})();

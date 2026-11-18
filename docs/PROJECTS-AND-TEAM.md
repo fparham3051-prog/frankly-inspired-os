@@ -101,3 +101,9 @@ clients have different ids).
 - Google Calendar sync is not connected here yet; the team calendar is shared
   inside the hub.
 - Request forms are for signed-in people only.
+
+## On the Today page
+
+Today has a **Your tasks** card fed by `GET /api/hub/today`: your tasks in Projects & Team that are blocked, waiting on your approval, overdue, due today, or due in the next three days. Deal next steps and checklist steps are left out there because Today already has their own cards. Each row opens the task in Projects & Team (`/hub/#task/<id>`). The card also says how many projects are marked at risk or off track.
+
+When anyone opens the operations app, it also wakes the website server and InstitutionalOS (both sleep on Render's free plan), at most once every ten minutes, so the client console and AI answers are ready when you reach for them. "Open client records" on Today now signs you straight into InstitutionalOS.

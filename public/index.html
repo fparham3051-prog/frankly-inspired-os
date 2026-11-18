@@ -101,7 +101,13 @@
           <h3>Clients who need you</h3>
           <p class="today-sub">Weekly check-ins due, blocked actions, 90-day reviews, and confirmed constraints still without a plan.</p>
           <ul class="action-list" id="today-clients"><li class="empty-note" style="border:none;">Loading...</li></ul>
-          <a href="https://grantpass-dashboard.onrender.com/" class="today-more">Open client records &rarr;</a>
+          <a href="/api/sso/clients" class="today-more" title="Opens InstitutionalOS, already signed in">Open client records &rarr;</a>
+        </div>
+        <div class="fw-card today-card" id="today-hub-card">
+          <h3>Your tasks</h3>
+          <p class="today-sub" id="today-hub-sub">From Projects &amp; Team: blocked, waiting on your approval, overdue, and due in the next three days.</p>
+          <ul class="action-list" id="today-hub"><li class="empty-note" style="border:none;">Loading...</li></ul>
+          <a href="/hub/" class="today-more">Open Projects &amp; Team &rarr;</a>
         </div>
         <div class="fw-card today-card" id="ai-ask-card" hidden>
           <h3>Ask the system</h3>

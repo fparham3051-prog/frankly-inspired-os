@@ -420,6 +420,33 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
     } catch (e) { console.error("hub write", e); res.status(500).json({ error: "Couldn't save. Try again." }); }
   });
 
+  // ---------- my work, for the operations app's Today page ----------
+  app.get("/api/hub/today", requireAuth, async (req, res) => {
+    try {
+      const me = await meFor(req.session);
+      try { await mirror(pool); } catch (e) { /* show what's there */ }
+      const rows = (await pool.query("SELECT path, id, data FROM hub_docs WHERE path IN ('tasks', 'projects') AND NOT deleted")).rows;
+      const projects = Object.fromEntries(rows.filter((r) => r.path === "projects").map((r) => [r.id, r.data || {}]));
+      const tasks = rows.filter((r) => r.path === "tasks").map((r) => Object.assign({ id: r.id }, r.data || {}))
+        .filter((t) => !t.cancelled && t.status !== "done" && !t.done && !/^Sample:/.test(t.title || ""));
+      const now = new Date(), today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const ny = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now) || today;
+      const soon = addDays(ny, 3);
+      // Deal next steps and checklist steps already have their own cards on Today.
+      const mine = tasks.filter((t) => (t.owner === me.uid || (t.assignees || []).includes(me.uid)) && !(t.link && ["deal", "step"].includes(t.link.kind)));
+      const row = (t, why) => ({ id: t.id, title: t.title || "Untitled task", due: t.due || "", project: t.project && projects[t.project] ? projects[t.project].name : "", status: t.status || "", why });
+      const items = [];
+      mine.filter((t) => t.status === "blocked").forEach((t) => items.push(row(t, "blocked")));
+      tasks.filter((t) => t.approval && t.approval.state === "pending" && t.approval.by === me.uid).forEach((t) => items.push(row(t, "approval")));
+      mine.filter((t) => t.due && t.due < ny && t.status !== "blocked").sort((a, b) => a.due.localeCompare(b.due)).forEach((t) => items.push(row(t, "overdue")));
+      mine.filter((t) => t.due === ny && t.status !== "blocked").forEach((t) => items.push(row(t, "today")));
+      mine.filter((t) => t.due > ny && t.due <= soon && t.status !== "blocked").sort((a, b) => a.due.localeCompare(b.due)).forEach((t) => items.push(row(t, "soon")));
+      const seen = new Set(); const out = items.filter((x) => !seen.has(x.id) && seen.add(x.id));
+      const risky = Object.entries(projects).filter(([, p]) => !p.archived && ["at_risk", "off_track"].includes(p.status) && !/^Sample:/.test(p.name || "")).map(([id, p]) => ({ id, name: p.name, status: p.status }));
+      res.json({ ok: true, items: out.slice(0, 12), more: Math.max(0, out.length - 12), open: mine.length, risky });
+    } catch (e) { console.error("hub today", e); res.status(500).json({ error: "Couldn't load your tasks." }); }
+  });
+
   // ---------- Claude ----------
   app.post("/api/hub/ai", requireAuth, async (req, res) => {
     try {

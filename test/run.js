@@ -1034,6 +1034,33 @@ async function t(name, fn) {
     const g2 = await hubDoc("staff", "goals", "fios-rock-" + rock);
     assert.strictEqual(g2.fiosStatus, "done"); assert.strictEqual(g2.checkins[0].note, "slow month");
   });
+  await t("flow: checklist steps, board items, grant reports and donor follow-ups become tasks owned by the owner", async () => {
+    const now = new Date().toISOString(), owner = await firstOwner();
+    await Q.query("INSERT INTO proc_runs (id, process_name, subject_kind, subject_id, subject_label, started_on, steps, created_at) VALUES ('run1', 'New client onboarding', 'pipeline', $1, 'Eastside Youth Choir', '2030-01-01', $2, $3)", [flowDeal, JSON.stringify([{ text: "Send welcome packet", dueOn: "2030-01-03", doneOn: "", by: "" }, { text: "Book kickoff", dueOn: "2030-01-05", doneOn: "", by: "" }]), now]);
+    await Q.query("INSERT INTO gov_checklist (id, fiscal_year, label, due_on, created_at) VALUES ('gc1', '2030', 'File Form 990', '2030-05-15', $1)", [now]);
+    await Q.query("INSERT INTO gm_programs (id, name, created_at) VALUES ('gp1', 'Youth Arts Fund', $1)", [now]).catch(async () => Q.query("INSERT INTO gm_programs (id, name) VALUES ('gp1', 'Youth Arts Fund')"));
+    await Q.query("INSERT INTO gm_applications (id, program_id, org_name, created_at) VALUES ('ga1', 'gp1', 'Harbor Dance', $1)", [now]);
+    await Q.query("INSERT INTO gm_reports (id, application_id, kind, due_on, created_at) VALUES ('gr1', 'ga1', 'interim', '2030-04-01', $1)", [now]);
+    await Q.query("INSERT INTO fr_donors (id, name, created_at) VALUES ('fd1', 'Rosa Diaz', $1)", [now]);
+    await Q.query("INSERT INTO fr_touches (id, donor_id, on_date, kind, summary, next_step, next_on, created_at) VALUES ('ft1', 'fd1', '2030-01-02', 'call', 'Great call', 'Send thank-you note', '2030-01-04', $1)", [now]);
+    const d = await hubS("owner1");
+    const get = (id) => (d.docs.find((x) => x.path === "tasks" && x.id === id) || {}).data;
+    const step = get("fios-step-run1-s0"), gov = get("fios-gov-gc1"), rep = get("fios-report-gr1"), touch = get("fios-touch-ft1");
+    assert.ok(step && gov && rep && touch, "missing: " + [!step && "step", !gov && "gov", !rep && "report", !touch && "touch"].filter(Boolean).join(","));
+    for (const x of [step, gov, rep, touch]) { assert.strictEqual(x.owner, owner); assert.strictEqual(x.status, "seen"); }
+    assert.strictEqual(step.project, "fios-checklists"); assert.strictEqual(step.section, "run1"); assert.strictEqual(step.eng, flowDeal);
+    assert.match(rep.title, /Interim report from Harbor Dance/); assert.match(touch.title, /Send thank-you note \(Rosa Diaz\)/);
+    assert.ok((d.docs.find((x) => x.path === "projects" && x.id === "fios-checklists").data.sections || []).some((x) => x.id === "run1" && /New client onboarding/.test(x.name)));
+    await hubW("owner1", [{ path: "tasks", id: "fios-step-run1-s0", data: Object.assign({}, step, { status: "done", done: true }) }, { path: "tasks", id: "fios-gov-gc1", data: Object.assign({}, gov, { status: "done", done: true }) }, { path: "tasks", id: "fios-report-gr1", data: Object.assign({}, rep, { status: "done", done: true }) }, { path: "tasks", id: "fios-touch-ft1", data: Object.assign({}, touch, { status: "done", done: true }) }]);
+    const steps = JSON.parse((await Q.query("SELECT steps, completed_on FROM proc_runs WHERE id = 'run1'")).rows[0].steps);
+    assert.ok(steps[0].doneOn && !steps[1].doneOn);
+    assert.ok((await Q.query("SELECT done_on FROM gov_checklist WHERE id = 'gc1'")).rows[0].done_on);
+    assert.ok((await Q.query("SELECT received_on FROM gm_reports WHERE id = 'gr1'")).rows[0].received_on);
+    assert.strictEqual((await Q.query("SELECT done FROM fr_touches WHERE id = 'ft1'")).rows[0].done, true);
+    const s1 = (await hubS("owner1")).docs.find((x) => x.id === "fios-step-run1-s1").data;
+    await hubW("owner1", [{ path: "tasks", id: "fios-step-run1-s1", data: Object.assign({}, s1, { status: "done", done: true }) }]);
+    assert.ok((await Q.query("SELECT completed_on FROM proc_runs WHERE id = 'run1'")).rows[0].completed_on, "finishing every step completes the checklist");
+  });
   await t("flow: deleting a mirrored task doesn't bring it straight back", async () => {
     const iss = (await req("owner1", "POST", "/api/issues", { title: "Delete me" })).data.id;
     assert.ok(await hubDoc("staff", "tasks", "fios-issue-" + iss));

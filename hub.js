@@ -28,6 +28,11 @@
 //                        done = Complete, due = session date.
 //   issues            -> tasks in "Issues (Weekly Meeting)"; done = solved.
 //   quarterly priorities (rocks) -> goals; a check-in sets on/off track.
+//   checklist steps   -> tasks in "Checklists", one section per running
+//                        checklist; ticking a step ticks it there.
+//   board checklist   -> tasks in "Board & Governance checklist".
+//   grant reports due -> tasks in "Grant reports due"; done = received.
+//   donor follow-ups  -> tasks in "Donor follow-ups"; done = done.
 // Each mirrored document carries link {kind, id} and _src (a fingerprint of
 // the source fields). The mirror only overwrites when the source changed, so
 // owners, comments, checklists and time added in the hub are kept.
@@ -109,6 +114,29 @@ async function sourceFields(pool, link) {
     if (!i || i.archived_at) return null;
     return { title: i.title || "Untitled issue", due: "", section: i.status === "solved" ? "solved" : "open", project: "fios-issues", eng: "", done: i.status === "solved" };
   }
+  if (link.kind === "step") {
+    const [runId, idx] = String(link.id).split(":");
+    const r = (await pool.query("SELECT id, process_name, subject_kind, subject_id, subject_label, steps, skipped, archived_at FROM proc_runs WHERE id = $1", [runId])).rows[0];
+    if (!r || r.archived_at || r.skipped) return null;
+    let steps = []; try { steps = JSON.parse(r.steps || "[]"); } catch (e) { /* none */ }
+    const st = steps[Number(idx)]; if (!st) return null;
+    return { title: String(st.text || "Checklist step"), due: dateOnly(st.dueOn), section: r.id, project: "fios-checklists", eng: r.subject_kind === "pipeline" ? r.subject_id : "", done: !!st.doneOn, sectionName: [r.process_name, r.subject_label].filter(Boolean).join(" · ") };
+  }
+  if (link.kind === "gov") {
+    const g = (await pool.query("SELECT id, fiscal_year, label, due_on, done_on FROM gov_checklist WHERE id = $1", [link.id])).rows[0];
+    if (!g) return null;
+    return { title: g.label || "Board item", due: dateOnly(g.due_on), section: "fy-" + String(g.fiscal_year || "").replace(/[^A-Za-z0-9_-]/g, ""), project: "fios-board", eng: "", done: !!g.done_on, sectionName: "Fiscal year " + (g.fiscal_year || "") };
+  }
+  if (link.kind === "report") {
+    const g = (await pool.query("SELECT r.id, r.kind, r.due_on, r.received_on, a.org_name FROM gm_reports r JOIN gm_applications a ON a.id = r.application_id WHERE r.id = $1", [link.id])).rows[0];
+    if (!g) return null;
+    return { title: `${g.kind === "interim" ? "Interim" : g.kind === "final" ? "Final" : "Grantee"} report from ${g.org_name || "grantee"}`, due: dateOnly(g.due_on), section: ["interim", "final"].includes(g.kind) ? g.kind : "other", project: "fios-grants", eng: "", done: !!g.received_on };
+  }
+  if (link.kind === "touch") {
+    const g = (await pool.query("SELECT t.id, t.next_step, t.next_on, t.done, d.name FROM fr_touches t JOIN fr_donors d ON d.id = t.donor_id WHERE t.id = $1", [link.id])).rows[0];
+    if (!g || !String(g.next_step || "").trim()) return null;
+    return { title: `${String(g.next_step).trim()} (${g.name || "donor"})`, due: dateOnly(g.next_on), section: "followups", project: "fios-donors", eng: "", done: !!g.done };
+  }
   if (link.kind === "rock") {
     const r = (await pool.query("SELECT id, title, quarter, due_date, status, created_at, archived_at FROM rocks WHERE id = $1", [link.id])).rows[0];
     if (!r || r.archived_at) return null;
@@ -141,7 +169,14 @@ async function mirror(pool, { force } = {}) {
     let n = 0;
     const ensureProject = async (id, base) => {
       const ex = existing.get("projects/" + id);
-      if (ex && !ex.deleted) { const d = ex.data || {}; if (base.name && d._name !== base.name && !d.renamed) await put("projects", id, Object.assign({}, d, { name: base.name, _name: base.name })); return; }
+      if (ex && !ex.deleted) {
+        const d = ex.data || {}, secs = Array.isArray(d.sections) ? d.sections.slice() : [];
+        let changed = false;
+        for (const sct of base.sections || []) { const hit = secs.find((x) => x.id === sct.id); if (!hit) { secs.push(sct); changed = true; } else if (sct.name !== hit._name && hit.name === (hit._name || hit.name)) { hit.name = sct.name; hit._name = sct.name; changed = true; } }
+        if (base.name && d._name !== base.name) { d.name = base.name; d._name = base.name; changed = true; }
+        if (changed) { const nd = Object.assign({}, d, { sections: secs }); existing.set("projects/" + id, { data: nd }); await put("projects", id, nd); }
+        return;
+      }
       await put("projects", id, Object.assign({ owner, start: dateOnly(now), due: "", status: "on_track", color: "#11233D", fields: [], files: [], updates: [], doc: "", form: { on: false, intro: "" }, created: now, createdBy: "fios", fios: true, _name: base.name }, base));
     };
     // Which records belong in the hub right now.
@@ -151,13 +186,27 @@ async function mirror(pool, { force } = {}) {
     for (const m of modules) want.push({ kind: "module", id: m.id });
     for (const i of (await pool.query("SELECT id FROM issues WHERE archived_at IS NULL")).rows) want.push({ kind: "issue", id: i.id });
     const rocks = (await pool.query("SELECT id FROM rocks WHERE archived_at IS NULL")).rows;
+    // Checklists still running, or finished in the last 30 days.
+    const runs = (await pool.query("SELECT id, process_name, subject_label, steps FROM proc_runs WHERE archived_at IS NULL AND NOT skipped AND (COALESCE(completed_on, '') = '' OR completed_on >= $1)", [dateOnly(new Date(Date.now() - 30 * 864e5).toISOString())]).catch(() => ({ rows: [] }))).rows;
+    const runSections = [];
+    for (const r of runs) { let st = []; try { st = JSON.parse(r.steps || "[]"); } catch (e) { /* none */ } if (!st.length) continue; runSections.push({ id: r.id, name: [r.process_name, r.subject_label].filter(Boolean).join(" · ") || "Checklist" }); st.forEach((_, i) => want.push({ kind: "step", id: r.id + ":" + i })); }
+    const gov = (await pool.query("SELECT id, fiscal_year FROM gov_checklist ORDER BY sort").catch(() => ({ rows: [] }))).rows;
+    gov.forEach((g) => want.push({ kind: "gov", id: g.id }));
+    const reports = (await pool.query("SELECT r.id FROM gm_reports r JOIN gm_applications a ON a.id = r.application_id WHERE COALESCE(r.due_on, '') <> '' AND (COALESCE(r.received_on, '') = '' OR r.received_on >= $1)", [dateOnly(new Date(Date.now() - 30 * 864e5).toISOString())]).catch(() => ({ rows: [] }))).rows;
+    reports.forEach((g) => want.push({ kind: "report", id: g.id }));
+    const touches = (await pool.query("SELECT id FROM fr_touches WHERE COALESCE(next_step, '') <> '' AND (NOT done OR on_date >= $1)", [dateOnly(new Date(Date.now() - 30 * 864e5).toISOString())]).catch(() => ({ rows: [] }))).rows;
+    touches.forEach((g) => want.push({ kind: "touch", id: g.id }));
+    if (runSections.length) await ensureProject("fios-checklists", { name: "Checklists", desc: "Steps from running checklists (Process Library). Ticking a step here ticks it there.", sections: runSections });
+    if (gov.length) await ensureProject("fios-board", { name: "Board & Governance checklist", desc: "The board's annual checklist from Board & Governance.", sections: [...new Set(gov.map((g) => String(g.fiscal_year || "")))].map((fy) => ({ id: "fy-" + fy.replace(/[^A-Za-z0-9_-]/g, ""), name: "Fiscal year " + fy })) });
+    if (reports.length) await ensureProject("fios-grants", { name: "Grant reports due", desc: "Grantee reports from Grants. Finishing one marks it received.", sections: [{ id: "interim", name: "Interim" }, { id: "final", name: "Final" }, { id: "other", name: "Other" }] });
+    if (touches.length) await ensureProject("fios-donors", { name: "Donor follow-ups", desc: "Next steps logged on donor touches in Fundraising.", sections: [{ id: "followups", name: "Follow-ups" }] });
     if (want.some((w) => w.kind === "deal")) await ensureProject("fios-pipeline", { name: "Pipeline next steps", desc: "Every open deal's next step, from Pipeline & Money. Change the stage there; rename, re-date or finish the step here.", sections: STAGE_SECTIONS.map(([id, name]) => ({ id, name })) });
     if (want.some((w) => w.kind === "issue")) await ensureProject("fios-issues", { name: "Issues (Weekly Meeting)", desc: "Open issues from Priorities & Vision. Finishing one marks it solved there.", sections: [{ id: "open", name: "Open" }, { id: "solved", name: "Solved" }] });
     const deals = new Map(modules.map((m) => [m.pipeline_id, m.org || m.name || "client"]));
     for (const [dealId, org] of deals) await ensureProject("fios-deal-" + dealId, { name: "Delivery: " + org, eng: dealId, desc: "Delivery sessions from Pipeline & Money → Delivery.", sections: MODULE_SECTIONS.map(([id, name]) => ({ id, name })) });
     const seen = new Set();
     for (const w of want) {
-      const id = "fios-" + w.kind + "-" + w.id; seen.add("tasks/" + id);
+      const id = "fios-" + w.kind + "-" + String(w.id).replace(/:/g, "-s"); seen.add("tasks/" + id);
       const f = await sourceFields(pool, w), ex = existing.get("tasks/" + id);
       if (!f) continue;
       const fp = hash(f);
@@ -201,6 +250,31 @@ async function writeBack(pool, p, prev, next) {
     if (changed("title")) await pool.query("UPDATE issues SET title = $2 WHERE id = $1", [link.id, String(next.title || "").slice(0, 500)]);
     if (solved && !(isDone(prev) || prev.section === "solved")) await pool.query("UPDATE issues SET status = 'solved', resolved_at = $2 WHERE id = $1", [link.id, now]);
     if (!solved && (isDone(prev) || prev.section === "solved")) await pool.query("UPDATE issues SET status = 'open' WHERE id = $1", [link.id]);
+  } else if (p === "tasks" && link.kind === "step") {
+    if (isDone(next) !== isDone(prev) || changed("due") || changed("title")) {
+      const [runId, idx] = String(link.id).split(":");
+      const r = (await pool.query("SELECT steps, completed_on FROM proc_runs WHERE id = $1", [runId])).rows[0];
+      if (r) {
+        const steps = JSON.parse(r.steps || "[]"), st = steps[Number(idx)];
+        if (st) {
+          const today = dateOnly(now);
+          if (isDone(next) !== isDone(prev)) { st.doneOn = isDone(next) ? today : ""; st.by = isDone(next) ? "Projects & Team" : ""; }
+          if (changed("due")) st.dueOn = dateOnly(next.due);
+          if (changed("title") && String(next.title || "").trim()) st.text = String(next.title).trim().slice(0, 400);
+          const all = steps.length > 0 && steps.every((x) => x.doneOn);
+          await pool.query("UPDATE proc_runs SET steps = $2, completed_on = $3 WHERE id = $1", [runId, JSON.stringify(steps), all ? (r.completed_on || today) : ""]);
+          if (isDone(next) !== isDone(prev)) await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1, $2, $3, $4)", [crypto.randomUUID(), runId, now, `${isDone(next) ? "Ticked" : "Unticked"} in Projects & Team: ${st.text}`]).catch(() => {});
+        }
+      }
+    }
+  } else if (p === "tasks" && link.kind === "gov") {
+    if (isDone(next) !== isDone(prev) || changed("due")) await pool.query("UPDATE gov_checklist SET done_on = $2, due_on = $3 WHERE id = $1", [link.id, isDone(next) ? dateOnly(now) : "", dateOnly(next.due)]);
+  } else if (p === "tasks" && link.kind === "report") {
+    if (isDone(next) && !isDone(prev)) await pool.query("UPDATE gm_reports SET received_on = $2 WHERE id = $1 AND COALESCE(received_on, '') = ''", [link.id, dateOnly(now)]);
+    else if (!isDone(next) && isDone(prev)) await pool.query("UPDATE gm_reports SET received_on = '' WHERE id = $1", [link.id]);
+    if (changed("due")) await pool.query("UPDATE gm_reports SET due_on = $2 WHERE id = $1", [link.id, dateOnly(next.due)]);
+  } else if (p === "tasks" && link.kind === "touch") {
+    if (isDone(next) !== isDone(prev) || changed("due")) await pool.query("UPDATE fr_touches SET done = $2, next_on = $3 WHERE id = $1", [link.id, isDone(next), dateOnly(next.due)]);
   } else if (p === "goals" && link.kind === "rock") {
     if (changed("title") || changed("due") || changed("fiosStatus")) await pool.query("UPDATE rocks SET title = $2, due_date = $3, status = $4 WHERE id = $1", [link.id, String(next.title || "").slice(0, 500), dateOnly(next.due), ["on-track", "off-track", "done"].includes(next.fiosStatus) ? next.fiosStatus : "on-track"]);
   } else return null;

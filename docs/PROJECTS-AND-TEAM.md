@@ -42,8 +42,12 @@ place reach the other within about 15 seconds.
 | Delivery sessions (Pipeline & Money → Delivery) | Tasks in a **Delivery: client** project, sections Not started / Scheduled / Complete | Name, session date and status, both ways. Finishing one marks it Complete. |
 | Issues (Priorities & Vision) | Tasks in **Issues (Weekly Meeting)** | Finishing one marks it solved; reopening reopens it; renaming renames it. |
 | Quarterly priorities (Rocks) | **Goals**, shown with their quarter | Title, due date, and a check-in's on-track / off-track / done. |
+| Checklist steps (running checklists, and ones finished in the last 30 days) | Tasks in **Checklists**, one section per checklist | Ticking a step ticks it there (finishing every step completes the checklist); due date and wording too. |
+| Board & Governance annual checklist | Tasks in **Board & Governance checklist**, by fiscal year | Done and due date. |
+| Grantee reports due | Tasks in **Grant reports due** | Finishing one marks the report received. |
+| Donor touches with a next step | Tasks in **Donor follow-ups** | Done and due date. |
 
-- Mirrored tasks start owned by the owner account and already marked seen.
+- Every mirrored task starts owned by the owner account (Franklin) and already marked seen.
   Reassign them like any task.
 - Anything added in the hub (owner, collaborators, comments, checklist, time,
   files) is kept when the source record changes.

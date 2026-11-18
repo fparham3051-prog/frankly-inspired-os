@@ -19,6 +19,19 @@
 //   time         = minutes logged on a task linked to a deal are also written
 //                  to time_entries, so Pipeline & Money sees them.
 //
+// "Run the practice" flows through the hub as real tasks and goals (mirror()):
+//   deal next steps   -> tasks in the "Pipeline next steps" project, one per
+//                        open deal, section = stage. Rename, re-date or finish
+//                        the task and the deal's next step changes to match
+//                        (finishing clears it, so a new one can be set).
+//   delivery modules  -> tasks in a "Delivery: <client>" project per deal;
+//                        done = Complete, due = session date.
+//   issues            -> tasks in "Issues (Weekly Meeting)"; done = solved.
+//   quarterly priorities (rocks) -> goals; a check-in sets on/off track.
+// Each mirrored document carries link {kind, id} and _src (a fingerprint of
+// the source fields). The mirror only overwrites when the source changed, so
+// owners, comments, checklists and time added in the hub are kept.
+//
 // Who can see and change what (mirrors the rules the hub had on claude.ai):
 //   owner   everything, including settings, rules, cost rates, and everyone's
 //           check-ins and coaching notes
@@ -68,6 +81,133 @@ function canWrite(p, id, me) {
   return s.length === 1 && SHARED.includes(s[0]);
 }
 
+const STAGE_SECTIONS = [["lead", "Lead"], ["discovery", "Discovery"], ["assessment", "Assessment"], ["engaged", "Engaged"]];
+const MODULE_SECTIONS = [["not-started", "Not started"], ["scheduled", "Scheduled"], ["complete", "Complete"]];
+const hash = (o) => crypto.createHash("sha1").update(JSON.stringify(o)).digest("hex").slice(0, 16);
+const dateOnly = (v) => String(v || "").slice(0, 10);
+
+async function defaultOwner(pool) {
+  const r = await pool.query("SELECT id FROM app_users WHERE role = 'owner' AND NOT disabled ORDER BY id LIMIT 1");
+  return "u" + (r.rows[0] ? r.rows[0].id : 0);
+}
+// The source fields of one linked record, as the hub would show them. null = no longer belongs in the hub.
+async function sourceFields(pool, link) {
+  if (!link || !link.id) return null;
+  if (link.kind === "deal") {
+    const d = (await pool.query("SELECT id, org, name, stage, next_step, next_step_date, archived_at FROM pipeline WHERE id = $1", [link.id])).rows[0];
+    if (!d || d.archived_at || !STAGE_SECTIONS.some((x) => x[0] === d.stage) || !String(d.next_step || "").trim()) return null;
+    return { title: String(d.next_step).trim(), due: dateOnly(d.next_step_date), section: d.stage, project: "fios-pipeline", eng: d.id, done: false };
+  }
+  if (link.kind === "module") {
+    const m = (await pool.query("SELECT m.id, m.pipeline_id, m.module_name, m.status, m.session_date, m.archived_at, p.archived_at AS deal_archived FROM engagement_modules m LEFT JOIN pipeline p ON p.id = m.pipeline_id WHERE m.id = $1", [link.id])).rows[0];
+    if (!m || m.archived_at || m.deal_archived) return null;
+    const status = MODULE_SECTIONS.some((x) => x[0] === m.status) ? m.status : "not-started";
+    return { title: m.module_name || "Delivery session", due: dateOnly(m.session_date), section: status, project: "fios-deal-" + m.pipeline_id, eng: m.pipeline_id, done: status === "complete" };
+  }
+  if (link.kind === "issue") {
+    const i = (await pool.query("SELECT id, title, status, archived_at FROM issues WHERE id = $1", [link.id])).rows[0];
+    if (!i || i.archived_at) return null;
+    return { title: i.title || "Untitled issue", due: "", section: i.status === "solved" ? "solved" : "open", project: "fios-issues", eng: "", done: i.status === "solved" };
+  }
+  if (link.kind === "rock") {
+    const r = (await pool.query("SELECT id, title, quarter, due_date, status, created_at, archived_at FROM rocks WHERE id = $1", [link.id])).rows[0];
+    if (!r || r.archived_at) return null;
+    return { title: r.title || "Untitled priority", due: dateOnly(r.due_date), start: dateOnly(r.created_at), quarter: r.quarter || "", fiosStatus: r.status || "on-track" };
+  }
+  return null;
+}
+function applyTask(doc, f, owner, now) {
+  const wasDone = doc.status === "done" || doc.done;
+  const out = Object.assign({}, doc, { title: f.title, due: f.due || doc.due || "", section: f.section, project: f.project, eng: f.eng || doc.eng || "", cancelled: false });
+  // The owner wrote these records in Run the practice, so they start as already seen.
+  if (!out.owner && owner) { out.owner = owner; if (!out.status || out.status === "unassigned" || out.status === "assigned") { out.status = "seen"; out.seenAt = out.seenAt || now; } }
+  if (f.done && !wasDone) Object.assign(out, { status: "done", done: true, doneAt: now });
+  if (!f.done && wasDone) Object.assign(out, { status: out.owner ? "seen" : "unassigned", done: false, doneAt: null });
+  if (!out.status) out.status = out.owner ? "seen" : "unassigned";
+  return out;
+}
+// Bring Run-the-practice records into the hub. Cheap when nothing changed.
+let mirrorAt = 0, mirroring = null;
+const MIRROR_MS = process.env.HUB_MIRROR_MS != null ? Number(process.env.HUB_MIRROR_MS) : 15000;
+async function mirror(pool, { force } = {}) {
+  if (mirroring) return mirroring;
+  if (!force && Date.now() - mirrorAt < MIRROR_MS) return { skipped: true };
+  mirrorAt = Date.now();
+  mirroring = (async () => {
+    const now = new Date().toISOString(), owner = await defaultOwner(pool);
+    const existing = new Map((await pool.query("SELECT path, id, data, deleted FROM hub_docs WHERE (path = 'tasks' AND id LIKE 'fios-%') OR (path = 'goals' AND id LIKE 'fios-%') OR (path = 'projects' AND id LIKE 'fios-%')")).rows.map((r) => [r.path + "/" + r.id, r]));
+    const put = async (p, id, data) => { await pool.query(`INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ($1, $2, $3, false, $4, 'fios')
+      ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = false, t = EXCLUDED.t, by_user = 'fios'`, [p, id, data, nextT()]); n++; };
+    let n = 0;
+    const ensureProject = async (id, base) => {
+      const ex = existing.get("projects/" + id);
+      if (ex && !ex.deleted) { const d = ex.data || {}; if (base.name && d._name !== base.name && !d.renamed) await put("projects", id, Object.assign({}, d, { name: base.name, _name: base.name })); return; }
+      await put("projects", id, Object.assign({ owner, start: dateOnly(now), due: "", status: "on_track", color: "#11233D", fields: [], files: [], updates: [], doc: "", form: { on: false, intro: "" }, created: now, createdBy: "fios", fios: true, _name: base.name }, base));
+    };
+    // Which records belong in the hub right now.
+    const want = [];
+    for (const d of (await pool.query("SELECT id FROM pipeline WHERE archived_at IS NULL AND stage = ANY($1) AND COALESCE(next_step, '') <> ''", [STAGE_SECTIONS.map((x) => x[0])])).rows) want.push({ kind: "deal", id: d.id });
+    const modules = (await pool.query("SELECT m.id, m.pipeline_id, p.org, p.name FROM engagement_modules m JOIN pipeline p ON p.id = m.pipeline_id WHERE m.archived_at IS NULL AND p.archived_at IS NULL")).rows;
+    for (const m of modules) want.push({ kind: "module", id: m.id });
+    for (const i of (await pool.query("SELECT id FROM issues WHERE archived_at IS NULL")).rows) want.push({ kind: "issue", id: i.id });
+    const rocks = (await pool.query("SELECT id FROM rocks WHERE archived_at IS NULL")).rows;
+    if (want.some((w) => w.kind === "deal")) await ensureProject("fios-pipeline", { name: "Pipeline next steps", desc: "Every open deal's next step, from Pipeline & Money. Change the stage there; rename, re-date or finish the step here.", sections: STAGE_SECTIONS.map(([id, name]) => ({ id, name })) });
+    if (want.some((w) => w.kind === "issue")) await ensureProject("fios-issues", { name: "Issues (Weekly Meeting)", desc: "Open issues from Priorities & Vision. Finishing one marks it solved there.", sections: [{ id: "open", name: "Open" }, { id: "solved", name: "Solved" }] });
+    const deals = new Map(modules.map((m) => [m.pipeline_id, m.org || m.name || "client"]));
+    for (const [dealId, org] of deals) await ensureProject("fios-deal-" + dealId, { name: "Delivery: " + org, eng: dealId, desc: "Delivery sessions from Pipeline & Money → Delivery.", sections: MODULE_SECTIONS.map(([id, name]) => ({ id, name })) });
+    const seen = new Set();
+    for (const w of want) {
+      const id = "fios-" + w.kind + "-" + w.id; seen.add("tasks/" + id);
+      const f = await sourceFields(pool, w), ex = existing.get("tasks/" + id);
+      if (!f) continue;
+      const fp = hash(f);
+      if (ex && ex.data && ex.data._src === fp && (ex.deleted || !ex.data.cancelled)) continue;
+      const base = ex && !ex.deleted && ex.data ? ex.data : { created: now, createdBy: "fios", src: "fios", history: [], timeLog: [], assignees: [], custom: {}, files: [], lane: "franklin" };
+      await put("tasks", id, Object.assign(applyTask(base, f, owner, now), { link: w, _src: fp }));
+    }
+    for (const r of rocks) {
+      const id = "fios-rock-" + r.id; seen.add("goals/" + id);
+      const f = await sourceFields(pool, { kind: "rock", id: r.id }), ex = existing.get("goals/" + id); if (!f) continue;
+      const fp = hash(f);
+      if (ex && !ex.deleted && ex.data && ex.data._src === fp && !ex.data.archived) continue;
+      const base = ex && !ex.deleted && ex.data ? ex.data : { owner, mode: "number", startVal: 0, target: 1, current: 0, unit: "", projects: [], parent: "", checkins: [], created: now };
+      await put("goals", id, Object.assign({}, base, { title: f.title, due: f.due, start: base.start || f.start, quarter: f.quarter, fiosStatus: f.fiosStatus, current: f.fiosStatus === "done" ? (Number(base.target) || 1) : base.mode === "number" && base.current >= (Number(base.target) || 1) ? 0 : base.current, archived: false, link: { kind: "rock", id: r.id }, _src: fp }));
+    }
+    // Records that left Run the practice: keep the task (and anything added to it), but take it out of the lists.
+    for (const [k, ex] of existing) {
+      if (seen.has(k) || ex.deleted || !ex.data || k.startsWith("projects/")) continue;
+      if (k.startsWith("tasks/") && !ex.data.cancelled && !(ex.data.status === "done")) await put("tasks", ex.id, Object.assign({}, ex.data, { cancelled: true, _src: "" }));
+      if (k.startsWith("goals/") && !ex.data.archived) await put("goals", ex.id, Object.assign({}, ex.data, { archived: true, _src: "" }));
+    }
+    return { mirrored: n };
+  })();
+  try { return await mirroring; } finally { mirroring = null; }
+}
+// A hub change to a linked task or goal goes back to its source. Returns the new fingerprint.
+async function writeBack(pool, p, prev, next) {
+  const link = next && next.link; if (!link || !link.id || !prev) return null;
+  const now = new Date().toISOString();
+  const isDone = (d) => !!d && (d.status === "done" || d.done === true);
+  const changed = (k) => (prev[k] || "") !== (next[k] || "");
+  if (p === "tasks" && link.kind === "deal") {
+    if (isDone(next) && !isDone(prev)) await pool.query("UPDATE pipeline SET next_step = '', next_step_date = '', updated_at = $2 WHERE id = $1", [link.id, now]);
+    else if (changed("title") || changed("due")) await pool.query("UPDATE pipeline SET next_step = $2, next_step_date = $3, updated_at = $4 WHERE id = $1", [link.id, String(next.title || "").slice(0, 500), dateOnly(next.due), now]);
+  } else if (p === "tasks" && link.kind === "module") {
+    const status = isDone(next) ? "complete" : MODULE_SECTIONS.some((x) => x[0] === next.section) && next.section !== "complete" ? next.section : (next.due ? "scheduled" : "not-started");
+    if (changed("title") || changed("due") || isDone(next) !== isDone(prev) || changed("section"))
+      await pool.query("UPDATE engagement_modules SET module_name = $2, session_date = $3, status = $4, updated_at = $5 WHERE id = $1", [link.id, String(next.title || "").slice(0, 300), dateOnly(next.due), status, now]);
+  } else if (p === "tasks" && link.kind === "issue") {
+    const solved = isDone(next) || next.section === "solved";
+    if (changed("title")) await pool.query("UPDATE issues SET title = $2 WHERE id = $1", [link.id, String(next.title || "").slice(0, 500)]);
+    if (solved && !(isDone(prev) || prev.section === "solved")) await pool.query("UPDATE issues SET status = 'solved', resolved_at = $2 WHERE id = $1", [link.id, now]);
+    if (!solved && (isDone(prev) || prev.section === "solved")) await pool.query("UPDATE issues SET status = 'open' WHERE id = $1", [link.id]);
+  } else if (p === "goals" && link.kind === "rock") {
+    if (changed("title") || changed("due") || changed("fiosStatus")) await pool.query("UPDATE rocks SET title = $2, due_date = $3, status = $4 WHERE id = $1", [link.id, String(next.title || "").slice(0, 500), dateOnly(next.due), ["on-track", "off-track", "done"].includes(next.fiosStatus) ? next.fiosStatus : "on-track"]);
+  } else return null;
+  const f = await sourceFields(pool, link);
+  return f ? hash(f) : "";
+}
+
 function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdminScope }) {
   const G = () => require("./gmail");
   const AI = () => require("./ai");
@@ -115,6 +255,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
     try {
       const me = await meFor(req.session);
       const since = Math.max(0, Number(req.query.since) || 0);
+      try { await mirror(pool); } catch (e) { console.error("hub mirror", e.message); }
       const r = await pool.query("SELECT path, id, data, deleted, t FROM hub_docs WHERE t > $1 ORDER BY t LIMIT 20000", [since]);
       const docs = r.rows.filter((x) => !(since === 0 && x.deleted) && canRead(x.path, x.id, me)).map((x) => ({ path: x.path, id: x.id, data: x.deleted ? null : x.data, t: Number(x.t) }));
       const now = r.rows.length ? Math.max(...r.rows.map((x) => Number(x.t))) : since;
@@ -167,10 +308,17 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
         if (op.path === "team" && data) { for (const k of ["name", "email", "uid", "lead", "fiosRole"]) delete data[k]; }
         if (op.path === "engagements" && data) { for (const k of ["org", "stage", "fiosStage", "value", "outcome", "archived", "nextStep", "nextStepDate", "created", "fios"]) delete data[k]; }
         let prev = null;
-        if (op.path === "tasks") { const p = await pool.query("SELECT data FROM hub_docs WHERE path = 'tasks' AND id = $1", [op.id]); prev = p.rows[0] ? p.rows[0].data : null; }
+        if (op.path === "tasks" || op.path === "goals") { const p = await pool.query("SELECT data, deleted FROM hub_docs WHERE path = $1 AND id = $2", [op.path, op.id]); prev = p.rows[0] && !p.rows[0].deleted ? p.rows[0].data : null; }
+        if (data && prev && prev.link) {
+          data.link = prev.link;
+          if (data.link.kind === "deal") data.section = prev.section; // a deal's stage changes in Pipeline & Money
+          try { const fp = await writeBack(pool, op.path, prev, data); if (fp !== null) data._src = fp; } catch (e) { console.error("hub write-back", e.message); }
+        } else if (data) { delete data.link; delete data._src; }
+        // Deleting a mirrored task keeps its link, so the mirror doesn't bring it back until the source changes.
+        const stored = data || (prev && prev.link ? { link: prev.link, _src: prev._src || "" } : null);
         await pool.query(`INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = EXCLUDED.deleted, t = EXCLUDED.t, by_user = EXCLUDED.by_user`,
-          [op.path, op.id, data, !data, t, me.uid]);
+          [op.path, op.id, stored, !data, t, me.uid]);
         if (op.path === "tasks" && data) { try { time += await syncTime(prev, data, op.id); } catch (e) { console.error("hub time sync", e.message); } }
       }
       res.json({ ok: true, t, timeEntries: time });
@@ -242,6 +390,24 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
   });
 }
 
+// ---------- what the Weekly Meeting brief should hear from Projects & Team ----------
+async function hubFlags(pool, today) {
+  const rows = (await pool.query("SELECT path, id, data FROM hub_docs WHERE path IN ('tasks', 'projects') AND NOT deleted")).rows;
+  const tasks = rows.filter((r) => r.path === "tasks").map((r) => r.data || {}).filter((t) => !t.cancelled && t.status !== "done" && !t.done && !/^Sample:/.test(t.title || ""));
+  const projects = rows.filter((r) => r.path === "projects").map((r) => Object.assign({ id: r.id }, r.data || {})).filter((p) => !p.archived && p.status !== "done" && !/^Sample:/.test(p.name || ""));
+  const flags = [];
+  const late = tasks.filter((t) => t.due && t.due < today && !(t.link && t.link.kind === "deal"));
+  if (late.length) flags.push({ level: late.length >= 5 ? "warn" : "attn", text: `${late.length} project task${late.length === 1 ? " is" : "s are"} past due in Projects & Team.`, issue: late.length >= 5 ? "Project work keeps slipping: what's in the way?" : "", go: "hub" });
+  const blocked = tasks.filter((t) => t.status === "blocked");
+  if (blocked.length) flags.push({ level: "warn", text: `${blocked.length} task${blocked.length === 1 ? " is" : "s are"} blocked: ${blocked.slice(0, 3).map((t) => t.title).join("; ")}${blocked.length > 3 ? "; and more" : ""}.`, issue: blocked.length === 1 ? `Unblock "${blocked[0].title}"` : `${blocked.length} blocked tasks`, go: "hub" });
+  const off = projects.filter((p) => p.status === "off_track"), risk = projects.filter((p) => p.status === "at_risk");
+  off.forEach((p) => flags.push({ level: "warn", text: `Project off track: ${p.name}.`, issue: `Get "${p.name}" back on track`, go: "hub" }));
+  if (risk.length) flags.push({ level: "attn", text: `${risk.length} project${risk.length === 1 ? "" : "s"} at risk: ${risk.slice(0, 3).map((p) => p.name).join(", ")}.`, issue: "", go: "hub" });
+  const waiting = tasks.filter((t) => t.approval && t.approval.state === "pending" && t.approval.reqAt && t.approval.reqAt.slice(0, 10) <= addDays(today, -2));
+  if (waiting.length) flags.push({ level: "attn", text: `${waiting.length} approval${waiting.length === 1 ? " has" : "s have"} waited two days or more.`, issue: "", go: "hub" });
+  return { flags, summary: { openTasks: tasks.length, late: late.length, blocked: blocked.length, projects: projects.length, offTrack: off.length, atRisk: risk.length } };
+}
+
 // ---------- digest (weekday mornings, to people who opted in) ----------
 function nyNow() {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false, weekday: "short" }).formatToParts(new Date()).map((x) => [x.type, x.value]));
@@ -293,4 +459,4 @@ async function digestTick(pool, { force } = {}) {
   return { digest: "sent", count: out.length, to: out };
 }
 
-module.exports = { mount, digestTick, digestText, canRead, canWrite };
+module.exports = { mount, digestTick, digestText, canRead, canWrite, mirror, hubFlags };

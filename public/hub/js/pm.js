@@ -74,7 +74,7 @@ function taskRowPm(t, depth){
   const subs = subtasksOf(t.id); const s = st(t); const waits = openDeps(t).length; const ap = t.approval && t.approval.state==='pending';
   return `<div class="prow" style="padding-left:${10+depth*24}px" data-dragpm="task" data-id="${esc(t.id)}" draggable="true">
     <input type="checkbox" id="pc-${esc(t.id)}" data-pmdone="${esc(t.id)}" ${s==='done'?'checked':''} aria-label="Mark done">
-    <span class="ptitle ${s==='done'?'done':''}" data-act="task" data-id="${esc(t.id)}" role="button" tabindex="0">${t.milestone?'◆ ':''}${esc(t.title)}</span>
+    <span class="ptitle ${s==='done'?'done':''}" data-act="task" data-id="${esc(t.id)}" role="button" tabindex="0">${t.milestone?'◆ ':''}${esc(t.title)}${t.eng && S.engagements[t.eng] && !(S.projects[t.project]||{}).eng ? ` <span class="small muted">· ${esc(S.engagements[t.eng].org)}</span>` : ''}</span>
     <span class="pmeta">${subs.length?`<span class="small muted">☑ ${subs.filter(x=>!isOpen(x)).length}/${subs.length}</span>`:''}${waits?'<span class="small" style="color:var(--warn)">⏳</span>':''}${ap?'<span class="flag" style="margin:0">Approval</span>':''}${(t.files||[]).length?`<span class="small muted">📎${t.files.length}</span>`:''}
       ${stPill(s)}<span class="row" style="gap:2px">${av(t.owner)}${(t.assignees||[]).filter(a=>a!==t.owner).slice(0,3).map(a=>av(a)).join('')}</span><span class="due ${lateCls(t)}" style="min-width:56px;text-align:right">${t.due?fmtDate(t.due):''}</span></span></div>
     ${subs.sort((a,b)=>(a.created||'').localeCompare(b.created||'')).map(x=>taskRowPm(x, depth+1)).join('')}`;
@@ -88,7 +88,7 @@ function pList(p){
 }
 function pBoard(p){
   return `<section class="lanes-board">${p.sections.map(sec => { const ts = topTasks(p.id).filter(t=>(t.section||p.sections[0].id)===sec.id);
-    return `<div class="pcol" data-droppm="section" data-sec="${esc(sec.id)}"><div class="pcol-h"><b>${esc(sec.name)}</b><span class="meta">${ts.filter(isOpen).length} open</span></div>${ts.sort((a,b)=>(isOpen(b)-isOpen(a))||(a.due||'9').localeCompare(b.due||'9')).map(t=>tcard(t,{showEng:false})).join('') || '<div class="empty small">Drop tasks here.</div>'}</div>`; }).join('')}</section>`;
+    return `<div class="pcol" data-droppm="section" data-sec="${esc(sec.id)}"><div class="pcol-h"><b>${esc(sec.name)}</b><span class="meta">${ts.filter(isOpen).length} open</span></div>${ts.sort((a,b)=>(isOpen(b)-isOpen(a))||(a.due||'9').localeCompare(b.due||'9')).map(t=>tcard(t,{showEng:!p.eng})).join('') || '<div class="empty small">Drop tasks here.</div>'}</div>`; }).join('')}</section>`;
 }
 function ganttRange(ts, p){ const ds = ts.flatMap(t=>[t.start||t.due, t.due]).concat([p.start, p.due, today()]).filter(Boolean).sort(); return {a:addDays(ds[0]||today(),-3), b:addDays(ds[ds.length-1]||today(),7)}; }
 function criticalPath(ts){

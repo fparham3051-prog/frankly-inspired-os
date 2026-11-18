@@ -15,7 +15,8 @@ const othersOn = (k, v) => [...new Set((S.peers||[]).filter(x=>!x.sameTab && x.p
 function pmTaskBlock(t){
   const p = t.project && S.projects[t.project]; const subs = subtasksOf(t.id); const ap = t.approval; const viewers = othersOn('t', t.id);
   const parent = t.parent && S.tasks[t.parent];
-  return `${viewers.length?`<div class="small muted">Also looking at this: ${viewers.map(m=>av(m)+' '+esc(first(m))).join(', ')}</div>`:''}
+  const srcNote = t.link ? `<div class="prompt small">${{deal:'This is the next step on a deal in Pipeline &amp; Money. Renaming or re-dating it here changes it there; finishing it clears it there so you can set the next one. Change the deal’s stage in Pipeline &amp; Money.', module:'This is a delivery session from Pipeline &amp; Money → Delivery. Its name, date and status stay in step both ways.', issue:'This is an issue from Priorities &amp; Vision. Finishing it here marks it solved there.'}[t.link.kind]||''}</div>` : '';
+  return `${srcNote}${viewers.length?`<div class="small muted">Also looking at this: ${viewers.map(m=>av(m)+' '+esc(first(m))).join(', ')}</div>`:''}
   ${parent?`<div class="small">Subtask of <span data-act="task" data-id="${esc(parent.id)}" role="button" tabindex="0" style="text-decoration:underline">${esc(parent.title)}</span></div>`:''}
   <div class="form">
     <label>Project<select id="ptd-project" data-ptd="project" data-id="${esc(t.id)}"><option value="">No project</option>${projects().map(x=>`<option value="${x.id}" ${x.id===t.project?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
@@ -147,16 +148,17 @@ function viewAutomations(){
 
 /* ---------- goals ---------- */
 function goalProgress(g){
+  if(g.fiosStatus==='done') return 1;
   if(g.mode==='projects'){ const ps = (g.projects||[]).map(i=>S.projects[i]).filter(Boolean); return ps.length ? ps.reduce((a,p)=>a+pProgress(p.id),0)/ps.length : 0; }
   if(g.mode==='children'){ const cs = list('goals').filter(x=>x.parent===g.id); return cs.length ? cs.reduce((a,c)=>a+goalProgress(c),0)/cs.length : 0; }
   const t = +g.target||0; const s = +g.startVal||0; return t===s ? 0 : Math.max(0, Math.min(1, ((+g.current||0)-s)/(t-s)));
 }
-function goalHealth(g){ const pr = goalProgress(g); if(!g.start || !g.due) return pr>=1?'done':'on_track'; const el = Math.max(0, Math.min(1, daysBetween(g.start, today())/Math.max(1,daysBetween(g.start, g.due)))); return pr>=1?'done': pr < el-0.25 ? 'off_track' : pr < el-0.1 ? 'at_risk' : 'on_track'; }
+function goalHealth(g){ if(g.fiosStatus) return {'on-track':'on_track','off-track':'off_track','done':'done'}[g.fiosStatus] || 'on_track'; const pr = goalProgress(g); if(!g.start || !g.due) return pr>=1?'done':'on_track'; const el = Math.max(0, Math.min(1, daysBetween(g.start, today())/Math.max(1,daysBetween(g.start, g.due)))); return pr>=1?'done': pr < el-0.25 ? 'off_track' : pr < el-0.1 ? 'at_risk' : 'on_track'; }
 function viewGoals(){
   const gs = list('goals').filter(g=>!g.archived); const tops = gs.filter(g=>!g.parent || !S.goals[g.parent]);
   const row = (g, depth) => { const pr = goalProgress(g); const h = goalHealth(g); const kids = gs.filter(x=>x.parent===g.id); const last = (g.checkins||[]).slice(-1)[0];
     return `<div class="prow" style="padding-left:${10+depth*24}px;align-items:flex-start"><div style="flex:1"><b data-pm="goal-edit" data-id="${esc(g.id)}" role="button" tabindex="0">${depth?'↳ ':''}${esc(g.title)}</b>
-      <div class="small muted">${esc(mname(g.owner))}${g.due?` · by ${fmtDate(g.due)}`:''} · ${g.mode==='projects'?`from ${(g.projects||[]).length} project${(g.projects||[]).length===1?'':'s'}`:g.mode==='children'?'from sub-goals':`${+g.current||0} of ${+g.target||0} ${esc(g.unit||'')}`}${last?` · checked in ${fmtWhen(last.at)}`:''}</div></div>
+      <div class="small muted">${esc(mname(g.owner))}${g.due?` · by ${fmtDate(g.due)}`:''} · ${g.link?`Quarterly priority${g.quarter?' '+esc(g.quarter):''} · Priorities &amp; Vision${g.mode==='projects'?` · ${(g.projects||[]).length} linked project${(g.projects||[]).length===1?'':'s'}`:''}`:g.mode==='projects'?`from ${(g.projects||[]).length} project${(g.projects||[]).length===1?'':'s'}`:g.mode==='children'?'from sub-goals':`${+g.current||0} of ${+g.target||0} ${esc(g.unit||'')}`}${last?` · checked in ${fmtWhen(last.at)}`:''}</div></div>
       <span class="pmeta">${pChip(h)}<span class="meter" style="width:90px"><span style="width:${Math.round(pr*100)}%;background:${pStatus(h)[2]}"></span></span><span class="num small" style="width:38px">${pct(pr)}</span><button class="btn sm" data-pm="goal-checkin" data-id="${esc(g.id)}">Check in</button></span></div>${kids.map(k=>row(k, depth+1)).join('')}`; };
   return `<section class="spread"><div><p class="eyebrow">Strategy</p><h1>Goals</h1><p class="muted" style="max-width:72ch">Outcomes the practice is working toward. A goal can track a number, roll up from projects, or roll up from sub-goals, so daily work connects to the result it serves.</p></div><button class="btn primary" data-pm="goal-new">+ Goal</button></section>
   <section class="panel" style="padding:8px 0">${tops.map(g=>row(g,0)).join('') || '<div class="empty" style="margin:12px">No goals yet. Try “Sign 4 new clients this quarter” or “Raise $250K for partners”.</div>'}</section>`;
@@ -178,7 +180,7 @@ function checkinDialog(id){
   const g = S.goals[id]; if(!g) return;
   $('#pmBody').innerHTML = `<form id="ciForm" data-id="${esc(id)}" class="form"><h2 style="grid-column:1/-1">Check in: ${esc(g.title)}</h2>
     ${g.mode==='number'?`<label>Current value<input id="ci-val" type="number" value="${esc(g.current||0)}"></label>`:`<p class="small muted full" style="grid-column:1/-1">Progress is calculated (${pct(goalProgress(g))}).</p>`}
-    <label>How is it going?<select id="ci-st">${P_STATUS.slice(0,3).map(([k,l])=>`<option value="${k}" ${k===goalHealth(g)?'selected':''}>${l}</option>`).join('')}</select></label>
+    <label>How is it going?<select id="ci-st">${P_STATUS.filter(s=>g.link ? ['on_track','off_track','done'].includes(s[0]) : ['on_track','at_risk','off_track'].includes(s[0])).map(([k,l])=>`<option value="${k}" ${k===goalHealth(g)?'selected':''}>${l}</option>`).join('')}</select></label>
     <label class="full">Note<textarea id="ci-note" placeholder="What moved, what’s in the way"></textarea></label>
     <div class="small full" style="grid-column:1/-1">${(g.checkins||[]).slice(-5).reverse().map(c=>`<div>${pChip(c.status)} ${esc(first(c.by))} ${fmtWhen(c.at)}${c.val!=null?` · ${c.val}`:''}${c.note?` — ${esc(c.note)}`:''}</div>`).join('')}</div>
     <div class="row" style="grid-column:1/-1;justify-content:flex-end"><button type="button" class="btn ghost" data-act="close-dlg" data-dlg="pmDlg">Cancel</button><button class="btn primary" type="submit">Save check-in</button></div></form>`;
@@ -382,7 +384,7 @@ document.addEventListener('submit', ev => {
     if(p.owner) notify(p.owner, `New request for ${p.name} from ${nm||'someone'}: ${$('#rq-title').value.trim()}`, {task:tid}, {email:true}); toast('Request sent. The team has been notified.'); f.reset(); return; }
   if(f.id==='goalForm'){ ev.preventDefault(); const v = {title:$('#gl-title').value.trim(), owner:$('#gl-owner').value, parent:$('#gl-parent').value, start:$('#gl-start').value, due:$('#gl-due').value, mode:$('#gl-mode').value, startVal:+$('#gl-sv').value||0, target:+$('#gl-target').value||0, current:+$('#gl-cur').value||0, unit:$('#gl-unit').value, projects:[...f.querySelectorAll('[name=gl-p]:checked')].map(x=>x.value)};
     const gid = id || uid(); put('goals', gid, {...(S.goals[gid]||{checkins:[], created:nowISO()}), ...v}); audit(id?'Edited a goal':'Created a goal', v.title); $('#pmDlg').close(); render(); return; }
-  if(f.id==='ciForm'){ ev.preventDefault(); const g = S.goals[id]; if(!g) return; const val = $('#ci-val') ? +$('#ci-val').value : null; put('goals', id, {...g, current: val!=null ? val : g.current, checkins:[...(g.checkins||[]).slice(-29), {at:nowISO(), by:S.me||'', val, status:$('#ci-st').value, note:$('#ci-note').value}]}); $('#pmDlg').close(); toast('Check-in saved'); render(); return; }
+  if(f.id==='ciForm'){ ev.preventDefault(); const g = S.goals[id]; if(!g) return; const val = $('#ci-val') ? +$('#ci-val').value : null; put('goals', id, {...g, ...(g.link ? {fiosStatus:{on_track:'on-track',off_track:'off-track',at_risk:'off-track',done:'done'}[$('#ci-st').value]||'on-track'} : {}), current: val!=null ? val : g.current, checkins:[...(g.checkins||[]).slice(-29), {at:nowISO(), by:S.me||'', val, status:$('#ci-st').value, note:$('#ci-note').value}]}); $('#pmDlg').close(); toast('Check-in saved'); render(); return; }
   if(f.id==='updForm'){ ev.preventDefault(); postUpdate(id, $('#up-text').value, $('#up-st').value); $('#pmDlg').close(); render(); return; }
   if(f.id==='aiForm'){ ev.preventDefault(); S.ai.extra = S.ai.mode==='plan' ? {name:$('#ai-name').value.trim(), brief:$('#ai-brief').value.trim(), start:$('#ai-start').value||today(), due:$('#ai-due').value||addDays(today(),45)} : {q:$('#ai-q').value.trim()}; aiRun(S.ai.extra); return; }
   if(f.id==='aiApply'){ ev.preventDefault(); applyAiPlan(new Set([...f.querySelectorAll('[name=ai-t]:checked')].map(x=>x.value))); return; }

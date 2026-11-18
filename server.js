@@ -1796,6 +1796,8 @@ async function automationTick() {
   try { out.ai = await require("./ai-features").tick(pool); } catch (e) { out.aiError = String(e.message || e); }
   try { out.meetings = await require("./meetings").ingest(pool); } catch (e) { out.meetingsError = String(e.message || e); }
   try { out.weekly = await require("./weekly").tick(pool); } catch (e) { out.weeklyError = String(e.message || e); }
+  // Keep Projects & Team in step with Run the practice even when nobody has it open (also before the digest).
+  try { out.hubMirror = await require("./hub").mirror(pool, { force: true }); } catch (e) { out.hubError = String(e.message || e); }
   try { out.hub = await require("./hub").digestTick(pool); } catch (e) { out.hubError = String(e.message || e); }
   try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }

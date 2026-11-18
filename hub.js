@@ -33,6 +33,8 @@
 //   board checklist   -> tasks in "Board & Governance checklist".
 //   grant reports due -> tasks in "Grant reports due"; done = received.
 //   donor follow-ups  -> tasks in "Donor follow-ups"; done = done.
+//   prospects         -> "Reach out to …" tasks in "Prospects to reach", section =
+//                        prospect status; finishing one marks it contacted.
 // Each mirrored document carries link {kind, id} and _src (a fingerprint of
 // the source fields). The mirror only overwrites when the source changed, so
 // owners, comments, checklists and time added in the hub are kept.
@@ -87,6 +89,7 @@ function canWrite(p, id, me) {
 }
 
 const STAGE_SECTIONS = [["lead", "Lead"], ["discovery", "Discovery"], ["assessment", "Assessment"], ["engaged", "Engaged"]];
+const PROSPECT_SECTIONS = [["new", "New"], ["researching", "Researching"], ["contacted", "Contacted"], ["responded", "Responded"], ["meeting", "Meeting booked"]];
 const MODULE_SECTIONS = [["not-started", "Not started"], ["scheduled", "Scheduled"], ["complete", "Complete"]];
 const hash = (o) => crypto.createHash("sha1").update(JSON.stringify(o)).digest("hex").slice(0, 16);
 const dateOnly = (v) => String(v || "").slice(0, 10);
@@ -136,6 +139,12 @@ async function sourceFields(pool, link) {
     const g = (await pool.query("SELECT t.id, t.next_step, t.next_on, t.done, d.name FROM fr_touches t JOIN fr_donors d ON d.id = t.donor_id WHERE t.id = $1", [link.id])).rows[0];
     if (!g || !String(g.next_step || "").trim()) return null;
     return { title: `${String(g.next_step).trim()} (${g.name || "donor"})`, due: dateOnly(g.next_on), section: "followups", project: "fios-donors", eng: "", done: !!g.done };
+  }
+  if (link.kind === "prospect") {
+    const g = (await pool.query("SELECT id, name, org, status, archived_at FROM prospects WHERE id = $1", [link.id])).rows[0];
+    if (!g || g.archived_at || !PROSPECT_SECTIONS.some((x) => x[0] === g.status)) return null;
+    const who = [g.name, g.org].filter(Boolean).join(", ") || "prospect";
+    return { title: "Reach out to " + who, due: "", section: g.status, project: "fios-prospects", eng: "", done: ["contacted", "responded", "meeting"].includes(g.status) };
   }
   if (link.kind === "rock") {
     const r = (await pool.query("SELECT id, title, quarter, due_date, status, created_at, archived_at FROM rocks WHERE id = $1", [link.id])).rows[0];
@@ -199,6 +208,9 @@ async function mirror(pool, { force } = {}) {
     if (runSections.length) await ensureProject("fios-checklists", { name: "Checklists", desc: "Steps from running checklists (Process Library). Ticking a step here ticks it there.", sections: runSections });
     if (gov.length) await ensureProject("fios-board", { name: "Board & Governance checklist", desc: "The board's annual checklist from Board & Governance.", sections: [...new Set(gov.map((g) => String(g.fiscal_year || "")))].map((fy) => ({ id: "fy-" + fy.replace(/[^A-Za-z0-9_-]/g, ""), name: "Fiscal year " + fy })) });
     if (reports.length) await ensureProject("fios-grants", { name: "Grant reports due", desc: "Grantee reports from Grants. Finishing one marks it received.", sections: [{ id: "interim", name: "Interim" }, { id: "final", name: "Final" }, { id: "other", name: "Other" }] });
+    const prospects = (await pool.query("SELECT id FROM prospects WHERE archived_at IS NULL AND status = ANY($1)", [PROSPECT_SECTIONS.map((x) => x[0])]).catch(() => ({ rows: [] }))).rows;
+    prospects.forEach((g) => want.push({ kind: "prospect", id: g.id }));
+    if (prospects.length) await ensureProject("fios-prospects", { name: "Prospects to reach", desc: "Prospects from Pipeline & Money → Prospecting. Finishing a task marks the prospect contacted; moving it to another section changes the prospect's status. Promote a prospect to a deal there.", sections: PROSPECT_SECTIONS.map(([id, name]) => ({ id, name })) });
     if (touches.length) await ensureProject("fios-donors", { name: "Donor follow-ups", desc: "Next steps logged on donor touches in Fundraising.", sections: [{ id: "followups", name: "Follow-ups" }] });
     if (want.some((w) => w.kind === "deal")) await ensureProject("fios-pipeline", { name: "Pipeline next steps", desc: "Every open deal's next step, from Pipeline & Money. Change the stage there; rename, re-date or finish the step here.", sections: STAGE_SECTIONS.map(([id, name]) => ({ id, name })) });
     if (want.some((w) => w.kind === "issue")) await ensureProject("fios-issues", { name: "Issues (Weekly Meeting)", desc: "Open issues from Priorities & Vision. Finishing one marks it solved there.", sections: [{ id: "open", name: "Open" }, { id: "solved", name: "Solved" }] });
@@ -275,6 +287,15 @@ async function writeBack(pool, p, prev, next) {
     if (changed("due")) await pool.query("UPDATE gm_reports SET due_on = $2 WHERE id = $1", [link.id, dateOnly(next.due)]);
   } else if (p === "tasks" && link.kind === "touch") {
     if (isDone(next) !== isDone(prev) || changed("due")) await pool.query("UPDATE fr_touches SET done = $2, next_on = $3 WHERE id = $1", [link.id, isDone(next), dateOnly(next.due)]);
+  } else if (p === "tasks" && link.kind === "prospect") {
+    const cur = (await pool.query("SELECT status FROM prospects WHERE id = $1", [link.id])).rows[0];
+    if (cur) {
+      let status = cur.status;
+      if (changed("section") && PROSPECT_SECTIONS.some((x) => x[0] === next.section)) status = next.section;
+      if (isDone(next) && !isDone(prev) && ["new", "researching"].includes(status)) status = "contacted";
+      if (!isDone(next) && isDone(prev) && ["contacted", "responded", "meeting"].includes(status)) status = "researching";
+      if (status !== cur.status) await pool.query("UPDATE prospects SET status = $2 WHERE id = $1", [link.id, status]);
+    }
   } else if (p === "goals" && link.kind === "rock") {
     if (changed("title") || changed("due") || changed("fiosStatus")) await pool.query("UPDATE rocks SET title = $2, due_date = $3, status = $4 WHERE id = $1", [link.id, String(next.title || "").slice(0, 500), dateOnly(next.due), ["on-track", "off-track", "done"].includes(next.fiosStatus) ? next.fiosStatus : "on-track"]);
   } else return null;

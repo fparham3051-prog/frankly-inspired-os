@@ -1039,3 +1039,30 @@ CREATE TABLE IF NOT EXISTS meeting_notes (
   created_at TEXT,
   applied_at TEXT DEFAULT ''
 );
+
+-- =====================================================================
+-- Projects & Team (hub.js, public/hub/). One row per hub document; deletes
+-- keep a tombstone (deleted = true) so open pages hear about them. "t" is a
+-- millisecond clock that only moves forward and drives incremental sync.
+-- Files attached to tasks and projects live in hub_files (10 MB each).
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS hub_docs (
+  path TEXT NOT NULL,
+  id TEXT NOT NULL,
+  data JSONB,
+  deleted BOOLEAN DEFAULT false,
+  t BIGINT NOT NULL,
+  by_user TEXT DEFAULT '',
+  PRIMARY KEY (path, id)
+);
+CREATE INDEX IF NOT EXISTS hub_docs_t ON hub_docs (t);
+
+CREATE TABLE IF NOT EXISTS hub_files (
+  id TEXT PRIMARY KEY,
+  name TEXT DEFAULT '',
+  type TEXT DEFAULT '',
+  size INTEGER DEFAULT 0,
+  data BYTEA,
+  by_user TEXT DEFAULT '',
+  created_at TEXT
+);

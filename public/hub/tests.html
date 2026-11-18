@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Hub self-test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><b>Flow Hub</b><span>Frankly Inspired &amp; Associates</span></div>
+    <div class="gs"><input id="gsearch" type="search" placeholder="Search clients, tasks, people  ( / )" aria-label="Search" autocomplete="off"><div id="gres" class="gres" hidden></div></div>
+    <button class="btn ghost" id="helpBtn" data-act="help" aria-label="Help for this page" title="Help for this page" style="border-radius:99px;width:34px;height:34px;justify-content:center;padding:0">?</button>
+    <button class="who" id="whoBtn" data-act="whoami" aria-label="Switch who you are"><span class="av empty">?</span><span>Who are you?</span></button>
+    <div class="status" id="status"><span class="dot warn"></span><span>Connecting…</span></div>
+  </div>
+    <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+    <div class="subnav" id="subnav"></div>
+</header>
+<main class="wrap" id="main" tabindex="-1"></main>
+
+<div class="scrim" id="scrim" data-act="close-drawer"></div>
+<aside class="drawer" id="drawer" aria-label="Engagement details"></aside>
+
+<dialog id="newDlg">
+  <form id="newForm" class="form">
+    <h2 style="grid-column:1/-1" id="nf-h">New engagement</h2>
+    <label class="full"><span data-l="org">Organization</span><input id="nf-org" required></label>
+    <label><span data-l="contact">Contact</span> name<input id="nf-contact"></label>
+    <label>Contact email<input id="nf-email" type="email"></label>
+    <label><span data-l="offer">Offer</span><select id="nf-offer"></select></label>
+    <label><span data-l="value">Value ($)</span><input id="nf-value" type="number" min="0" step="500" value="7500"></label>
+    <label>Lead<select id="nf-lead"></select></label>
+    <label>Source<input id="nf-source" placeholder="Referral, website, console…"></label>
+    <div class="row full" style="grid-column:1/-1;justify-content:flex-end">
+      <button type="button" class="btn ghost" data-act="close-dlg" data-dlg="newDlg">Cancel</button>
+      <button type="submit" class="btn primary" id="nf-go">Add and run Lead playbook</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="taskDlg"><div class="body" id="taskBody"></div></dialog>
+<dialog id="evDlg"><div class="body" id="evBody"></div></dialog>
+<dialog id="whoDlg"><div class="body" id="whoBody"></div></dialog>
+<dialog id="pulseDlg"><div class="body" id="pulseBody"></div></dialog>
+<dialog id="oneDlg" style="width:min(780px,calc(100% - 32px))"><div class="body" id="oneBody"></div></dialog>
+<dialog id="fbDlg"><div class="body" id="fbBody"></div></dialog>
+<dialog id="wizDlg" style="width:min(760px,calc(100% - 32px))"><div class="body" id="wizBody"></div></dialog>
+<dialog id="helpDlg"><div class="body" id="helpBody"></div></dialog>
+<dialog id="pmDlg" style="width:min(760px,calc(100% - 32px))"><div class="body" id="pmBody"></div></dialog>
+<dialog id="sumDlg" style="width:min(720px,calc(100% - 32px))"><div class="body" id="sumBody"></div></dialog>
+<div class="toast" id="toast" role="status"></div>
+
+<script>window.FLOWHUB_TEST=true; try{ localStorage.removeItem("fii-flowhub-selftest"); localStorage.removeItem("fii-flowhub-selftest-me"); }catch(_){}</script>
+<script src="js/core.js"></script>
+<script src="js/views.js"></script>
+<script src="js/people.js"></script>
+<script src="js/insights.js"></script>
+<script src="js/connect.js"></script>
+<script src="js/workspace.js"></script>
+<script src="js/product.js"></script>
+<script src="js/pm.js"></script>
+<script src="js/automation.js"></script>
+<script src="js/plus.js"></script>
+<script src="js/events.js"></script>
+<script src="js/selftest.js"></script>
+</body>
+</html>

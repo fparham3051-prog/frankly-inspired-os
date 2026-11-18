@@ -165,6 +165,8 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
 // Documents for the AI Diagnostic first pass are larger than any other request.
 app.use("/api/ai/diagnostic", express.json({ limit: "30mb" }));
+// Projects & Team restores and bulk edits can be a few megabytes.
+app.use("/api/hub/write", express.json({ limit: "8mb" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -1605,7 +1607,8 @@ async function exportAllTables(db) {
   const t = await db.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name");
   const tables = {};
   for (const { table_name } of t.rows) {
-    tables[table_name] = (await db.query(`SELECT * FROM "${table_name}"`)).rows;
+    // Files go out as base64 text (restore-backup.js turns them back into bytes).
+    tables[table_name] = (await db.query(table_name === "hub_files" ? "SELECT id, name, type, size, encode(data, 'base64') AS data, by_user, created_at FROM hub_files" : `SELECT * FROM "${table_name}"`)).rows;
   }
   return tables;
 }
@@ -1778,6 +1781,7 @@ require("./sheets").mount(app, { pool, requireAuth });
 require("./ai-features").mount(app, { pool, requireAuth });
 require("./weekly").mount(app, { pool, requireAuth });
 require("./meetings").mount(app, { pool, requireAuth });
+require("./hub").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task
@@ -1792,6 +1796,7 @@ async function automationTick() {
   try { out.ai = await require("./ai-features").tick(pool); } catch (e) { out.aiError = String(e.message || e); }
   try { out.meetings = await require("./meetings").ingest(pool); } catch (e) { out.meetingsError = String(e.message || e); }
   try { out.weekly = await require("./weekly").tick(pool); } catch (e) { out.weeklyError = String(e.message || e); }
+  try { out.hub = await require("./hub").digestTick(pool); } catch (e) { out.hubError = String(e.message || e); }
   try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
   const drafts = (await pool.query("SELECT o.id FROM proc_outbox o LEFT JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND (r.id IS NULL OR r.archived_at IS NULL)").catch(() => ({ rows: [] }))).rows.map((r) => r.id);

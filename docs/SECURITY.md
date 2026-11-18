@@ -58,3 +58,12 @@ owner's approval. Approved messages go out either from the owner's own email
 app, or through the website server (`POST /api/admin/send-message`, reminder
 secret) once the sending domain is verified with Resend (FROM_EMAIL set to an
 address on that domain). Until then the website server refuses outside sends.
+
+## Projects & Team
+The workspace at /hub/ uses the same sign-in and roles. Its server checks every
+read and write: staff can't read cost rates or anyone else's check-ins, coaching
+notes, usage or activity log; only the owner changes rules and workspace settings;
+board accounts can't change anything. Uploaded files are served with
+`Content-Security-Policy: sandbox`, and anything other than images, PDFs, plain
+text and CSV downloads instead of opening. Email from the workspace is off until
+the owner turns it on, and goes out through the connected Gmail account.

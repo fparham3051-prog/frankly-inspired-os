@@ -96,6 +96,13 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   checklist steps it can see are done, drafts messages and follow-ups for
   approval, and checks Gmail for replies (`POST /api/admin/tick`, status key).
 
+- **Projects & Team** (`/hub/`, top switcher and left rail): projects, tasks with
+  owners and seen/blocked status, timeline, workload, team calendar, check-ins and
+  coaching, rules, goals, dashboards, client status pages, and Claude planning.
+  People come from Settings → People, clients from the pipeline, and time logged
+  on a task linked to a deal lands in that deal's time entries. See
+  docs/PROJECTS-AND-TEAM.md.
+
 ## InstitutionalOS (grantpass-backend)
 - Console: each client in five tabs (Home, Health, Priority, 90-Day Plan,
   Evidence), the same tabs the client sees in their portal.
@@ -156,6 +163,7 @@ Every app has the same top bar: **Operations** (this app), **Clients**
 - The same tests run on GitHub on every push (Actions > Tests) once Actions are turned on for the repositories.
 
 ## Also see
+- docs/PROJECTS-AND-TEAM.md: the project and team workspace
 - docs/SECURITY.md: sign-in, roles, keys, and how to change a key
 - docs/DATA-RETENTION.md: what is kept and for how long
 - docs/NEW-ORGANIZATION.md: setting the system up for another organization

@@ -1,0 +1,76 @@
+# Projects & Team
+
+The project and team workspace (built and tested as the "Flow Hub" on claude.ai)
+now runs inside the operations app at **/hub/**. Same sign-in, same phone app,
+same database and nightly backup. Open it from the "Projects & Team" link in the
+top switcher or the left rail.
+
+## What it does
+- **Projects:** portfolio with health, seven views per project (overview, list,
+  board, timeline, table, files, request form), templates, duplicate, baselines.
+- **Tasks:** one owner and a status everyone sees (assigned → seen → in progress
+  → review → done, or blocked with a reason), subtasks, collaborators, start and
+  due dates, milestones, "waits for" links (a slip moves the tasks that wait),
+  checklists, comments with @mentions, files, approvals, time logging.
+- **Team:** shared calendar, team board by person, workload against weekly hours,
+  daily check-ins and 1:1 coaching (private to the person and the owner).
+- **Automation:** rules (when → then), date rules (coming up, overdue), request
+  forms, a weekday morning digest.
+- **Reporting:** dashboards, goals, client status page, work insights (time and
+  cost by phase), benchmarks, usability tests.
+- **Claude:** plan a project from a brief, suggest missing tasks, draft a status
+  update, answer questions about the work (uses the practice's AI relay and its
+  daily limit).
+
+## How it fits the rest of the operations app
+| In Projects & Team | Comes from |
+|---|---|
+| Team members | Sign-in accounts (Settings → People). Add or remove people there. |
+| Clients a project or task links to | Pipeline deals (Pipeline & Money). Clicking one opens the pipeline. |
+| Time logged on a task linked to a deal | Also written to that deal's time entries, so Pipeline & Money counts it. |
+| Invoices | Stay in Pipeline & Money. The hub's own pipeline, revenue and outbox screens are turned off here. |
+| Email | The Gmail account connected in Settings → Connected email, only after the owner turns on "Allow Projects & Team to send email" (Projects & Team → Setup). |
+
+## Who sees and changes what
+| | Owner | Staff | Board |
+|---|---|---|---|
+| Projects, tasks, calendar, goals, dashboards | see and change | see and change | see only |
+| Rules, workspace settings, cost rates | see and change | see rules, not rates | see rules |
+| Check-ins, coaching notes, activity log | everyone's | their own | none |
+| Own team extras (weekly hours, digest) | everyone's | their own | — |
+
+Enforced on the server (`hub.js`), not only in the page.
+
+## Server pieces
+- `hub.js` mounts the page and these endpoints: `GET /api/hub/sync`,
+  `POST /api/hub/write`, `POST /api/hub/ai`, `POST /api/hub/email`,
+  `POST|GET|DELETE /api/hub/files`, `POST /api/admin/hub-digest` (status key).
+- Tables `hub_docs` (one row per document, tombstones for deletes, a forward-only
+  clock for sync) and `hub_files` (attachments, 10 MB each). Both are in the
+  nightly full-system backup; files are exported as base64 and turned back into
+  bytes by `scripts/restore-backup.js`.
+- Open pages check for changes every 4 seconds (20 when the tab is hidden), so
+  teammates see each other's updates within a few seconds. "Who's here" uses the
+  same call.
+- The morning digest runs inside the automation tick: weekdays after 7am ET, once
+  a day, to people who turned it on, only when hub email is on.
+
+## Page pieces
+- `public/hub/` is the hub page. `js/fios.js` connects it to the endpoints above
+  (it stands in for claude.ai's page tools); `js/fios-ui.js` adjusts wording and
+  hides screens that the operations app already covers. The rest is the same code
+  that runs on claude.ai.
+- `public/hub/tests.html` runs the hub's 29 self-checks in the browser (local copy,
+  no real data). `public/hub/demo.html` is the fictional demo workspace for pilot
+  conversations (stays in the visitor's browser).
+
+## Moving data over from the claude.ai version
+On claude.ai: Projects & Team → Setup → Privacy & data → Back up. Here: the same
+page → Restore, then check people and client links (claude.ai teammates and
+clients have different ids).
+
+## Known limits
+- Rules and date rules run in the browser of whoever is using the hub.
+- Google Calendar sync is not connected here yet; the team calendar is shared
+  inside the hub.
+- Request forms are for signed-in people only.

@@ -106,7 +106,7 @@ async function t(name, fn) {
   });
   await new Promise((ok) => mock.listen(0, ok)); MOCK.port = mock.address().port;
   const GURL = "http://localhost:" + MOCK.port;
-  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, WEBSITE_API_URL: GURL, WEBSITE_ADMIN_SECRET: "ws", SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000" });
+  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, WEBSITE_API_URL: GURL, WEBSITE_ADMIN_SECRET: "ws", SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000", HUB_MIRROR_MS: "0" });
   const srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
@@ -975,6 +975,103 @@ async function t(name, fn) {
     const r = await req("x", "POST", "/api/admin/hub-digest?force=1", null, { "X-Admin-Token": "test-token" });
     assert.strictEqual(r.status, 200, JSON.stringify(r.data)); assert.strictEqual(r.data.count, 1);
     assert.strictEqual(MOCK.sends.length, n + 1); assert.match(mailText(MOCK.sends[n].raw), /Overdue thing/); assert.match(MOCK.sends[n].raw, /staff@test\.org/);
+  });
+  // ---------- Run the practice flows through Projects & Team ----------
+  const hubDoc = async (who, p, id) => { const d = await hubS(who); const x = d.docs.find((y) => y.path === p && y.id === id); return x ? x.data : null; };
+  const firstOwner = async () => "u" + (await Q.query("SELECT id FROM app_users WHERE role = 'owner' AND NOT disabled ORDER BY id LIMIT 1")).rows[0].id;
+  let flowDeal;
+  await t("flow: a deal's next step becomes a task in Pipeline next steps; edits and finishing go back to the deal", async () => {
+    flowDeal = (await req("owner1", "POST", "/api/pipeline", { name: "Lee Park", org: "Eastside Youth Choir", stage: "discovery", nextStep: "Send discovery agenda", nextStepDate: "2030-02-01" })).data.id;
+    const t1 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
+    assert.ok(t1, "task missing"); assert.strictEqual(t1.title, "Send discovery agenda"); assert.strictEqual(t1.due, "2030-02-01");
+    assert.strictEqual(t1.project, "fios-pipeline"); assert.strictEqual(t1.section, "discovery"); assert.strictEqual(t1.eng, flowDeal); assert.strictEqual(t1.owner, await firstOwner());
+    assert.ok(await hubDoc("staff", "projects", "fios-pipeline"));
+    await hubW("staff", [{ path: "tasks", id: "fios-deal-" + flowDeal, data: Object.assign({}, t1, { title: "Send agenda and pre-read", due: "2030-02-03", section: "engaged", comments: [{ text: "kept" }] }) }]);
+    let d = (await Q.query("SELECT next_step, next_step_date, stage FROM pipeline WHERE id = $1", [flowDeal])).rows[0];
+    assert.strictEqual(d.next_step, "Send agenda and pre-read"); assert.strictEqual(d.next_step_date, "2030-02-03"); assert.strictEqual(d.stage, "discovery");
+    const t2 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
+    assert.strictEqual(t2.section, "discovery", "stage changes only in Pipeline & Money"); assert.strictEqual(t2.comments[0].text, "kept");
+    await req("owner1", "PATCH", "/api/pipeline/" + flowDeal, { nextStep: "Call back Thursday", nextStepDate: "2030-02-06" });
+    const t3 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
+    assert.strictEqual(t3.title, "Call back Thursday"); assert.strictEqual(t3.comments[0].text, "kept", "hub additions survive a change in the deal");
+    await hubW("staff", [{ path: "tasks", id: "fios-deal-" + flowDeal, data: Object.assign({}, t3, { status: "done", done: true }) }]);
+    d = (await Q.query("SELECT next_step, next_step_date FROM pipeline WHERE id = $1", [flowDeal])).rows[0];
+    assert.strictEqual(d.next_step, ""); assert.strictEqual(d.next_step_date, "");
+    const t4 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
+    assert.strictEqual(t4.status, "done"); assert.ok(!t4.cancelled);
+    await req("owner1", "PATCH", "/api/pipeline/" + flowDeal, { nextStep: "Propose the Diagnostic", nextStepDate: "2030-02-10" });
+    const t5 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
+    assert.strictEqual(t5.title, "Propose the Diagnostic"); assert.notStrictEqual(t5.status, "done", "a new next step reopens it");
+  });
+  await t("flow: delivery sessions become a Delivery project; finishing one marks it Complete", async () => {
+    const mod = (await req("owner1", "POST", "/api/engagement-modules", { pipelineId: flowDeal, moduleName: "Board session 1", sessionDate: "2030-03-01", status: "scheduled" })).data.id;
+    const tk = await hubDoc("staff", "tasks", "fios-module-" + mod);
+    assert.strictEqual(tk.project, "fios-deal-" + flowDeal); assert.strictEqual(tk.section, "scheduled"); assert.strictEqual(tk.due, "2030-03-01");
+    assert.match((await hubDoc("staff", "projects", "fios-deal-" + flowDeal)).name, /Delivery: Eastside Youth Choir/);
+    await hubW("staff", [{ path: "tasks", id: "fios-module-" + mod, data: Object.assign({}, tk, { status: "done", done: true }) }]);
+    assert.strictEqual((await Q.query("SELECT status FROM engagement_modules WHERE id = $1", [mod])).rows[0].status, "complete");
+    await Q.query("UPDATE engagement_modules SET archived_at = $2 WHERE id = $1", [mod, new Date().toISOString()]);
+    assert.strictEqual((await hubDoc("staff", "tasks", "fios-module-" + mod)).status, "done", "finished work stays");
+  });
+  await t("flow: issues become tasks; solved there or finished here stays in step; archived ones leave the lists", async () => {
+    const iss = (await req("owner1", "POST", "/api/issues", { title: "Intake form confuses clients" })).data.id;
+    const tk = await hubDoc("staff", "tasks", "fios-issue-" + iss);
+    assert.strictEqual(tk.project, "fios-issues"); assert.strictEqual(tk.section, "open");
+    await hubW("staff", [{ path: "tasks", id: "fios-issue-" + iss, data: Object.assign({}, tk, { status: "done", done: true }) }]);
+    assert.strictEqual((await Q.query("SELECT status FROM issues WHERE id = $1", [iss])).rows[0].status, "solved");
+    const iss2 = (await req("owner1", "POST", "/api/issues", { title: "Old issue" })).data.id;
+    assert.ok(await hubDoc("staff", "tasks", "fios-issue-" + iss2));
+    await Q.query("UPDATE issues SET archived_at = $2 WHERE id = $1", [iss2, new Date().toISOString()]);
+    assert.strictEqual((await hubDoc("staff", "tasks", "fios-issue-" + iss2)).cancelled, true);
+  });
+  await t("flow: quarterly priorities become goals; a check-in sets on or off track", async () => {
+    const rock = (await req("owner1", "POST", "/api/rocks", { title: "Sign 4 new clients", quarter: "Q1 2030", dueDate: "2030-03-31" })).data.id;
+    const g = await hubDoc("staff", "goals", "fios-rock-" + rock);
+    assert.strictEqual(g.title, "Sign 4 new clients"); assert.strictEqual(g.fiosStatus, "on-track"); assert.strictEqual(g.quarter, "Q1 2030");
+    await hubW("staff", [{ path: "goals", id: "fios-rock-" + rock, data: Object.assign({}, g, { fiosStatus: "off-track", checkins: [{ note: "slow month" }] }) }]);
+    assert.strictEqual((await Q.query("SELECT status FROM rocks WHERE id = $1", [rock])).rows[0].status, "off-track");
+    await req("owner1", "PATCH", "/api/rocks/" + rock, { status: "done" });
+    const g2 = await hubDoc("staff", "goals", "fios-rock-" + rock);
+    assert.strictEqual(g2.fiosStatus, "done"); assert.strictEqual(g2.checkins[0].note, "slow month");
+  });
+  await t("flow: checklist steps, board items, grant reports and donor follow-ups become tasks owned by the owner", async () => {
+    const now = new Date().toISOString(), owner = await firstOwner();
+    await Q.query("INSERT INTO proc_runs (id, process_name, subject_kind, subject_id, subject_label, started_on, steps, created_at) VALUES ('run1', 'New client onboarding', 'pipeline', $1, 'Eastside Youth Choir', '2030-01-01', $2, $3)", [flowDeal, JSON.stringify([{ text: "Send welcome packet", dueOn: "2030-01-03", doneOn: "", by: "" }, { text: "Book kickoff", dueOn: "2030-01-05", doneOn: "", by: "" }]), now]);
+    await Q.query("INSERT INTO gov_checklist (id, fiscal_year, label, due_on, created_at) VALUES ('gc1', '2030', 'File Form 990', '2030-05-15', $1)", [now]);
+    await Q.query("INSERT INTO gm_programs (id, name, created_at) VALUES ('gp1', 'Youth Arts Fund', $1)", [now]).catch(async () => Q.query("INSERT INTO gm_programs (id, name) VALUES ('gp1', 'Youth Arts Fund')"));
+    await Q.query("INSERT INTO gm_applications (id, program_id, org_name, created_at) VALUES ('ga1', 'gp1', 'Harbor Dance', $1)", [now]);
+    await Q.query("INSERT INTO gm_reports (id, application_id, kind, due_on, created_at) VALUES ('gr1', 'ga1', 'interim', '2030-04-01', $1)", [now]);
+    await Q.query("INSERT INTO fr_donors (id, name, created_at) VALUES ('fd1', 'Rosa Diaz', $1)", [now]);
+    await Q.query("INSERT INTO fr_touches (id, donor_id, on_date, kind, summary, next_step, next_on, created_at) VALUES ('ft1', 'fd1', '2030-01-02', 'call', 'Great call', 'Send thank-you note', '2030-01-04', $1)", [now]);
+    const d = await hubS("owner1");
+    const get = (id) => (d.docs.find((x) => x.path === "tasks" && x.id === id) || {}).data;
+    const step = get("fios-step-run1-s0"), gov = get("fios-gov-gc1"), rep = get("fios-report-gr1"), touch = get("fios-touch-ft1");
+    assert.ok(step && gov && rep && touch, "missing: " + [!step && "step", !gov && "gov", !rep && "report", !touch && "touch"].filter(Boolean).join(","));
+    for (const x of [step, gov, rep, touch]) { assert.strictEqual(x.owner, owner); assert.strictEqual(x.status, "seen"); }
+    assert.strictEqual(step.project, "fios-checklists"); assert.strictEqual(step.section, "run1"); assert.strictEqual(step.eng, flowDeal);
+    assert.match(rep.title, /Interim report from Harbor Dance/); assert.match(touch.title, /Send thank-you note \(Rosa Diaz\)/);
+    assert.ok((d.docs.find((x) => x.path === "projects" && x.id === "fios-checklists").data.sections || []).some((x) => x.id === "run1" && /New client onboarding/.test(x.name)));
+    await hubW("owner1", [{ path: "tasks", id: "fios-step-run1-s0", data: Object.assign({}, step, { status: "done", done: true }) }, { path: "tasks", id: "fios-gov-gc1", data: Object.assign({}, gov, { status: "done", done: true }) }, { path: "tasks", id: "fios-report-gr1", data: Object.assign({}, rep, { status: "done", done: true }) }, { path: "tasks", id: "fios-touch-ft1", data: Object.assign({}, touch, { status: "done", done: true }) }]);
+    const steps = JSON.parse((await Q.query("SELECT steps, completed_on FROM proc_runs WHERE id = 'run1'")).rows[0].steps);
+    assert.ok(steps[0].doneOn && !steps[1].doneOn);
+    assert.ok((await Q.query("SELECT done_on FROM gov_checklist WHERE id = 'gc1'")).rows[0].done_on);
+    assert.ok((await Q.query("SELECT received_on FROM gm_reports WHERE id = 'gr1'")).rows[0].received_on);
+    assert.strictEqual((await Q.query("SELECT done FROM fr_touches WHERE id = 'ft1'")).rows[0].done, true);
+    const s1 = (await hubS("owner1")).docs.find((x) => x.id === "fios-step-run1-s1").data;
+    await hubW("owner1", [{ path: "tasks", id: "fios-step-run1-s1", data: Object.assign({}, s1, { status: "done", done: true }) }]);
+    assert.ok((await Q.query("SELECT completed_on FROM proc_runs WHERE id = 'run1'")).rows[0].completed_on, "finishing every step completes the checklist");
+  });
+  await t("flow: deleting a mirrored task doesn't bring it straight back", async () => {
+    const iss = (await req("owner1", "POST", "/api/issues", { title: "Delete me" })).data.id;
+    assert.ok(await hubDoc("staff", "tasks", "fios-issue-" + iss));
+    await hubW("staff", [{ path: "tasks", id: "fios-issue-" + iss, data: null }]);
+    assert.strictEqual(await hubDoc("staff", "tasks", "fios-issue-" + iss), null);
+  });
+  await t("flow: the Weekly Meeting brief hears about blocked and off-track work", async () => {
+    await hubW("staff", [{ path: "tasks", id: "hb-blocked", data: { title: "Waiting on board minutes", status: "blocked" } }, { path: "projects", id: "hb-off", data: { name: "Annual report", status: "off_track", sections: [] } }]);
+    const b = (await req("owner1", "POST", "/api/weekly/refresh", {})).data;
+    const text = (b.brief || b).flags ? (b.brief || b).flags.map((f) => f.text).join(" | ") : JSON.stringify(b).slice(0, 300);
+    assert.match(text, /blocked: Waiting on board minutes/); assert.match(text, /Project off track: Annual report/);
   });
   await t("hub: bad addresses and oversized documents are refused", async () => {
     assert.strictEqual((await hubW("staff", [{ path: "../x", id: "a", data: {} }])).status, 400);

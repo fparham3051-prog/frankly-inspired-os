@@ -138,6 +138,10 @@ async function buildBrief(pool, weekOf) {
     if (average.calls >= 2 && numbers.calls <= average.calls / 2) flag("attn", `Conversations logged (${numbers.calls}) were less than half the recent average (${average.calls}).`, "", "pipeline");
   }
 
+  // Projects & Team: late, blocked, off-track work and stale approvals.
+  let hub = null;
+  try { hub = await require("./hub").hubFlags(pool, today); hub.flags.forEach((f) => flags.push(f)); } catch (e) { /* hub not set up yet */ }
+
   const open = new Set((await q(pool, "SELECT lower(title) AS t FROM issues WHERE archived_at IS NULL AND status <> 'solved'")).map((r) => r.t));
   const suggestions = flags.filter((f) => f.issue && !open.has(f.issue.toLowerCase())).map((f) => f.issue).filter((v, i, a) => a.indexOf(v) === i).slice(0, 3);
 
@@ -148,6 +152,7 @@ async function buildBrief(pool, weekOf) {
     flags: flags.sort((a, b) => (a.level === "warn" ? 0 : 1) - (b.level === "warn" ? 0 : 1)),
     suggestions,
     priorities: rocks.map((r) => ({ id: r.id, title: r.title, status: r.status, dueDate: r.due_date || "" })),
+    projects: hub ? hub.summary : null,
   };
 }
 

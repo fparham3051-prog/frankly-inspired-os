@@ -31,6 +31,32 @@ top switcher or the left rail.
 | Invoices | Stay in Pipeline & Money. The hub's own pipeline, revenue and outbox screens are turned off here. |
 | Email | The Gmail account connected in Settings → Connected email, only after the owner turns on "Allow Projects & Team to send email" (Projects & Team → Setup). |
 
+## Run the practice flows through it
+Records from Run the practice show up in Projects & Team as real tasks and
+goals, with owners, due dates, comments, time and status. Changes made in either
+place reach the other within about 15 seconds.
+
+| In Run the practice | In Projects & Team | Changes that go back |
+|---|---|---|
+| A deal's next step (open deals: lead, discovery, assessment, engaged) | A task in **Pipeline next steps**, in the section for the deal's stage, with the client shown | Rename or re-date it and the deal's next step changes. Finish it and the deal's next step is cleared so you can set the next one. Change the stage in Pipeline & Money. |
+| Delivery sessions (Pipeline & Money → Delivery) | Tasks in a **Delivery: client** project, sections Not started / Scheduled / Complete | Name, session date and status, both ways. Finishing one marks it Complete. |
+| Issues (Priorities & Vision) | Tasks in **Issues (Weekly Meeting)** | Finishing one marks it solved; reopening reopens it; renaming renames it. |
+| Quarterly priorities (Rocks) | **Goals**, shown with their quarter | Title, due date, and a check-in's on-track / off-track / done. |
+| Checklist steps (running checklists, and ones finished in the last 30 days) | Tasks in **Checklists**, one section per checklist | Ticking a step ticks it there (finishing every step completes the checklist); due date and wording too. |
+| Board & Governance annual checklist | Tasks in **Board & Governance checklist**, by fiscal year | Done and due date. |
+| Grantee reports due | Tasks in **Grant reports due** | Finishing one marks the report received. |
+| Donor touches with a next step | Tasks in **Donor follow-ups** | Done and due date. |
+
+- Every mirrored task starts owned by the owner account (Franklin) and already marked seen.
+  Reassign them like any task.
+- Anything added in the hub (owner, collaborators, comments, checklist, time,
+  files) is kept when the source record changes.
+- When a record leaves Run the practice (deal closed or archived, issue or
+  session archived), its unfinished task is taken off the lists but kept.
+- Deleting a mirrored task hides it until its source record changes again.
+- The **Weekly Meeting** brief now also flags blocked tasks, projects off track
+  or at risk, project tasks past due, and approvals waiting two days or more.
+
 ## Who sees and changes what
 | | Owner | Staff | Board |
 |---|---|---|---|

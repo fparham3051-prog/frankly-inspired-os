@@ -100,8 +100,9 @@ Every app has the same top bar: **Operations** (this app), **Clients**
   owners and seen/blocked status, timeline, workload, team calendar, check-ins and
   coaching, rules, goals, dashboards, client status pages, and Claude planning.
   People come from Settings → People, clients from the pipeline, and time logged
-  on a task linked to a deal lands in that deal's time entries. See
-  docs/PROJECTS-AND-TEAM.md.
+  on a task linked to a deal lands in that deal's time entries. Deal next steps,
+  delivery sessions, issues and quarterly priorities show up there as tasks and
+  goals and stay in step both ways. See docs/PROJECTS-AND-TEAM.md.
 
 ## InstitutionalOS (grantpass-backend)
 - Console: each client in five tabs (Home, Health, Priority, 90-Day Plan,

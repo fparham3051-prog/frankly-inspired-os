@@ -231,7 +231,7 @@ document.addEventListener('submit', ev => {
 function route(){
   let h = (location.hash||'').slice(1);
   h = {flow:'pipeline', recipes:'playbooks'}[h] || h;
-  S.view = ['today','health','setup','privacy','revenue','insights','coaching','board','calendar','pipeline','outbox','playbooks','team','projects','project','workload','goals','dashboards','automations','request','clientview','benchmarks','usability'].includes(h) ? h : 'today';
+  S.view = ['today','health','setup','privacy','revenue','insights','coaching','board','calendar','pipeline','outbox','playbooks','team','projects','project','workload','goals','dashboards','automations','request','clientview','benchmarks','usability','inbox'].includes(h) ? h : 'today';
   if(S.view!=='playbooks') S.draftRecipes = null;
   track('view', S.view); render(); window.scrollTo(0,0);
 }

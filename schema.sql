@@ -1057,6 +1057,23 @@ CREATE TABLE IF NOT EXISTS hub_docs (
 );
 CREATE INDEX IF NOT EXISTS hub_docs_t ON hub_docs (t);
 
+-- Every change to a shared hub document, for history, undo and restore.
+-- before/after are whole documents; null = didn't exist / deleted.
+CREATE TABLE IF NOT EXISTS hub_activity (
+  id BIGSERIAL PRIMARY KEY,
+  at TIMESTAMPTZ DEFAULT now(),
+  by_user TEXT DEFAULT '',
+  path TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  changed TEXT[] DEFAULT '{}',
+  merged BOOLEAN DEFAULT false,
+  before JSONB,
+  after JSONB
+);
+CREATE INDEX IF NOT EXISTS hub_activity_doc ON hub_activity (path, doc_id, id DESC);
+CREATE INDEX IF NOT EXISTS hub_activity_at ON hub_activity (at);
+
 CREATE TABLE IF NOT EXISTS hub_files (
   id TEXT PRIMARY KEY,
   name TEXT DEFAULT '',

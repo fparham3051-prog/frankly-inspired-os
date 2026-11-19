@@ -60,7 +60,33 @@ const express = require("express");
 const { ORG } = require("./accounts");
 
 const SELF_ROOTS = ["pulses", "coaching", "usage", "feedback", "audit"];
-const SHARED = ["engagements", "tasks", "messages", "events", "notifs", "projects", "goals", "dashboards", "ptemplates", "utests", "anon", "team"];
+const SHARED = ["engagements", "tasks", "messages", "events", "notifs", "projects", "goals", "dashboards", "ptemplates", "utests", "anon", "team", "msgs", "reacts"];
+// Paths whose changes go into the activity log (history, undo, restore).
+const LOGGED = new Set(["tasks", "projects", "goals", "msgs", "events", "dashboards", "ptemplates", "rules"]);
+// Lists that people only ever add to: on a stale save, keep entries from both sides.
+const APPEND_ONLY = new Set(["history", "timeLog", "comments", "updates"]);
+// On someone else's message, these are the only fields you can change.
+const MSG_SHARED_KEYS = new Set(["decision", "taskRef", "pinned"]);
+const changes = new (require("events").EventEmitter)();
+changes.setMaxListeners(500);
+let changeT = null;
+function announce() { clearTimeout(changeT); changeT = setTimeout(() => changes.emit("change"), 60); }
+const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+function unionList(a, b) {
+  const out = Array.isArray(a) ? a.slice() : [], seen = new Set(out.map((x) => JSON.stringify(x)));
+  for (const x of Array.isArray(b) ? b : []) { const k = JSON.stringify(x); if (!seen.has(k)) { seen.add(k); out.push(x); } }
+  return out.sort((x, y) => String((x && x.at) || "").localeCompare(String((y && y.at) || "")));
+}
+// A save made from an out-of-date copy: start from what's stored now and apply only
+// the fields this person actually changed, so their colleague's edit survives.
+function mergeStale(stored, incoming, changed) {
+  const out = Object.assign({}, stored);
+  for (const k of changed) {
+    if (!(k in incoming)) { delete out[k]; continue; }
+    out[k] = APPEND_ONLY.has(k) ? unionList(stored[k], incoming[k]) : incoming[k];
+  }
+  return out;
+}
 const PATH_RE = /^[a-z]+(\/[A-Za-z0-9_-]{1,80}){0,3}$/;
 const ID_RE = /^[A-Za-z0-9_.-]{1,120}$/;
 const MAX_DOC = 400 * 1024;
@@ -170,11 +196,13 @@ async function mirror(pool, { force } = {}) {
   if (mirroring) return mirroring;
   if (!force && Date.now() - mirrorAt < MIRROR_MS) return { skipped: true };
   mirrorAt = Date.now();
+  if (force) pool.query("DELETE FROM hub_activity WHERE at < now() - interval '180 days'").catch(() => {});
   mirroring = (async () => {
+    await migrateComments(pool);
     const now = new Date().toISOString(), owner = await defaultOwner(pool);
     const existing = new Map((await pool.query("SELECT path, id, data, deleted FROM hub_docs WHERE (path = 'tasks' AND id LIKE 'fios-%') OR (path = 'goals' AND id LIKE 'fios-%') OR (path = 'projects' AND id LIKE 'fios-%')")).rows.map((r) => [r.path + "/" + r.id, r]));
     const put = async (p, id, data) => { await pool.query(`INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ($1, $2, $3, false, $4, 'fios')
-      ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = false, t = EXCLUDED.t, by_user = 'fios'`, [p, id, data, nextT()]); n++; };
+      ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = false, t = EXCLUDED.t, by_user = 'fios'`, [p, id, data, nextT()]); n++; announce(); };
     let n = 0;
     const ensureProject = async (id, base) => {
       const ex = existing.get("projects/" + id);
@@ -303,6 +331,32 @@ async function writeBack(pool, p, prev, next) {
   return f ? hash(f) : "";
 }
 
+// Comments used to live inside each task (and could be overwritten by a save of the
+// same task). Move them into their own message records, once.
+let migrated = null;
+async function migrateComments(pool) {
+  if (migrated) return migrated;
+  migrated = (async () => {
+    const r = await pool.query("SELECT id, data FROM hub_docs WHERE path = 'tasks' AND NOT deleted AND data ? 'comments'");
+    let n = 0;
+    for (const row of r.rows) {
+      const list = Array.isArray(row.data.comments) ? row.data.comments : [];
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i] || {}; if (!c.text) continue;
+        const id = "mc-" + hash([row.id, i, c.at, c.text]);
+        await pool.query(`INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ('msgs', $1, $2, false, $3, $4) ON CONFLICT (path, id) DO NOTHING`,
+          [id, { on: "task:" + row.id, parent: "", by: c.by || "", text: String(c.text), at: c.at || new Date().toISOString(), mentions: c.mentions || [], rule: c.rule || "" }, nextT(), c.by || "fios"]);
+        n++;
+      }
+      const data = Object.assign({}, row.data); delete data.comments;
+      await pool.query("UPDATE hub_docs SET data = $1, t = $2 WHERE path = 'tasks' AND id = $3", [data, nextT(), row.id]);
+    }
+    if (r.rows.length) announce();
+    return n;
+  })().catch((e) => { console.error("hub comment move", e.message); return 0; }).finally(() => { migrated = null; });
+  return migrated;
+}
+
 function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdminScope }) {
   const G = () => require("./gmail");
   const AI = () => require("./ai");
@@ -328,7 +382,10 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
   async function teamList() {
     const [users, extra] = await Promise.all([pool.query("SELECT id, email, name, role, disabled FROM app_users ORDER BY id"), overlays("team")]);
     const lead = ORG.org && ORG.org.leader ? ORG.org.leader : {};
-    const rows = users.rows.length ? users.rows : [{ id: 0, email: ORG.org ? ORG.org.email || "" : "", name: lead.name || "Owner", role: "owner", disabled: false }];
+    // The shared practice password signs in as user 0. Until there's a named owner account, keep that
+    // person on the team, or adding the first associate would make Franklin a "former member".
+    const fallback = { id: 0, email: ORG.org ? ORG.org.email || "" : "", name: lead.name || "Owner", role: "owner", disabled: false };
+    const rows = users.rows.some((u) => u.role === "owner" && !u.disabled) ? users.rows : [fallback].concat(users.rows);
     return rows.filter((u) => !u.disabled).map((u) => {
       const id = "u" + u.id, x = extra[id] || {};
       return { id, data: Object.assign({}, x, { name: u.name || u.email, email: u.email, uid: id, lead: u.role === "owner", fiosRole: u.role, role: x.role || (u.role === "owner" ? (lead.title || "Owner") : u.role === "board" ? "Board" : "Team") }) };
@@ -384,6 +441,66 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
     }
     return n;
   }
+  // One document change, as the person `me`. op = { path, id, data, base?, changed? }:
+  // base = the version (t) their copy came from; changed = the top-level fields they edited.
+  // Saves to the same document take turns, so two at the same moment can't both read the old copy.
+  const locks = new Map();
+  function applyOp(op, me, opts = {}) {
+    const key = op.path + "|" + op.id, prior = locks.get(key) || Promise.resolve();
+    const run = prior.catch(() => {}).then(() => applyOpNow(op, me, opts));
+    const tail = run.catch(() => {}).then(() => { if (locks.get(key) === tail) locks.delete(key); });
+    locks.set(key, tail);
+    return run;
+  }
+  async function applyOpNow(op, me, opts = {}) {
+    const t = nextT();
+    let data = op.data == null ? null : Object.assign({}, op.data);
+    if (data) { delete data.id; }
+    if (op.path === "team" && data) { for (const k of ["name", "email", "uid", "lead", "fiosRole"]) delete data[k]; }
+    if (op.path === "engagements" && data) { for (const k of ["org", "stage", "fiosStage", "value", "outcome", "archived", "nextStep", "nextStepDate", "created", "fios"]) delete data[k]; }
+    const cur = (await pool.query("SELECT data, deleted, t FROM hub_docs WHERE path = $1 AND id = $2", [op.path, op.id])).rows[0];
+    const stored = cur && !cur.deleted ? cur.data : null;
+    const prev = op.path === "tasks" || op.path === "goals" ? stored : null;
+    let merged = false;
+    // Out-of-date copy: keep what changed since, apply only this person's edits.
+    const base = Number(op.base);
+    if (data && stored && op.base != null && Number.isFinite(base) && Number(cur.t) > base && Array.isArray(op.changed)) {
+      data = mergeStale(stored, data, op.changed.map(String).filter((k) => k !== "id" && k !== "link" && k !== "_src"));
+      merged = true;
+    }
+    // Messages: only the author edits or deletes the words; others can mark a decision, pin, or turn it into a task.
+    if (op.path === "msgs" && stored && stored.by && stored.by !== me.uid && !opts.restore) {
+      if (!data) { if (!me.owner) return { refused: true }; }
+      else { const keep = Object.assign({}, stored); for (const k of MSG_SHARED_KEYS) { if (k in data) keep[k] = data[k]; else delete keep[k]; } data = keep; }
+    }
+    if (op.path === "msgs" && data && !stored) data.by = me.uid;
+    if (op.path === "reacts" && String(op.id).split(".")[1] !== me.uid) return { refused: true };
+    if (data && prev && prev.link) {
+      data.link = prev.link;
+      if (data.link.kind === "deal") data.section = prev.section; // a deal's stage changes in Pipeline & Money
+      try { const fp = await writeBack(pool, op.path, prev, data); if (fp !== null) data._src = fp; } catch (e) { console.error("hub write-back", e.message); }
+    } else if (data) { delete data.link; delete data._src; }
+    // Deleting a mirrored task keeps its link, so the mirror doesn't bring it back until the source changes.
+    const keepTomb = !data && prev && prev.link ? { link: prev.link, _src: prev._src || "" } : null;
+    const toStore = data || keepTomb;
+    if (!data && !stored && !keepTomb && !cur) return { t, act: null, noop: true };
+    await pool.query(`INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = EXCLUDED.deleted, t = EXCLUDED.t, by_user = EXCLUDED.by_user`,
+      [op.path, op.id, toStore, !data, t, me.uid]);
+    let act = null;
+    if (LOGGED.has(op.path.split("/")[0]) && !same(stored, data)) {
+      const keys = [...new Set([...Object.keys(stored || {}), ...Object.keys(data || {})])].filter((k) => !same((stored || {})[k], (data || {})[k]));
+      const action = opts.restore ? "restore" : !stored ? "create" : !data ? "delete" : "update";
+      const r = await pool.query("INSERT INTO hub_activity (by_user, path, doc_id, action, changed, merged, before, after) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+        [me.uid, op.path, op.id, action, keys.slice(0, 40), merged, stored, data]);
+      act = Number(r.rows[0].id);
+    }
+    let time = 0;
+    if (op.path === "tasks" && data) { try { time = await syncTime(prev, data, op.id); } catch (e) { console.error("hub time sync", e.message); } }
+    announce();
+    return { t, act, merged, time };
+  }
+
   app.post("/api/hub/write", requireAuth, async (req, res) => {
     try {
       const me = await meFor(req.session);
@@ -395,29 +512,64 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
         if (op.data != null && (typeof op.data !== "object" || Array.isArray(op.data))) return res.status(400).json({ error: "A document must be an object." });
         if (op.data != null && JSON.stringify(op.data).length > MAX_DOC) return res.status(413).json({ error: "That document is too large." });
       }
-      let t = 0, time = 0;
+      let t = 0, time = 0, merged = 0;
+      const results = [];
       for (const op of ops) {
-        t = nextT();
-        let data = op.data == null ? null : Object.assign({}, op.data);
-        if (data) { delete data.id; }
-        if (op.path === "team" && data) { for (const k of ["name", "email", "uid", "lead", "fiosRole"]) delete data[k]; }
-        if (op.path === "engagements" && data) { for (const k of ["org", "stage", "fiosStage", "value", "outcome", "archived", "nextStep", "nextStepDate", "created", "fios"]) delete data[k]; }
-        let prev = null;
-        if (op.path === "tasks" || op.path === "goals") { const p = await pool.query("SELECT data, deleted FROM hub_docs WHERE path = $1 AND id = $2", [op.path, op.id]); prev = p.rows[0] && !p.rows[0].deleted ? p.rows[0].data : null; }
-        if (data && prev && prev.link) {
-          data.link = prev.link;
-          if (data.link.kind === "deal") data.section = prev.section; // a deal's stage changes in Pipeline & Money
-          try { const fp = await writeBack(pool, op.path, prev, data); if (fp !== null) data._src = fp; } catch (e) { console.error("hub write-back", e.message); }
-        } else if (data) { delete data.link; delete data._src; }
-        // Deleting a mirrored task keeps its link, so the mirror doesn't bring it back until the source changes.
-        const stored = data || (prev && prev.link ? { link: prev.link, _src: prev._src || "" } : null);
-        await pool.query(`INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = EXCLUDED.deleted, t = EXCLUDED.t, by_user = EXCLUDED.by_user`,
-          [op.path, op.id, stored, !data, t, me.uid]);
-        if (op.path === "tasks" && data) { try { time += await syncTime(prev, data, op.id); } catch (e) { console.error("hub time sync", e.message); } }
+        const r = await applyOp(op, me);
+        if (r.refused) { results.push({ path: op.path, id: op.id, refused: true }); continue; }
+        t = Math.max(t, r.t || 0); time += r.time || 0; if (r.merged) merged++;
+        results.push({ path: op.path, id: op.id, t: r.t, act: r.act, merged: !!r.merged });
       }
-      res.json({ ok: true, t, timeEntries: time });
+      res.json({ ok: true, t, timeEntries: time, merged, results });
     } catch (e) { console.error("hub write", e); res.status(500).json({ error: "Couldn't save. Try again." }); }
+  });
+
+  // ---------- history, undo and restore ----------
+  const actRow = (r) => ({ id: Number(r.id), at: r.at, by: r.by_user, path: r.path, docId: r.doc_id, action: r.action, changed: r.changed || [], merged: r.merged,
+    title: ((r.after || r.before || {}).title || (r.after || r.before || {}).name || String((r.after || r.before || {}).text || "").slice(0, 80) || r.doc_id) });
+  app.get("/api/hub/activity", requireAuth, async (req, res) => {
+    try {
+      const me = await meFor(req.session);
+      if (me.role === "board") return res.status(403).json({ error: "Board accounts see history in the operations app." });
+      let r;
+      if (req.query.path && req.query.id) {
+        r = await pool.query("SELECT id, at, by_user, path, doc_id, action, changed, merged, before, after FROM hub_activity WHERE path = $1 AND doc_id = $2 ORDER BY id DESC LIMIT 60", [String(req.query.path), String(req.query.id)]);
+      } else if (req.query.deleted) {
+        r = await pool.query(`SELECT a.id, a.at, a.by_user, a.path, a.doc_id, a.action, a.changed, a.merged, a.before, a.after FROM hub_activity a
+          JOIN hub_docs d ON d.path = a.path AND d.id = a.doc_id AND d.deleted
+          WHERE a.action = 'delete' AND a.path IN ('tasks', 'projects', 'goals', 'msgs') AND a.at > now() - interval '30 days' ORDER BY a.id DESC LIMIT 60`);
+      } else {
+        r = await pool.query("SELECT id, at, by_user, path, doc_id, action, changed, merged, before, after FROM hub_activity ORDER BY id DESC LIMIT 100");
+      }
+      res.json({ ok: true, items: r.rows.map(actRow) });
+    } catch (e) { console.error("hub activity", e); res.status(500).json({ error: "Couldn't load the history." }); }
+  });
+  // Put a document back the way it was just before one logged change (undo), or bring back a deleted one.
+  app.post("/api/hub/restore", requireAuth, async (req, res) => {
+    try {
+      const me = await meFor(req.session);
+      if (me.role === "board") return res.status(403).json({ error: "You can't change that." });
+      const a = (await pool.query("SELECT * FROM hub_activity WHERE id = $1", [Number(req.body && req.body.act) || 0])).rows[0];
+      if (!a) return res.status(404).json({ error: "That change isn't in the history." });
+      if (!canWrite(a.path, a.doc_id, me)) return res.status(403).json({ error: "You can't change that." });
+      const r = await applyOp({ path: a.path, id: a.doc_id, data: a.before }, me, { restore: true });
+      // Undoing a deleted task brings back the messages deleted with it in the same minute.
+      res.json({ ok: true, t: r.t, act: r.act, path: a.path, id: a.doc_id, back: a.before != null });
+    } catch (e) { console.error("hub restore", e); res.status(500).json({ error: "Couldn't restore that." }); }
+  });
+
+  // ---------- live updates ----------
+  // Open pages hold this stream; any saved change tells them to sync at once.
+  let streams = 0;
+  app.get("/api/hub/stream", requireAuth, (req, res) => {
+    if (streams >= 200) return res.status(503).end();
+    streams++;
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+    res.write("retry: 5000\n\n");
+    const onChange = () => res.write("event: change\ndata: " + Date.now() + "\n\n");
+    const beat = setInterval(() => res.write(": keep-alive\n\n"), 25000);
+    changes.on("change", onChange);
+    req.on("close", () => { streams--; clearInterval(beat); changes.removeListener("change", onChange); });
   });
 
   // ---------- my work, for the operations app's Today page ----------

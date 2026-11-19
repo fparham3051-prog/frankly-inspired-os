@@ -4,13 +4,13 @@ function render(){
   const dc = drafts().length;
   const cc = S.canCoach ? team().filter(m=>m.id!==S.me && signals(m.id).sup.length).length : 0;
   const ac = myAlerts().filter(n=>!n.read).length;
-  const counts = {today:ac, outbox:dc, coaching:cc};
-  const groups = [{name:'My day', v:[['today','My day']]},{name:cap(LBL.entities), v:[['pipeline','Pipeline'],['revenue','Revenue'],['outbox','Outbox']]},{name:'Projects', v:[['projects','Portfolio'],['workload','Workload'],['goals','Goals'],['dashboards','Dashboards'],['automations','Rules'],['request','Requests'],['clientview','Client status']]},{name:'Work', v:[['board','Team board'],['calendar','Calendar']]},{name:'People', v:[['coaching','Coaching'],['team','Team']]},{name:'Insights', v:[['insights','Work insights'],['benchmarks','Benchmarks'],['health','Product health']]},{name:'Setup', v:[['setup','Workspace'],['playbooks','Playbooks'],['privacy','Privacy & data'],['usability','Usability tests']]}];
+  const counts = {inbox:ac, outbox:dc, coaching:cc};
+  const groups = [{name:'My day', v:[['today','My day'],['inbox','Inbox']]},{name:cap(LBL.entities), v:[['pipeline','Pipeline'],['revenue','Revenue'],['outbox','Outbox']]},{name:'Projects', v:[['projects','Portfolio'],['workload','Workload'],['goals','Goals'],['dashboards','Dashboards'],['automations','Rules'],['request','Requests'],['clientview','Client status']]},{name:'Work', v:[['board','Team board'],['calendar','Calendar']]},{name:'People', v:[['coaching','Coaching'],['team','Team']]},{name:'Insights', v:[['insights','Work insights'],['benchmarks','Benchmarks'],['health','Product health']]},{name:'Setup', v:[['setup','Workspace'],['playbooks','Playbooks'],['privacy','Privacy & data'],['usability','Usability tests']]}];
   if(window.FLOWHUB_HOST==='fios'){ groups.splice(groups.findIndex(x=>x.v.some(y=>y[0]==='pipeline')),1); groups.forEach(x=>{ x.v = x.v.filter(y=>y[0]!=='playbooks'); }); }
   const gv = S.view==='project' ? 'projects' : S.view; const g = groups.find(x=>x.v.some(y=>y[0]===gv)) || groups[0];
   $('#tabs').innerHTML = groups.map(x => { const n = x.v.reduce((a,y)=>a+(counts[y[0]]||0),0); return `<a href="#${x.v[0][0]}" aria-current="${x===g?'page':'false'}">${esc(x.name)}${n?` <span class="badge">${n}</span>`:''}</a>`; }).join('');
   $('#subnav').innerHTML = g.v.length>1 ? `<div class="seg" role="group" aria-label="${esc(g.name)} views">${g.v.map(([id,l])=>`<a href="#${id}" ${S.view===id?'aria-current="page"':''} class="segl">${esc(l)}${counts[id]?` <span class="badge">${counts[id]}</span>`:''}</a>`).join('')}</div>` : '';
-  const v = {today:viewToday, health:viewHealth, setup:viewSetup, privacy:viewPrivacy, revenue:viewRevenue, insights:viewInsights, coaching:viewCoaching, board:viewBoard, calendar:viewCalendar, pipeline:viewPipeline, outbox:viewOutbox, playbooks:viewRecipes, team:viewTeam, projects:viewProjects, project:viewProject, workload:viewWorkload, goals:viewGoals, dashboards:viewDashboards, automations:viewAutomations, request:viewRequest, clientview:viewClientStatus, benchmarks:viewBenchmarks, usability:viewUsability}[S.view] || viewToday;
+  const v = {today:viewToday, health:viewHealth, setup:viewSetup, privacy:viewPrivacy, revenue:viewRevenue, insights:viewInsights, coaching:viewCoaching, board:viewBoard, calendar:viewCalendar, pipeline:viewPipeline, outbox:viewOutbox, playbooks:viewRecipes, team:viewTeam, projects:viewProjects, project:viewProject, workload:viewWorkload, goals:viewGoals, dashboards:viewDashboards, automations:viewAutomations, request:viewRequest, clientview:viewClientStatus, benchmarks:viewBenchmarks, usability:viewUsability, inbox:typeof viewInbox==='function' ? viewInbox : viewToday}[S.view] || viewToday;
   $('#main').innerHTML = v();
   if(S.drawer) renderDrawer();
   if(S.taskOpen && $('#taskDlg').open && !typing()) renderTask();
@@ -25,7 +25,7 @@ function tcard(t, {showOwner=true, showEng=true}={}){
   if(s==='assigned') seen = `Not opened yet · assigned ${ago(t.history && t.history.length ? t.history[t.history.length-1].at : t.created)} ago`;
   else if(t.seenAt && s!=='done') seen = `Seen by ${esc(first(t.owner))} ${fmtWhen(t.seenAt)}`;
   const lastBlock = s==='blocked' && t.history ? [...t.history].reverse().find(h=>h.to==='blocked') : null;
-  const waits = openDeps(t); const cl = t.checklist||[]; const nc = (t.comments||[]).length;
+  const waits = openDeps(t); const cl = t.checklist||[]; const nc = typeof msgCount==='function' ? msgCount('task:'+t.id) : (t.comments||[]).length;
   return `<div class="tcard ${s==='done'?'done':''}" style="border-left-color:${owner?esc(owner.color):'var(--line)'}" draggable="true" data-drag="task" data-id="${esc(t.id)}">
     <div class="tt" data-act="task" data-id="${esc(t.id)}" role="button" tabindex="0">${esc(t.title)}</div>
     ${waits.length ? `<div class="small" style="color:var(--warn)">Waiting on: ${waits.map(w=>esc(w.title)+(w.owner?` (${esc(first(w.owner))})`:'')).join('; ')}</div>` : ''}
@@ -362,6 +362,7 @@ function renderDrawer(){
     <div><div class="spread" style="margin-bottom:8px"><h3>Messages</h3><button class="btn sm" data-act="client-report" data-id="${esc(e.id)}">Draft client status update</button></div>
       ${msgs.length ? msgs.map(m=>`<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)"><b>${m.status==='sent'?'Sent':'Draft'}</b> · ${esc(laneName(m.lane))} · ${esc(m.subj)}</div>`).join('') : '<div class="empty">None yet.</div>'}
       ${msgs.some(m=>m.status==='draft') ? '<p style="margin-top:8px"><a href="#outbox" data-act="close-drawer">Open the Outbox to send drafts</a></p>' : ''}</div>
+    ${typeof talkBlock==='function' ? talkBlock('client:'+e.id, 'Discussion about this client') : ''}
     ${retroBlock(e)}
     <div><h3 style="margin-bottom:10px">Timeline</h3><div class="log">${log.map(l=>`<div data-k="${esc(l.k==='block'?'stage':l.k)}"><time>${fmtWhen(l.at)}</time>${esc(l.t)}</div>`).join('') || '<div>No activity yet.</div>'}</div></div>
     <div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:14px">
@@ -411,9 +412,7 @@ function renderTask(){
     <div class="panel" style="padding:12px;display:grid;gap:8px"><div class="spread"><h3>Checklist</h3><span class="small muted">${(t.checklist||[]).filter(c=>c.done).length}/${(t.checklist||[]).length}</span></div>
       ${(t.checklist||[]).map((c,i)=>`<div class="row" style="justify-content:space-between"><label class="switch"><input type="checkbox" id="cl-${i}" data-cl="${i}" data-id="${esc(t.id)}" ${c.done?'checked':''}>${esc(c.t)}</label><button class="btn sm ghost" data-act="cl-del" data-id="${esc(t.id)}" data-i="${i}" aria-label="Remove item">✕</button></div>`).join('')}
       <form class="row" id="clForm" data-id="${esc(t.id)}"><input id="cl-new" placeholder="Add a step" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg)"><button class="btn sm" type="submit">Add</button></form></div>
-    <div class="panel" style="padding:12px;display:grid;gap:8px"><h3>Comments</h3>
-      ${(t.comments||[]).map(c=>`<div class="small" style="border-bottom:1px solid var(--line);padding-bottom:6px">${av(c.by)} <b>${esc(mname(c.by))}</b> <span class="muted">${fmtWhen(c.at)}</span><div style="margin-top:3px">${esc(c.text).replace(/@(\w+)/g,'<b style="color:var(--navy)">@$1</b>')}</div></div>`).join('') || '<div class="small muted">No comments yet. Type @ and a first name to notify someone.</div>'}
-      <form class="row" id="cmForm" data-id="${esc(t.id)}"><input id="cm-new" placeholder="Comment… (@${esc(team().filter(m=>m.id!==S.me).map(m=>first(m.id))[0]||'Name')} to notify)" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg)"><button class="btn sm primary" type="submit">Post</button></form></div>
+    ${typeof talkPanel==='function' ? talkPanel(t) : ''}
     <div class="panel" style="padding:12px;display:grid;gap:8px"><h3>Links</h3>
       ${(t.links||[]).map((l,i)=>`<div class="row" style="justify-content:space-between"><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label||l.url)}</a><button class="btn sm ghost" data-act="link-del" data-id="${esc(t.id)}" data-i="${i}" aria-label="Remove link">✕</button></div>`).join('') || '<div class="small muted">Link the Drive folder, the proposal doc, or the Console scorecard.</div>'}
       <form class="row" id="lkForm" data-id="${esc(t.id)}"><input id="lk-label" placeholder="Label" style="width:120px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg)"><input id="lk-url" type="url" placeholder="https://…" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg)"><button class="btn sm" type="submit">Add</button></form></div>

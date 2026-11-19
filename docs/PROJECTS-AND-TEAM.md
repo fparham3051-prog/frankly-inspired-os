@@ -107,3 +107,19 @@ clients have different ids).
 Today has a **Your tasks** card fed by `GET /api/hub/today`: your tasks in Projects & Team that are blocked, waiting on your approval, overdue, due today, or due in the next three days. Deal next steps and checklist steps are left out there because Today already has their own cards. Each row opens the task in Projects & Team (`/hub/#task/<id>`). The card also says how many projects are marked at risk or off track.
 
 When anyone opens the operations app, it also wakes the website server and InstitutionalOS (both sleep on Render's free plan), at most once every ten minutes, so the client console and AI answers are ready when you reach for them. "Open client records" on Today now signs you straight into InstitutionalOS.
+
+## Conversation, history and undo (v13)
+
+**Messages** are their own records (`msgs`), attached to a task, a project or a client (`on` = `task:<id>`, `project:<id>`, `client:<id>`). Replies point at the first message (`parent`). Anyone can react (`reacts`, id `<message>.<person>.<reaction>`), mark a message as the decision, or turn it into a task. Only the author can edit or delete the words; the server keeps the author as whoever posted. Old comments that lived inside tasks were moved into messages automatically.
+
+Where you see them: the task's **Conversation** panel, a project's **Discussion** tab (with every decision made on the project or its tasks), and **Discussion about this client** in the client drawer. **Inbox** (under My day) lists mentions, replies, decisions, assignments and approvals, with unread marks, plus **Recently deleted** (30 days) with Restore.
+
+**Saves can't erase each other.** Each save says which version it started from and which fields changed. If someone saved in between, the server applies only your fields on top of theirs (status trails and time logs keep entries from both). Saves to the same document take turns on the server.
+
+**History.** Every change to tasks, projects, goals, messages, events, dashboards, templates and rules is logged in `hub_activity` (who, when, which fields, before and after) for 180 days. A task's **History** panel lists the changes; **Undo** puts it back the way it was before that change. Deleting a task, project or goal shows an Undo bar.
+
+**Live.** Open pages hold `GET /api/hub/stream` (server-sent events); any saved change tells them to sync at once. Polling continues every 30 seconds as a fallback (4 seconds if the stream can't connect).
+
+Endpoints: `GET /api/hub/activity?path=&id=` (one document), `?deleted=1` (recently deleted), no query (latest 100); `POST /api/hub/restore {act}`; `GET /api/hub/stream`.
+
+Team list: until there is a named owner account, the shared-password sign-in (user 0) stays on the team, so adding associates doesn't turn Franklin into a "former member".

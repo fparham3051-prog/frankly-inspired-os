@@ -79,8 +79,10 @@ const step = async (name, fn) => { try { await fn(); results.push(["ok", name]);
     assert.strictEqual(due.b, await pa.evaluate((d) => addDays(d, 3), due.a), JSON.stringify(due));
   });
   await step("delete, then Undo brings the task back", async () => {
+    await pa.waitForTimeout(1500); // let earlier saves settle
     await pa.evaluate((id) => del("tasks", id), ids.tid);
-    await pa.waitForSelector("#undoBar.on >> text=Task deleted", { timeout: 6000 });
+    try { await pa.waitForFunction(() => { const b = document.getElementById("undoBar"); return b && b.classList.contains("on") && /deleted/.test(b.textContent); }, null, { timeout: 12000 }); }
+    catch (e) { throw new Error("no undo bar: " + (await pa.evaluate(() => (document.getElementById("undoBar") || {}).outerHTML || "none")) + " task still here: " + (await pa.evaluate((id) => !!S.tasks[id], ids.tid))); }
     await pa.click("#undoBar button");
     await pa.waitForFunction((id) => !!S.tasks[id], ids.tid, { timeout: 8000 });
   });

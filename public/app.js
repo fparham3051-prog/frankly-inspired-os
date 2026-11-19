@@ -1,3 +1,7 @@
+/* Errors in the operations app are reported for monitoring (Projects & Team > Setup > Connections), at most 10 per visit. */
+(function(){ var n = 0; function send(message, detail){ if(n++ >= 10 || !navigator.sendBeacon) return; try{ navigator.sendBeacon('/api/client-error', new Blob([JSON.stringify({source:'operations', message:String(message).slice(0, 500), detail:String(detail || '').slice(0, 3000), url:location.pathname + location.hash})], {type:'application/json'})); }catch(_){ } }
+  window.addEventListener('error', function(e){ if(e && e.message) send(e.message, (e.filename || '') + ':' + (e.lineno || '') + ' ' + ((e.error && e.error.stack) || '')); });
+  window.addEventListener('unhandledrejection', function(e){ var r = e && e.reason; send('Unhandled: ' + ((r && r.message) || r), r && r.stack); }); })();
 (function(){
   "use strict";
 

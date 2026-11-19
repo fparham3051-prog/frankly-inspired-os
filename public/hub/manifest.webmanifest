@@ -1,0 +1,14 @@
+{
+  "name": "Projects & Team · Frankly Inspired",
+  "short_name": "Projects & Team",
+  "id": "/hub/",
+  "start_url": "/hub/#inbox",
+  "scope": "/hub/",
+  "display": "standalone",
+  "background_color": "#11233D",
+  "theme_color": "#11233D",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -116,10 +116,31 @@ Where you see them: the task's **Conversation** panel, a project's **Discussion*
 
 **Saves can't erase each other.** Each save says which version it started from and which fields changed. If someone saved in between, the server applies only your fields on top of theirs (status trails and time logs keep entries from both). Saves to the same document take turns on the server.
 
-**History.** Every change to tasks, projects, goals, messages, events, dashboards, templates and rules is logged in `hub_activity` (who, when, which fields, before and after) for 180 days. A task's **History** panel lists the changes; **Undo** puts it back the way it was before that change. Deleting a task, project or goal shows an Undo bar.
+**History.** Every change to tasks, projects, goals, messages, events, dashboards, templates and rules is logged in `hub_activity` (who, when, which fields, before and after) for 180 days. A task's **History** panel lists the changes; **Undo** puts it back the way it was before that change. Deleting a task, project or goal shows an Undo bar (only deletions do; other changes are undone from History).
 
 **Live.** Open pages hold `GET /api/hub/stream` (server-sent events); any saved change tells them to sync at once. Polling continues every 30 seconds as a fallback (4 seconds if the stream can't connect).
 
 Endpoints: `GET /api/hub/activity?path=&id=` (one document), `?deleted=1` (recently deleted), no query (latest 100); `POST /api/hub/restore {act}`; `GET /api/hub/stream`.
 
 Team list: until there is a named owner account, the shared-password sign-in (user 0) stays on the team, so adding associates doesn't turn Franklin into a "former member".
+
+## Connections, notifications and monitoring (v14, hubplus.js)
+
+**Phone notifications.** Inbox → Turn on notifications subscribes this device (Web Push; keys are made once and kept in `app_settings.hub_vapid`). Every new Inbox item for a person is pushed to their devices; tapping opens the task or project. Service worker: `/hub/sw.js` (notifications only, no caching). On iPhone, add Projects & Team to the Home Screen first (`/hub/manifest.webmanifest`).
+
+**Email replies.** When a mention goes out by email from the operations app, the Gmail thread is remembered (`hub_mail`). Every three minutes while the app is awake, and on each automation tick, new answers in those threads are posted into the conversation (`via: "email"`, quoted text cut off) and the person who sent the mention gets an Inbox item.
+
+**Search.** The search box also asks `GET /api/hub/search?q=`, which looks through every task, project, goal and message (results under "Everywhere").
+
+**API.** Setup → Connections → Make a token. Send `Authorization: Bearer fios_…` to:
+`GET /api/v1/me` · `GET /api/v1/tasks?project=&status=&owner=&updated_since=` · `GET /api/v1/tasks/:id` · `POST /api/v1/tasks {title, due, owner, project, section, status, notes}` · `PATCH /api/v1/tasks/:id` · `GET /api/v1/projects` · `GET /api/v1/messages?on=task:<id>` · `POST /api/v1/messages {on, text, parent}`. Writes go through the same rules, merge and history as the app. Only a hash of each token is kept; revoke any time.
+
+**Webhooks.** Setup → Connections → Add webhook (owner). Events: task.created, task.updated, task.completed, task.deleted, message.created, decision.recorded, project.created, project.updated, project.deleted, goal.updated. A Slack incoming-webhook address gets a readable line; anything else gets JSON with `X-FIOS-Event` and `X-FIOS-Signature: sha256=<HMAC of the body with the secret>`.
+
+**Monitoring.** Browser errors (both apps), server 5xx responses and unhandled failures go to `app_errors` (30 days). Setup → Connections shows them with today's and this week's counts. Five or more in an hour emails the owner (at most every six hours). `GET /api/health` is for uptime checkers.
+
+**Security policy.** Pages send `Content-Security-Policy-Report-Only` (see server.js). Nothing is blocked yet; anything the policy would block is reported to `/api/csp-report` and listed in Connections. Inline scripts were moved into files, so the browser test run reports none. Next step: switch the header to `Content-Security-Policy` after a clean week in production.
+
+**Dependencies.** Each "waits for" link has a type (after it finishes / once it starts) and a lag in days (`t.depOpts[id] = {type, lag}`). Moving dates, the "waiting on" check and the critical path all use them.
+
+**Browser tests.** `test/e2e.js` runs two people (desktop and phone) through the app in Chrome; GitHub runs it on every push (`.github/workflows/e2e.yml`).

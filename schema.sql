@@ -1074,6 +1074,57 @@ CREATE TABLE IF NOT EXISTS hub_activity (
 CREATE INDEX IF NOT EXISTS hub_activity_doc ON hub_activity (path, doc_id, id DESC);
 CREATE INDEX IF NOT EXISTS hub_activity_at ON hub_activity (at);
 
+-- Email threads from Projects & Team, so emailed answers come back into the conversation.
+CREATE TABLE IF NOT EXISTS hub_mail (
+  thread_id TEXT PRIMARY KEY,
+  account TEXT DEFAULT '',
+  on_ref TEXT NOT NULL,
+  parent TEXT DEFAULT '',
+  by_user TEXT DEFAULT '',
+  to_email TEXT DEFAULT '',
+  sent_at TIMESTAMPTZ DEFAULT now(),
+  seen JSONB DEFAULT '[]'
+);
+-- Phone and browser notification subscriptions (Web Push), one per device.
+CREATE TABLE IF NOT EXISTS hub_push (
+  endpoint TEXT PRIMARY KEY,
+  uid TEXT NOT NULL,
+  sub JSONB NOT NULL,
+  ua TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+-- Personal API tokens (only a hash is kept) and outgoing webhooks.
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  uid TEXT NOT NULL,
+  name TEXT DEFAULT '',
+  hash TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  revoked BOOLEAN DEFAULT false
+);
+CREATE TABLE IF NOT EXISTS hub_webhooks (
+  id TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  events TEXT[] DEFAULT '{}',
+  secret TEXT NOT NULL,
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  last_status TEXT DEFAULT '',
+  last_at TIMESTAMPTZ
+);
+-- Errors seen in the browser or on the server, for monitoring and alerts.
+CREATE TABLE IF NOT EXISTS app_errors (
+  id BIGSERIAL PRIMARY KEY,
+  at TIMESTAMPTZ DEFAULT now(),
+  source TEXT DEFAULT '',
+  message TEXT DEFAULT '',
+  detail TEXT DEFAULT '',
+  url TEXT DEFAULT '',
+  uid TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS app_errors_at ON app_errors (at);
+
 CREATE TABLE IF NOT EXISTS hub_files (
   id TEXT PRIMARY KEY,
   name TEXT DEFAULT '',

@@ -256,7 +256,8 @@ function viewRevenue(){
 
 /* ---------- v5: task depth ---------- */
 const depsOf = t => (t.needs||[]).map(id=>S.tasks[id]).filter(Boolean);
-const openDeps = t => depsOf(t).filter(isOpen);
+// A start-to-start link (t.depOpts[id].type === 'ss') only waits until the other task has started.
+const openDeps = t => depsOf(t).filter(d => ((t.depOpts||{})[d.id]||{}).type === 'ss' ? !['in_progress','review','done','blocked'].includes(st(d)) : isOpen(d));
 const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function addComment(id, text){
   const t = S.tasks[id]; text = (text||'').trim(); if(!t || !text) return;

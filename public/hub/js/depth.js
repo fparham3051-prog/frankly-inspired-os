@@ -79,7 +79,8 @@ function openOn(on, msgId){
   const jump = () => setTimeout(() => { const el = document.getElementById('msg-' + msgId); if(el){ el.scrollIntoView({block:'center'}); el.style.outline = '2px solid var(--accent)'; setTimeout(() => el.style.outline = '', 2000); } }, 250);
   if(tg.kind === 'task'){ openTask(tg.id); jump(); }
   else if(tg.kind === 'project'){ openProject(tg.id, 'talk'); jump(); }
-  else if(tg.kind === 'client'){ openDrawer(tg.id); jump(); }
+  else if(tg.kind === 'with' && window.FLOWHUB_HOST === 'fios'){ location.href = '/?workspace=' + encodeURIComponent(tg.id); }
+  else if(tg.kind === 'client' || tg.kind === 'with'){ openDrawer(tg.id); jump(); }
 }
 
 /* ---------- Connections: API tokens, webhooks, monitoring ---------- */

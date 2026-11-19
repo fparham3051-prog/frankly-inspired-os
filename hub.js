@@ -674,7 +674,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
       const r = await G().send(pool, { to: to.join(", "), subject: String(req.body.subject || "").slice(0, 300), body: String(req.body.body || "").slice(0, 20000) });
       // A mention or reply sent by email: remember the thread, so an emailed answer comes back into the conversation.
       const on = String((req.body && req.body.on) || "");
-      if (on && r.threadId && /^(task|project|client):[A-Za-z0-9_.-]{1,120}$/.test(on)) {
+      if (on && r.threadId && /^(task|project|client|with):[A-Za-z0-9_.-]{1,120}$/.test(on)) {
         const me = await meFor(req.session);
         await pool.query(`INSERT INTO hub_mail (thread_id, account, on_ref, parent, by_user, to_email, sent_at) VALUES ($1, $2, $3, $4, $5, $6, now())
           ON CONFLICT (thread_id) DO UPDATE SET sent_at = now()`, [r.threadId, r.account || "", on, String(req.body.parent || "").slice(0, 120), me.uid, to.join(", ")]).catch((e) => console.error("hub mail", e.message));

@@ -20,6 +20,7 @@ function talkTarget(on){
   if(k === 'task'){ const t = S.tasks[id]; return t ? {kind:k, id, title:t.title, eng:t.eng || '', project:t.project || '', people:[t.owner, t.assignedBy, ...(t.assignees || [])]} : null; }
   if(k === 'project'){ const p = S.projects[id]; return p ? {kind:k, id, title:p.name, eng:p.eng || '', project:id, people:[p.owner]} : null; }
   if(k === 'client'){ const e = S.engagements[id]; return e ? {kind:k, id, title:e.org, eng:id, project:'', people:[e.lead]} : null; }
+  if(k === 'with'){ const e = S.engagements[id]; return e ? {kind:k, id, title:e.org + ' (with the client)', eng:id, project:'', people:[e.lead]} : null; }
   return null;
 }
 function notifyOn(to, text, on, email, parent){
@@ -95,7 +96,7 @@ function msgHtml(m, reply){
   const editing = S.talkEdit === m.id;
   const tref = m.taskRef && S.tasks[m.taskRef];
   return `<div class="talk-msg${reply ? ' reply' : ''}${m.decision ? ' decided' : ''}" id="msg-${esc(m.id)}">
-    <div class="talk-head">${sys ? '<span class="av empty" title="Automation">⚙</span>' : m.guest ? '<span class="av empty" title="Replied by email">@</span>' : av(m.by)} <b>${esc(sys ? 'Automation' : m.guest || mname(m.by))}</b>${m.via === 'email' ? ' <span class="small muted">by email</span>' : m.via === 'api' ? ' <span class="small muted">via API</span>' : ''} <span class="muted small">${fmtWhen(m.at)}${m.edited ? ' · edited' : ''}</span>${m.decision ? ` <span class="flag" style="margin:0" title="Recorded by ${esc(mname(m.decision.by))}">Decision</span>` : ''}</div>
+    <div class="talk-head">${sys ? '<span class="av empty" title="Automation">⚙</span>' : m.guest ? '<span class="av empty" title="Replied by email">@</span>' : av(m.by)} <b>${esc(sys ? 'Automation' : m.guest || mname(m.by))}</b>${m.via === 'email' ? ' <span class="small muted">by email</span>' : m.via === 'api' ? ' <span class="small muted">via API</span>' : m.via === 'client' ? ' <span class="small muted">from the client workspace</span>' : ''} <span class="muted small">${fmtWhen(m.at)}${m.edited ? ' · edited' : ''}</span>${m.decision ? ` <span class="flag" style="margin:0" title="Recorded by ${esc(mname(m.decision.by))}">Decision</span>` : ''}</div>
     ${editing ? `<form class="talk-form" id="talkedit-${esc(m.id)}" data-talkedit="${esc(m.id)}"><textarea aria-label="Edit message" rows="2">${esc(m.text)}</textarea><span class="row"><button class="btn sm primary" type="submit">Save</button><button type="button" class="btn sm ghost" data-talk="edit-cancel">Cancel</button></span></form>`
       : `<div class="talk-body">${talkText(m.text)}</div>`}
     <div class="talk-acts">${chips}
@@ -187,7 +188,8 @@ function inboxOpen(id){
   if(!n.read) put('notifs', id, {...n, read:true});
   const tg = n.on ? talkTarget(n.on) : null;
   if(tg && tg.kind === 'project'){ S.pTab = 'talk'; openProject(tg.id, 'talk'); return; }
-  if(tg && tg.kind === 'client'){ openDrawer(tg.id); return; }
+  if(tg && tg.kind === 'with' && window.FLOWHUB_HOST === 'fios'){ location.href = '/?workspace=' + encodeURIComponent(tg.id); return; }
+  if(tg && (tg.kind === 'client' || tg.kind === 'with')){ openDrawer(tg.id); return; }
   const tid = tg ? tg.id : n.task; if(tid && S.tasks[tid]){ openTask(tid); safeRender(); return; }
   if(n.eng && S.engagements[n.eng]) openDrawer(n.eng); else safeRender();
 }

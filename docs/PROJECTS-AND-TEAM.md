@@ -152,3 +152,19 @@ Team list: until there is a named owner account, the shared-password sign-in (us
 - **Calendar**: the events the Morning brief posts each weekday (`POST /api/admin/week-events`) also appear on the Projects & Team calendar (`events/fios-cal-*`, type `gcal`) and in the morning summary.
 - **Automation health** now tracks every scheduled job: checklist automation, nightly backup, the daily systems check, both reminder jobs, the market scan and the Morning brief.
 - A mirrored record that no longer needs doing (its source returns nothing) now leaves the hub lists, for every kind.
+
+## Client workspace and outcomes report
+
+**Pipeline & Money → Workspace** on any deal opens that client's workspace screen.
+
+**Links.** Make a private link for each person at the client (name, and an email if you want the "Email it" button). The link is the key: no account or password. Only a hash of the link is stored, so copy it when it's shown. Revoke a link and it stops working at once. You can see when each link was last opened.
+
+**What the client sees** at `/client/<link>`:
+- Overview: their 90-Day Improvement Plan (target, actions done, the next action, review dates) from InstitutionalOS, and a button to their Diagnostic report.
+- Work: the projects linked to their deal in Projects & Team, with each task's status in plain words. To keep a linked project private, untick "they see this project" in its settings.
+- Conversation: messages between them and your team. This is separate from your team's own "Discussion about this client", which they never see. When a client writes, the account lead (or the owner) gets an Inbox item and a phone notification.
+- Outcomes: the outcomes report. It covers the constraint, the target, plan actions done, scores at the Diagnostic against today, sessions delivered, tasks done, hours of support and decisions made. "Print or save as PDF" gives a clean copy.
+
+**Your side.** Answer in the same conversation from the Workspace screen. "Mark as the decision" records the decision; decisions show in the report. Use **Preview** and **Outcomes report** to see exactly what the client sees.
+
+**Where the scores come from.** InstitutionalOS sends the before-and-after comparison with every client sync. It appears once a client has been rescored on a later day than their Diagnostic.

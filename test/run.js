@@ -1287,6 +1287,72 @@ async function t(name, fn) {
     assert.notStrictEqual(out.mail.via, "gmail");
     assert.strictEqual((await req("owner1", "GET", "/api/gmail/status")).data.accounts.length, 0);
   });
+  // ---------- Client workspace and outcomes report ----------
+  await t("client workspace: a private link shows only that client's shared work, plan and outcomes", async () => {
+    const deal = (await req("owner1", "POST", "/api/pipeline", { name: "Jo Rivera", org: "Harbor Literacy", stage: "contracted" })).data.id;
+    const other = (await req("owner1", "POST", "/api/pipeline", { name: "Ann Other", org: "Other Org", stage: "contracted" })).data.id;
+    await Q.query("UPDATE pipeline SET ios_org_id = 777 WHERE id = $1", [deal]);
+    const sync = await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 61, decision: "Build", record: { verifiedConstraint: "Revenue depends on one funder" },
+      plan: { startDate: "2026-09-01", target: "Three new funders in conversation", actionsTotal: 6, actionsDone: 4, actionsBlocked: 1, nextAction: { text: "Send the board the funder list" } },
+      comparison: { baselineDate: "2026-08-20", baselineLabel: "At the Diagnostic", overallBefore: 48, overallAfter: 61, overallChange: 13, dimensions: [{ name: "Revenue and Financial Health", before: 30, after: 52, change: 22 }] } }, { "X-Admin-Token": "test-token" });
+    assert.strictEqual(sync.status, 200, JSON.stringify(sync.data));
+    await hubW("owner1", [
+      { path: "projects", id: "cw-shared", data: { name: "Funder pipeline build", eng: deal, sections: [{ id: "s1", name: "To do" }] } },
+      { path: "projects", id: "cw-hidden", data: { name: "Internal pricing notes", eng: deal, clientHidden: true, sections: [] } },
+      { path: "projects", id: "cw-other", data: { name: "Other client work", eng: other, sections: [] } },
+      { path: "tasks", id: "cw-t1", data: { title: "List 20 aligned funders", project: "cw-shared", section: "s1", status: "done", done: true } },
+      { path: "tasks", id: "cw-t2", data: { title: "Draft the case for support", project: "cw-shared", section: "s1", status: "in_progress" } },
+      { path: "tasks", id: "cw-t3", data: { title: "Secret margin math", project: "cw-hidden", status: "seen" } },
+      { path: "msgs", id: "cw-m-internal", data: { on: "client:" + deal, text: "Internal: they may churn", at: new Date().toISOString() } },
+      { path: "msgs", id: "cw-m-shared", data: { on: "with:" + deal, text: "We agreed to focus on family foundations first.", at: new Date().toISOString(), decision: { by: "u1", at: new Date().toISOString() } } }
+    ]);
+    // Board accounts can't make links; a link needs a name.
+    assert.strictEqual((await req("board", "POST", `/api/clients/${deal}/access`, { name: "Jo" })).status, 403);
+    assert.strictEqual((await req("owner1", "POST", `/api/clients/${deal}/access`, { name: "" })).status, 400);
+    const made = await req("owner1", "POST", `/api/clients/${deal}/access`, { name: "Jo Rivera", email: "jo@harbor.test" });
+    assert.strictEqual(made.status, 200); assert.match(made.data.url, /\/client\/[A-Za-z0-9_-]{32,}$/);
+    const token = made.data.url.split("/client/")[1];
+    const stored = (await Q.query("SELECT token_hash FROM client_access WHERE id = $1", [made.data.id])).rows[0];
+    assert.notStrictEqual(stored.token_hash, token, "only a hash is kept");
+    const page = await fetch(BASE + "/client/" + token);
+    assert.strictEqual(page.status, 200); assert.strictEqual(page.headers.get("referrer-policy"), "no-referrer"); assert.match(await page.text(), /client\.js/);
+    const w = (await req("anon", "GET", "/api/client/" + token)).data;
+    assert.strictEqual(w.org, "Harbor Literacy"); assert.strictEqual(w.me, "Jo Rivera");
+    assert.deepStrictEqual(w.projects.map((p) => p.name), ["Funder pipeline build"]);
+    assert.strictEqual(w.projects[0].done, 1); assert.strictEqual(w.projects[0].total, 2);
+    const all = JSON.stringify(w);
+    assert.ok(!/Secret margin|Internal pricing|they may churn|Other client/.test(all), "nothing private or from another client");
+    assert.strictEqual(w.plan.actionsDone, 4); assert.strictEqual(w.plan.next, "Send the board the funder list");
+    assert.strictEqual(w.decisions.length, 1);
+    assert.strictEqual(w.outcomes.comparison.overallChange, 13); assert.strictEqual(w.outcomes.decisions, 1); assert.strictEqual(w.outcomes.tasksDone, 1);
+    // A sync without a comparison keeps the last one.
+    await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 62 }, { "X-Admin-Token": "test-token" });
+    assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).data.outcomes.comparison.overallAfter, 61);
+    // The preview is for signed-in people only.
+    assert.strictEqual((await req("anon", "GET", `/api/clients/${deal}/workspace`)).status, 401);
+    assert.strictEqual((await req("owner1", "GET", `/api/clients/${deal}/workspace`)).data.hiddenProjects, 1);
+    // The client writes; it lands in the shared conversation, and the team hears about it.
+    const sent = await req("anon", "POST", `/api/client/${token}/message`, { text: "Can we add the Lee Foundation?" });
+    assert.strictEqual(sent.status, 200, JSON.stringify(sent.data));
+    const m = await hubDoc("owner1", "msgs", sent.data.id);
+    assert.strictEqual(m.on, "with:" + deal); assert.strictEqual(m.guest, "Jo Rivera"); assert.strictEqual(m.via, "client");
+    const n = (await Q.query("SELECT data FROM hub_docs WHERE path = 'notifs' AND id = $1", ["nc-" + sent.data.id.slice(3)])).rows[0];
+    assert.ok(n && /Harbor Literacy/.test(n.data.text));
+    assert.strictEqual((await req("anon", "POST", `/api/client/${token}/message`, { text: "x", parent: "cw-m-internal" })).status, 400, "can't reply into the private discussion");
+    // The team answers there and marks the decision; the board can only read.
+    const ans = await req("owner1", "POST", `/api/clients/${deal}/message`, { text: "Yes, adding them.", parent: sent.data.id });
+    assert.strictEqual(ans.status, 200);
+    assert.strictEqual((await req("owner1", "POST", `/api/clients/${deal}/message`, { decide: ans.data.id })).data.decision, true);
+    assert.strictEqual((await req("board", "POST", `/api/clients/${deal}/message`, { text: "hi" })).status, 403);
+    assert.strictEqual((await req("owner1", "POST", `/api/clients/${deal}/message`, { decide: "cw-m-internal" })).status, 404, "private discussion can't be touched from here");
+    const w2 = (await req("anon", "GET", "/api/client/" + token)).data;
+    assert.ok(w2.messages.some((m) => m.parent === sent.data.id && m.team && m.decision)); assert.strictEqual(w2.outcomes.decisions, 2);
+    // Revoked links stop at once; made-up links never work.
+    assert.strictEqual((await req("owner1", "DELETE", `/api/clients/access/${made.data.id}`)).status, 200);
+    assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).status, 404);
+    assert.strictEqual((await req("anon", "POST", `/api/client/${token}/message`, { text: "hi" })).status, 404);
+    assert.strictEqual((await req("anon", "GET", "/api/client/" + "A".repeat(32))).status, 404);
+  });
   await Q.end();
   mock.close();
 

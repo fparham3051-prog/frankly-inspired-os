@@ -1225,6 +1225,41 @@ async function t(name, fn) {
     await hubW("owner1", [{ path: "tasks", id: "fios-prospect-pr1", data: Object.assign({}, t2, { section: "meeting" }) }]);
     assert.strictEqual((await Q.query("SELECT status FROM prospects WHERE id = 'pr1'")).rows[0].status, "meeting");
   });
+  await t("flow: InstitutionalOS follow-ups become client tasks and clear themselves when done there", async () => {
+    const deal = (await req("owner1", "POST", "/api/pipeline", { name: "Rae Kim", org: "Harbor Arts Collective", stage: "engaged" })).data.id;
+    const plan = { startDate: "2026-10-01", active: true, weeklyReviewDue: true, lastReviewOn: "2026-11-05", actionsBlocked: 1, nextAction: { text: "Board approves budget" }, review90On: "2026-11-01", review90Done: false };
+    await Q.query("UPDATE pipeline SET ios_org_id = 4242, ios_plan = $2, ios_record = '{}' WHERE id = $1", [deal, JSON.stringify(plan)]);
+    let d = await hubS("staff");
+    const mine = d.docs.filter((x) => x.path === "tasks" && x.data && x.data.project === "fios-clients" && x.data.eng === deal && !x.data.cancelled);
+    const titles = mine.map((x) => x.data.title).sort();
+    assert.deepStrictEqual(titles, ["90-day review with Harbor Arts Collective", "Unblock 1 action for Harbor Arts Collective: Board approves budget", "Weekly check-in with Harbor Arts Collective"], JSON.stringify(titles));
+    assert.ok(d.docs.some((x) => x.path === "projects" && x.id === "fios-clients"));
+    // The check-in is logged in InstitutionalOS: that task leaves the lists.
+    await Q.query("UPDATE pipeline SET ios_plan = $2 WHERE id = $1", [deal, JSON.stringify(Object.assign({}, plan, { weeklyReviewDue: false, lastReviewOn: "2026-11-19" }))]);
+    d = await hubS("staff");
+    const ci = d.docs.find((x) => x.path === "tasks" && x.data && /Weekly check-in with Harbor/.test(x.data.title));
+    assert.ok(ci.data.cancelled, "check-in task should clear");
+    const m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(m.clients.some((c) => c.who === "Harbor Arts Collective" && /90-day review/.test(c.need)), JSON.stringify(m.clients));
+    await Q.query("UPDATE pipeline SET archived_at = $2 WHERE id = $1", [deal, new Date().toISOString()]);
+  });
+  await t("flow: the day's calendar lands on the Projects & Team calendar and in the morning summary", async () => {
+    const now = new Date(), ny = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
+    const starts = new Date(Date.parse(ny + "T15:00:00Z")).toISOString();
+    const r = await req("anon", "POST", "/api/admin/week-events", { items: [{ id: "gcal-abc123", title: "Board chair call", startsAt: starts, endsAt: new Date(Date.parse(starts) + 1800e3).toISOString(), location: "Zoom", url: "", status: "good", statusLabel: "", cta: "Details" }] }, { "X-Admin-Token": "test-token" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.data));
+    const d = await hubS("staff");
+    const ev = d.docs.find((x) => x.path === "events" && x.id === "fios-cal-gcal-abc123");
+    assert.ok(ev && ev.data.title === "Board chair call" && ev.data.date === ny && ev.data.type === "gcal", JSON.stringify(ev));
+    const m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(m.calendar.some((e) => e.title === "Board chair call"));
+    for (const k of ["projects", "nextSteps", "money", "clients", "leads", "issues", "offTrack", "drafts", "systems"]) assert.ok(k in m, "morning is missing " + k);
+    assert.ok(Array.isArray(m.systems.problems));
+    const today = (await req("owner1", "GET", "/api/hub/today")).data;
+    assert.ok("inbox" in today && "calendar" in today);
+    assert.strictEqual((await req("anon", "GET", "/api/admin/morning")).status, 401);
+    assert.strictEqual((await req("staff", "GET", "/api/morning")).status, 200);
+  });
   await t("flow: deleting a mirrored task doesn't bring it straight back", async () => {
     const iss = (await req("owner1", "POST", "/api/issues", { title: "Delete me" })).data.id;
     assert.ok(await hubDoc("staff", "tasks", "fios-issue-" + iss));

@@ -1235,7 +1235,14 @@ const JOB_REGISTRY = [
   { key: "calendar-briefing", label: "Weekly calendar prep briefing", cadenceHours: 7 * 24 + 24 },
   { key: "pipeline-review", label: "Weekly pipeline review", cadenceHours: 7 * 24 + 24 },
   { key: "gift-patterns", label: "Weekly Gift Patterns synthesis", cadenceHours: 7 * 24 + 24 },
-  { key: "prospect-research", label: "Weekly Prospect Research", cadenceHours: 7 * 24 + 24 }
+  { key: "prospect-research", label: "Weekly Prospect Research", cadenceHours: 7 * 24 + 24 },
+  { key: "checklist-automation", label: "Checklist automation, replies, and AI", cadenceHours: 9 },
+  { key: "nightly-backup", label: "Nightly backup and retention", cadenceHours: 24 + 6 },
+  { key: "systems-reconcile", label: "Daily systems check", cadenceHours: 24 + 6 },
+  { key: "recheck-reminders", label: "Daily 90-day re-check reminders", cadenceHours: 24 + 6 },
+  { key: "checkin-reminders", label: "Client weekly check-in reminders", cadenceHours: 24 + 6 },
+  { key: "market-scan", label: "Weekly DMV market scan refresh", cadenceHours: 7 * 24 + 24 },
+  { key: "morning-brief", label: "Morning brief", cadenceHours: 3 * 24 + 6 }
 ];
 
 app.get("/api/automation-status", requireAuth, async (req, res) => {
@@ -1807,7 +1814,7 @@ require("./ai-features").mount(app, { pool, requireAuth });
 require("./weekly").mount(app, { pool, requireAuth });
 require("./meetings").mount(app, { pool, requireAuth });
 require("./hub").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope });
-require("./hubplus").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME });
+require("./hubplus").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope, jobRegistry: JOB_REGISTRY });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task

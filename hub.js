@@ -174,6 +174,21 @@ async function sourceFields(pool, link) {
     const who = [g.name, g.org].filter(Boolean).join(", ") || "prospect";
     return { title: "Reach out to " + who, due: "", section: g.status, project: "fios-prospects", eng: "", done: ["contacted", "responded", "meeting"].includes(g.status) };
   }
+  if (link.kind === "client") {
+    // InstitutionalOS follow-ups on a linked deal: id = <deal id>:<checkin|review90|blocked|plan>.
+    const [dealId, which] = String(link.id).split(":");
+    const d = (await pool.query("SELECT id, org, name, ios_org_id, ios_plan, ios_record, archived_at FROM pipeline WHERE id = $1", [dealId])).rows[0];
+    if (!d || d.archived_at || !d.ios_org_id) return null;
+    let plan = null, rec = {}; try { plan = JSON.parse(d.ios_plan || "null"); } catch (e) { plan = null; } try { rec = JSON.parse(d.ios_record || "{}") || {}; } catch (e) { rec = {}; }
+    const who = d.org || d.name || "client", today = new Date().toISOString().slice(0, 10);
+    const base = { project: "fios-clients", eng: d.id, done: false };
+    if (which === "plan") return (!plan || !plan.startDate) && rec.verifiedConstraint ? Object.assign(base, { title: `Write the 90-Day Improvement Plan: ${who}`, due: today, section: "plan", key: String(rec.verifiedConstraint).slice(0, 80) }) : null;
+    if (!plan || !plan.startDate || plan.active === false) return null;
+    if (which === "checkin") return plan.weeklyReviewDue ? Object.assign(base, { title: `Weekly check-in with ${who}`, due: today, section: "checkin", key: plan.lastReviewOn || "" }) : null;
+    if (which === "review90") return plan.review90On && plan.review90On <= today && !plan.review90Done ? Object.assign(base, { title: `90-day review with ${who}`, due: dateOnly(plan.review90On), section: "review", key: plan.review90On }) : null;
+    if (which === "blocked") return plan.actionsBlocked ? Object.assign(base, { title: `Unblock ${plan.actionsBlocked} action${plan.actionsBlocked === 1 ? "" : "s"} for ${who}${plan.nextAction && plan.nextAction.text ? ": " + String(plan.nextAction.text).slice(0, 120) : ""}`, due: today, section: "blocked", key: String(plan.actionsBlocked) }) : null;
+    return null;
+  }
   if (link.kind === "rock") {
     const r = (await pool.query("SELECT id, title, quarter, due_date, status, created_at, archived_at FROM rocks WHERE id = $1", [link.id])).rows[0];
     if (!r || r.archived_at) return null;
@@ -240,6 +255,10 @@ async function mirror(pool, { force } = {}) {
     if (reports.length) await ensureProject("fios-grants", { name: "Grant reports due", desc: "Grantee reports from Grants. Finishing one marks it received.", sections: [{ id: "interim", name: "Interim" }, { id: "final", name: "Final" }, { id: "other", name: "Other" }] });
     const prospects = (await pool.query("SELECT id FROM prospects WHERE archived_at IS NULL AND status = ANY($1)", [PROSPECT_SECTIONS.map((x) => x[0])]).catch(() => ({ rows: [] }))).rows;
     prospects.forEach((g) => want.push({ kind: "prospect", id: g.id }));
+    // InstitutionalOS client follow-ups (weekly check-ins, 90-day reviews, blocked actions, plans to write).
+    const iosDeals = (await pool.query("SELECT id FROM pipeline WHERE archived_at IS NULL AND ios_org_id IS NOT NULL").catch(() => ({ rows: [] }))).rows;
+    iosDeals.forEach((d) => ["checkin", "review90", "blocked", "plan"].forEach((w) => want.push({ kind: "client", id: d.id + ":" + w })));
+    if (iosDeals.length) await ensureProject("fios-clients", { name: "Client follow-ups (InstitutionalOS)", desc: "What each client's 90-Day Improvement Plan needs from you: weekly check-ins, 90-day reviews, blocked actions, plans to write. Do the work in InstitutionalOS; the task clears itself.", sections: [{ id: "checkin", name: "Weekly check-ins" }, { id: "blocked", name: "Blocked actions" }, { id: "review", name: "90-day reviews" }, { id: "plan", name: "Plans to write" }] });
     if (prospects.length) await ensureProject("fios-prospects", { name: "Prospects to reach", desc: "Prospects from Pipeline & Money → Prospecting. Finishing a task marks the prospect contacted; moving it to another section changes the prospect's status. Promote a prospect to a deal there.", sections: PROSPECT_SECTIONS.map(([id, name]) => ({ id, name })) });
     if (touches.length) await ensureProject("fios-donors", { name: "Donor follow-ups", desc: "Next steps logged on donor touches in Fundraising.", sections: [{ id: "followups", name: "Follow-ups" }] });
     if (want.some((w) => w.kind === "deal")) await ensureProject("fios-pipeline", { name: "Pipeline next steps", desc: "Every open deal's next step, from Pipeline & Money. Change the stage there; rename, re-date or finish the step here.", sections: STAGE_SECTIONS.map(([id, name]) => ({ id, name })) });
@@ -250,7 +269,7 @@ async function mirror(pool, { force } = {}) {
     for (const w of want) {
       const id = "fios-" + w.kind + "-" + String(w.id).replace(/:/g, "-s"); seen.add("tasks/" + id);
       const f = await sourceFields(pool, w), ex = existing.get("tasks/" + id);
-      if (!f) continue;
+      if (!f) { seen.delete("tasks/" + id); continue; } // no longer needed there: leaves the lists below
       const fp = hash(f);
       if (ex && ex.data && ex.data._src === fp && (ex.deleted || !ex.data.cancelled)) continue;
       const base = ex && !ex.deleted && ex.data ? ex.data : { created: now, createdBy: "fios", src: "fios", history: [], timeLog: [], assignees: [], custom: {}, files: [], lane: "franklin" };
@@ -270,6 +289,22 @@ async function mirror(pool, { force } = {}) {
       if (k.startsWith("tasks/") && !ex.data.cancelled && !(ex.data.status === "done")) await put("tasks", ex.id, Object.assign({}, ex.data, { cancelled: true, _src: "" }));
       if (k.startsWith("goals/") && !ex.data.archived) await put("goals", ex.id, Object.assign({}, ex.data, { archived: true, _src: "" }));
     }
+    // Google Calendar (the week's events the calendar task posts to the operations app) on the hub calendar.
+    try {
+      const evs = (await pool.query("SELECT id, title, starts_at, ends_at, location, url, status_label FROM week_events")).rows;
+      const have = new Map((await pool.query("SELECT id, data, deleted FROM hub_docs WHERE path = 'events' AND id LIKE 'fios-cal-%'")).rows.map((r) => [r.id, r]));
+      const ny = (iso) => { const d = new Date(iso); if (isNaN(d)) return null; const f = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d); const g = (t) => (f.find((x) => x.type === t) || {}).value; return { date: `${g("year")}-${g("month")}-${g("day")}`, time: `${g("hour")}:${g("minute")}` }; };
+      const keep = new Set();
+      for (const e of evs) {
+        const s = ny(e.starts_at); if (!s) continue; const en = e.ends_at ? ny(e.ends_at) : null;
+        const id = "fios-cal-" + String(e.id).replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 100); keep.add(id);
+        const data = { title: e.title, date: s.date, start: /T/.test(e.starts_at) ? s.time : "", end: en && en.date === s.date ? en.time : "", type: "gcal", loc: e.location || "", url: e.url || "", note: e.status_label || "", eng: "", att: [], src: "gcal" };
+        const ex = have.get(id);
+        if (ex && !ex.deleted && JSON.stringify(ex.data) === JSON.stringify(data)) continue;
+        await put("events", id, data);
+      }
+      for (const [id, r] of have) if (!keep.has(id) && !r.deleted) { await pool.query("UPDATE hub_docs SET deleted = true, t = $2 WHERE path = 'events' AND id = $1", [id, nextT()]); n++; announce(); }
+    } catch (e) { console.error("hub calendar mirror", e.message); }
     return { mirrored: n };
   })();
   try { return await mirroring; } finally { mirroring = null; }
@@ -331,6 +366,30 @@ async function writeBack(pool, p, prev, next) {
   } else return null;
   const f = await sourceFields(pool, link);
   return f ? hash(f) : "";
+}
+
+// One person's day in Projects & Team: tasks that need them, their Inbox, today's calendar.
+async function dayFor(pool, uid) {
+  const rows = (await pool.query("SELECT path, id, data FROM hub_docs WHERE path IN ('tasks', 'projects', 'notifs', 'events') AND NOT deleted")).rows;
+  const projects = Object.fromEntries(rows.filter((r) => r.path === "projects").map((r) => [r.id, r.data || {}]));
+  const tasks = rows.filter((r) => r.path === "tasks").map((r) => Object.assign({ id: r.id }, r.data || {}))
+    .filter((t) => !t.cancelled && t.status !== "done" && !t.done && !/^Sample:/.test(t.title || ""));
+  const ny = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const soon = addDays(ny, 3);
+  // Deal next steps and checklist steps already have their own cards on Today.
+  const mine = tasks.filter((t) => (t.owner === uid || (t.assignees || []).includes(uid)) && !(t.link && ["deal", "step"].includes(t.link.kind)));
+  const row = (t, why) => ({ id: t.id, title: t.title || "Untitled task", due: t.due || "", project: t.project && projects[t.project] ? projects[t.project].name : "", status: t.status || "", why });
+  const items = [];
+  mine.filter((t) => t.status === "blocked").forEach((t) => items.push(row(t, "blocked")));
+  tasks.filter((t) => t.approval && t.approval.state === "pending" && t.approval.by === uid).forEach((t) => items.push(row(t, "approval")));
+  mine.filter((t) => t.due && t.due < ny && t.status !== "blocked").sort((a, b) => a.due.localeCompare(b.due)).forEach((t) => items.push(row(t, "overdue")));
+  mine.filter((t) => t.due === ny && t.status !== "blocked").forEach((t) => items.push(row(t, "today")));
+  mine.filter((t) => t.due > ny && t.due <= soon && t.status !== "blocked").sort((a, b) => a.due.localeCompare(b.due)).forEach((t) => items.push(row(t, "soon")));
+  const seen = new Set(); const out = items.filter((x) => !seen.has(x.id) && seen.add(x.id));
+  const risky = Object.entries(projects).filter(([, p]) => !p.archived && ["at_risk", "off_track"].includes(p.status) && !/^Sample:/.test(p.name || "")).map(([id, p]) => ({ id, name: p.name, status: p.status }));
+  const inbox = rows.filter((r) => r.path === "notifs" && r.data && r.data.to === uid && !r.data.read).map((r) => Object.assign({ id: r.id }, r.data)).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  const calendar = rows.filter((r) => r.path === "events" && r.data && r.data.date === ny).map((r) => ({ id: r.id, title: r.data.title, start: r.data.start || "", end: r.data.end || "", loc: r.data.loc || "", note: r.data.note || "", url: r.data.url || "" })).sort((a, b) => a.start.localeCompare(b.start));
+  return { date: ny, items: out.slice(0, 12), more: Math.max(0, out.length - 12), open: mine.length, risky, inbox: { unread: inbox.length, top: inbox.slice(0, 5).map((n) => ({ id: n.id, text: n.text, at: n.at, on: n.on || "", task: n.task || "" })) }, calendar };
 }
 
 // Comments used to live inside each task (and could be overwritten by a save of the
@@ -582,25 +641,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
     try {
       const me = await meFor(req.session);
       try { await mirror(pool); } catch (e) { /* show what's there */ }
-      const rows = (await pool.query("SELECT path, id, data FROM hub_docs WHERE path IN ('tasks', 'projects') AND NOT deleted")).rows;
-      const projects = Object.fromEntries(rows.filter((r) => r.path === "projects").map((r) => [r.id, r.data || {}]));
-      const tasks = rows.filter((r) => r.path === "tasks").map((r) => Object.assign({ id: r.id }, r.data || {}))
-        .filter((t) => !t.cancelled && t.status !== "done" && !t.done && !/^Sample:/.test(t.title || ""));
-      const now = new Date(), today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      const ny = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now) || today;
-      const soon = addDays(ny, 3);
-      // Deal next steps and checklist steps already have their own cards on Today.
-      const mine = tasks.filter((t) => (t.owner === me.uid || (t.assignees || []).includes(me.uid)) && !(t.link && ["deal", "step"].includes(t.link.kind)));
-      const row = (t, why) => ({ id: t.id, title: t.title || "Untitled task", due: t.due || "", project: t.project && projects[t.project] ? projects[t.project].name : "", status: t.status || "", why });
-      const items = [];
-      mine.filter((t) => t.status === "blocked").forEach((t) => items.push(row(t, "blocked")));
-      tasks.filter((t) => t.approval && t.approval.state === "pending" && t.approval.by === me.uid).forEach((t) => items.push(row(t, "approval")));
-      mine.filter((t) => t.due && t.due < ny && t.status !== "blocked").sort((a, b) => a.due.localeCompare(b.due)).forEach((t) => items.push(row(t, "overdue")));
-      mine.filter((t) => t.due === ny && t.status !== "blocked").forEach((t) => items.push(row(t, "today")));
-      mine.filter((t) => t.due > ny && t.due <= soon && t.status !== "blocked").sort((a, b) => a.due.localeCompare(b.due)).forEach((t) => items.push(row(t, "soon")));
-      const seen = new Set(); const out = items.filter((x) => !seen.has(x.id) && seen.add(x.id));
-      const risky = Object.entries(projects).filter(([, p]) => !p.archived && ["at_risk", "off_track"].includes(p.status) && !/^Sample:/.test(p.name || "")).map(([id, p]) => ({ id, name: p.name, status: p.status }));
-      res.json({ ok: true, items: out.slice(0, 12), more: Math.max(0, out.length - 12), open: mine.length, risky });
+      res.json(Object.assign({ ok: true }, await dayFor(pool, me.uid)));
     } catch (e) { console.error("hub today", e); res.status(500).json({ error: "Couldn't load your tasks." }); }
   });
 
@@ -745,4 +786,4 @@ async function digestTick(pool, { force } = {}) {
   return { digest: "sent", count: out.length, to: out };
 }
 
-module.exports = { mount, digestTick, digestText, canRead, canWrite, mirror, hubFlags, onApplied };
+module.exports = { mount, digestTick, digestText, canRead, canWrite, mirror, hubFlags, onApplied, dayFor };

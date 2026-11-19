@@ -1869,6 +1869,10 @@ app.get("/aix.js", (req, res) => {
   if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
   res.sendFile(path.join(__dirname, "public", "aix.js"));
 });
+app.get("/ios-embed.js", (req, res) => {
+  if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
+  res.sendFile(path.join(__dirname, "public", "ios-embed.js"));
+});
 app.get("/contacts.js", (req, res) => {
   if (!verify(req.cookies[COOKIE_NAME])) return res.status(401).end();
   res.sendFile(path.join(__dirname, "public", "contacts.js"));

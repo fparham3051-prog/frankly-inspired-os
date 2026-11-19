@@ -61,9 +61,9 @@ function projectDialog(id){
 /* ---------- one project ---------- */
 function viewProject(){
   const p = S.projects[S.projectOpen]; if(!p) return `<section><a href="#projects">← All projects</a><div class="empty" style="margin-top:12px">Pick a project.</div></section>`;
-  const h = pHealth(p); const tabs = [['overview','Overview'],['list','List'],['board','Board'],['timeline','Timeline'],['table','Table'],['files','Files'],['form','Request form']];
+  const h = pHealth(p); const tabs = [['overview','Overview'],['list','List'],['board','Board'],['timeline','Timeline'],['table','Table'],['talk','Discussion'],['files','Files'],['form','Request form']];
   const here = (S.peers||[]).filter(x=>!x.sameTab && x.presence && x.presence.p===p.id && x.presence.m).map(x=>x.presence.m);
-  const body = {overview:pOverview, list:pList, board:pBoard, timeline:pTimeline, table:pTable, files:pFiles, form:pFormSetup}[S.pTab] || pList;
+  const body = {overview:pOverview, list:pList, board:pBoard, timeline:pTimeline, table:pTable, files:pFiles, form:pFormSetup, talk:typeof pTalk==='function' ? pTalk : pList}[S.pTab] || pList;
   return `<section class="spread"><div><a href="#projects" class="small">← All projects</a><h1 style="margin-top:4px"><span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:${esc(p.color||'var(--navy)')};margin-right:8px"></span>${esc(p.name)}</h1>
     <div class="row small" style="margin-top:4px">${pChip(p.status||'on_track')}<span class="muted">${pct(h.prog)} done · ${fmtDate(p.start)||'–'} → ${fmtDate(p.due)||'–'}</span>${p.owner?`<span>${av(p.owner)} ${esc(mname(p.owner))}</span>`:''}${here.length?`<span class="muted">Here now: ${[...new Set(here)].map(m=>av(m)).join('')}</span>`:''}</div></div>
     <div class="row"><button class="btn" data-pm="open-status" data-id="${esc(p.id)}">Client page</button><button class="btn" data-pm="edit" data-id="${esc(p.id)}">Edit</button><button class="btn primary" data-pm="add-task" data-id="${esc(p.id)}">+ Task</button></div></section>

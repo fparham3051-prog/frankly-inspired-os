@@ -910,6 +910,62 @@ async function t(name, fn) {
     assert.strictEqual((await req("anon", "GET", "/api/hub/today")).status, 401);
     await hubW("staff", ["tt1", "tt2", "tt3", "tt4"].map((id) => ({ path: "tasks", id, data: null })).concat([{ path: "projects", id: "tp1", data: null }]));
   });
+  await t("hub: a save from an out-of-date copy merges instead of erasing a colleague's change", async () => {
+    await hubW("staff", [{ path: "tasks", id: "mg1", data: { title: "Merge me", status: "assigned", due: "2026-12-01", history: [{ at: "2026-11-01T00:00:00Z", to: "assigned" }] } }]);
+    const base = (await hubS("staff")).docs.find((x) => x.id === "mg1");
+    // The owner moves it to in progress (from the current copy)...
+    const r1 = (await hubW("owner1", [{ path: "tasks", id: "mg1", base: base.t, changed: ["status", "history"], data: Object.assign({}, base.data, { status: "in_progress", history: base.data.history.concat([{ at: "2026-11-02T00:00:00Z", to: "in_progress" }]) }) }])).data;
+    assert.ok(!r1.merged);
+    // ...while staff, still on the old copy, changes only the due date.
+    const r2 = (await hubW("staff", [{ path: "tasks", id: "mg1", base: base.t, changed: ["due"], data: Object.assign({}, base.data, { due: "2026-12-15" }) }])).data;
+    assert.strictEqual(r2.merged, 1);
+    const now = (await hubS("staff")).docs.find((x) => x.id === "mg1").data;
+    assert.strictEqual(now.status, "in_progress"); assert.strictEqual(now.due, "2026-12-15"); assert.strictEqual(now.history.length, 2);
+    const hist = (await req("staff", "GET", "/api/hub/activity?path=tasks&id=mg1")).data.items;
+    assert.ok(hist.some((x) => x.merged && x.changed.includes("due")), JSON.stringify(hist));
+  });
+  await t("hub: every change is logged; a deleted task comes back with Restore, and Undo reverses an edit", async () => {
+    const del = (await hubW("staff", [{ path: "tasks", id: "mg1", data: null }])).data;
+    const act = del.results[0].act; assert.ok(act);
+    assert.ok((await req("staff", "GET", "/api/hub/activity?deleted=1")).data.items.some((x) => x.docId === "mg1"));
+    const r = (await req("staff", "POST", "/api/hub/restore", { act })).data; assert.ok(r.back);
+    const back = (await hubS("staff")).docs.find((x) => x.id === "mg1"); assert.strictEqual(back.data.due, "2026-12-15");
+    const ed = (await hubW("staff", [{ path: "tasks", id: "mg1", data: Object.assign({}, back.data, { title: "Wrong title" }) }])).data;
+    await req("staff", "POST", "/api/hub/restore", { act: ed.results[0].act });
+    assert.strictEqual((await hubS("staff")).docs.find((x) => x.id === "mg1").data.title, "Merge me");
+    assert.strictEqual((await req("board", "POST", "/api/hub/restore", { act })).status, 403);
+    await hubW("staff", [{ path: "tasks", id: "mg1", data: null }]);
+  });
+  await t("hub: messages are their own records; only the author edits the words, anyone records a decision", async () => {
+    const me = await uid("staff@test.org");
+    await hubW("staff", [{ path: "msgs", id: "m1", data: { on: "task:x1", parent: "", by: "u999", text: "Let's go with the spring date", at: "2026-11-19T12:00:00Z" } }]);
+    let m = (await hubS("owner1")).docs.find((x) => x.id === "m1").data;
+    assert.strictEqual(m.by, me, "author is whoever posted, not what the page claims");
+    await hubW("owner1", [{ path: "msgs", id: "m1", data: Object.assign({}, m, { text: "Changed by someone else", decision: { by: "u1", at: "2026-11-19T13:00:00Z" } }) }]);
+    m = (await hubS("staff")).docs.find((x) => x.id === "m1").data;
+    assert.strictEqual(m.text, "Let's go with the spring date"); assert.ok(m.decision);
+    assert.strictEqual((await hubW("staff", [{ path: "reacts", id: "m1.u1.ok", data: { msg: "m1", e: "ok" } }])).data.results[0].refused, true);
+    assert.ok(!(await hubW("staff", [{ path: "reacts", id: "m1." + me + ".ok", data: { msg: "m1", e: "ok" } }])).data.results[0].refused);
+  });
+  await t("hub: old task comments move into messages once, and leave the task", async () => {
+    await Q.query("INSERT INTO hub_docs (path, id, data, deleted, t, by_user) VALUES ('tasks', 'oldc', $1, false, $2, 'x') ON CONFLICT (path, id) DO UPDATE SET data = EXCLUDED.data, deleted = false, t = EXCLUDED.t",
+      [{ title: "Has comments", comments: [{ at: "2026-10-01T00:00:00Z", by: "u1", text: "First" }, { at: "2026-10-02T00:00:00Z", by: "u1", text: "Second" }] }, Date.now()]);
+    const d = await hubS("staff");
+    const msgs = d.docs.filter((x) => x.path === "msgs" && x.data && x.data.on === "task:oldc");
+    assert.strictEqual(msgs.length, 2, JSON.stringify(msgs));
+    assert.ok(!("comments" in d.docs.find((x) => x.id === "oldc").data));
+  });
+  await t("hub: open pages get a live 'something changed' signal", async () => {
+    const ac = new AbortController();
+    const r = await fetch(BASE + "/api/hub/stream", { headers: { Cookie: jar.staff }, signal: ac.signal });
+    assert.match(r.headers.get("content-type"), /text\/event-stream/);
+    const rd = r.body.getReader(); let got = "";
+    const wait = (async () => { while (!/event: change/.test(got)) { const { value, done } = await rd.read(); if (done) break; got += Buffer.from(value).toString(); } })();
+    await new Promise((ok) => setTimeout(ok, 100));
+    await hubW("staff", [{ path: "msgs", id: "m2", data: { on: "task:x1", parent: "m1", text: "Agreed" } }]);
+    await Promise.race([wait, new Promise((_, no) => setTimeout(() => no(new Error("no change event")), 3000))]);
+    ac.abort();
+  });
   await t("hub: staff save a project and task; the owner sees them; board can't change anything", async () => {
     assert.strictEqual((await hubW("staff", [{ path: "projects", id: "hp1", data: { name: "Board retreat", sections: [{ id: "s1", name: "To do" }] } }, { path: "tasks", id: "ht1", data: { title: "Book venue", project: "hp1", status: "assigned" } }])).status, 200);
     const d = await hubS("owner1");
@@ -1006,14 +1062,14 @@ async function t(name, fn) {
     assert.ok(t1, "task missing"); assert.strictEqual(t1.title, "Send discovery agenda"); assert.strictEqual(t1.due, "2030-02-01");
     assert.strictEqual(t1.project, "fios-pipeline"); assert.strictEqual(t1.section, "discovery"); assert.strictEqual(t1.eng, flowDeal); assert.strictEqual(t1.owner, await firstOwner());
     assert.ok(await hubDoc("staff", "projects", "fios-pipeline"));
-    await hubW("staff", [{ path: "tasks", id: "fios-deal-" + flowDeal, data: Object.assign({}, t1, { title: "Send agenda and pre-read", due: "2030-02-03", section: "engaged", comments: [{ text: "kept" }] }) }]);
+    await hubW("staff", [{ path: "tasks", id: "fios-deal-" + flowDeal, data: Object.assign({}, t1, { title: "Send agenda and pre-read", due: "2030-02-03", section: "engaged", checklist: [{ t: "kept", done: false }] }) }]);
     let d = (await Q.query("SELECT next_step, next_step_date, stage FROM pipeline WHERE id = $1", [flowDeal])).rows[0];
     assert.strictEqual(d.next_step, "Send agenda and pre-read"); assert.strictEqual(d.next_step_date, "2030-02-03"); assert.strictEqual(d.stage, "discovery");
     const t2 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
-    assert.strictEqual(t2.section, "discovery", "stage changes only in Pipeline & Money"); assert.strictEqual(t2.comments[0].text, "kept");
+    assert.strictEqual(t2.section, "discovery", "stage changes only in Pipeline & Money"); assert.strictEqual(t2.checklist[0].t, "kept");
     await req("owner1", "PATCH", "/api/pipeline/" + flowDeal, { nextStep: "Call back Thursday", nextStepDate: "2030-02-06" });
     const t3 = await hubDoc("staff", "tasks", "fios-deal-" + flowDeal);
-    assert.strictEqual(t3.title, "Call back Thursday"); assert.strictEqual(t3.comments[0].text, "kept", "hub additions survive a change in the deal");
+    assert.strictEqual(t3.title, "Call back Thursday"); assert.strictEqual(t3.checklist[0].t, "kept", "hub additions survive a change in the deal");
     await hubW("staff", [{ path: "tasks", id: "fios-deal-" + flowDeal, data: Object.assign({}, t3, { status: "done", done: true }) }]);
     d = (await Q.query("SELECT next_step, next_step_date FROM pipeline WHERE id = $1", [flowDeal])).rows[0];
     assert.strictEqual(d.next_step, ""); assert.strictEqual(d.next_step_date, "");

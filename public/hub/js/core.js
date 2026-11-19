@@ -92,7 +92,7 @@ DEFAULT_RECIPES.forEach(r => r.tasks.forEach(x => { if(x.e==null) x.e = DEFAULT_
   T('delivery','Run kickoff with {{org}}').n = 'Schedule kickoff with {{first}}'; })();
 
 /* ---------- state ---------- */
-const S = {engagements:{}, tasks:{}, messages:{}, events:{}, team:{}, notifs:{}, projects:{}, goals:{}, rules:{}, dashboards:{}, ptemplates:{}, utests:{}, ut:null, projectOpen:null, pTab:'list', peers:[], wlCell:null, dashOpen:null, ai:{}, recipes:null, settings:{},
+const S = {engagements:{}, tasks:{}, messages:{}, events:{}, team:{}, notifs:{}, msgs:{}, reacts:{}, projects:{}, goals:{}, rules:{}, dashboards:{}, ptemplates:{}, utests:{}, ut:null, projectOpen:null, pTab:'list', peers:[], wlCell:null, dashOpen:null, ai:{}, recipes:null, settings:{},
            mode:'pending', loaded:{}, view:'today', drawer:null, outTab:'draft', draftRecipes:null,
            me:null, myUid:null, isOwner:false, canEdit:false, canCoach:false, pulses:{}, coach:{}, pulseDraft:{}, editPulse:false, tpCtx:null, rates:null, insWin:90, sending:{}, gcalOn:false, gcalEvents:[], gcalErr:'', gcalKey:'', gcalUnsub:null, boardMode:'board', pipeMode:'board', lf:{q:'',owner:'',status:'open',eng:'',due:'',fn:''}, ls:{k:'due',dir:1}, coachTab:'wellbeing', anon:{}, priv:{}, drag:null, model:null, draftModel:null, audit:{}, usage:{}, fb:{}, wiz:null, wizPlan:null, boardFilter:'all', calWeek:0, calMine:false, taskOpen:null};
 let DB = null, USER = null;
@@ -141,7 +141,7 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on
 
 /* ---------- persistence ---------- */
 const chains = {};
-const COLS = ['engagements','tasks','messages','events','team','notifs','projects','goals','rules','dashboards','ptemplates','utests'];
+const COLS = ['engagements','tasks','messages','events','team','notifs','msgs','reacts','projects','goals','rules','dashboards','ptemplates','utests'];
 function strip(o){ const c = {...o}; delete c.id; return c; }
 function saveLocal(){ try{ const o={}; COLS.forEach(c=>o[c]=S[c]); o.recipes=S.recipes; o.settings=S.settings; o.pulses=S.pulses; o.coach=S.coach; o.rates=S.rates; o.anon=S.anon; o.priv=S.priv; o.model=S.model; o.audit=S.audit; o.usage=S.usage; o.fb=S.fb; localStorage.setItem(LS_KEY, JSON.stringify(o)); }catch(_){} }
 function loadLocal(){ try{ const d = JSON.parse(localStorage.getItem(LS_KEY)||'null'); if(d){ COLS.forEach(c=>S[c]=d[c]||{}); S.recipes=d.recipes||null; S.settings=d.settings||{}; S.pulses=d.pulses||{}; S.coach=d.coach||{}; S.rates=d.rates||null; S.anon=d.anon||{}; S.priv=d.priv||{}; S.model=d.model||null; S.audit=d.audit||{}; S.usage=d.usage||{}; S.fb=d.fb||{}; } }catch(_){} }

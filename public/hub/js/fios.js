@@ -13,6 +13,9 @@
   const peerFns = new Set();
   let since = 0, me = null, started = false, busy = false, timer = null, fails = 0, pres = {}, peers = [];
   const synthSeen = {};
+  const vers = new Map();           // "path|id" -> { t, data } as the server last confirmed it
+  const actFns = new Set();         // listeners for logged changes (undo)
+  let live = false;
   let readyResolve; const ready = new Promise(r => readyResolve = r);
 
   const col = p => { if(!cache.has(p)) cache.set(p, new Map()); return cache.get(p); };
@@ -34,6 +37,7 @@
       for(const d of j.docs){
         if(SYNTH.includes(d.path)) continue;
         const m = col(d.path), old = m.get(d.id);
+        if(!pending.some(o => o.path === d.path && o.id === d.id)) vers.set(d.path + '|' + d.id, {t:d.t || 0, data:d.data == null ? null : JSON.parse(JSON.stringify(d.data))});
         if(d.data == null){ if(m.has(d.id)){ m.delete(d.id); cc.add(d.path); cd.add(d.path+'|'+d.id); } }
         else if(JSON.stringify(old) !== JSON.stringify(d.data)){ m.set(d.id, d.data); cc.add(d.path); cd.add(d.path+'|'+d.id); }
       }
@@ -47,7 +51,16 @@
     }catch(e){ fails++; if(fails === 3 && typeof setStatus === 'function') setStatus('warn', 'Can’t reach the operations app. Retrying…'); }
     finally{ busy = false; schedule(); }
   }
-  function schedule(ms){ clearTimeout(timer); const base = document.hidden ? 20000 : 4000; timer = setTimeout(sync, ms != null ? ms : Math.min(60000, base * Math.pow(2, Math.min(fails, 4)))); }
+  function schedule(ms){ clearTimeout(timer); const base = live ? 30000 : document.hidden ? 20000 : 4000; timer = setTimeout(sync, ms != null ? ms : Math.min(60000, base * Math.pow(2, Math.min(fails, 4)))); }
+  // Live updates: the server says "something changed" and we sync straight away.
+  function stream(){
+    if(!window.EventSource) return;
+    let es; try{ es = new EventSource('/api/hub/stream'); }catch(e){ return; }
+    es.addEventListener('open', () => { live = true; });
+    es.addEventListener('change', () => { if(!busy) schedule(30); else setTimeout(() => schedule(30), 300); });
+    es.addEventListener('error', () => { live = false; if(es.readyState === 2) setTimeout(stream, 15000); });
+  }
+  stream();
   document.addEventListener('visibilitychange', () => { if(!document.hidden) schedule(50); });
   window.addEventListener('focus', () => schedule(50));
   window.addEventListener('online', () => schedule(50));
@@ -57,7 +70,15 @@
   function write(p, id, data){
     const m = col(p);
     if(data == null) m.delete(id); else m.set(id, SYNTH.includes(p) ? Object.assign({}, m.get(id), data) : data);
-    pending = pending.filter(o => !(o.path === p && o.id === id)); pending.push({path:p, id, data:data == null ? null : JSON.parse(JSON.stringify(data))});
+    pending = pending.filter(o => !(o.path === p && o.id === id));
+    const op = {path:p, id, data:data == null ? null : JSON.parse(JSON.stringify(data))};
+    // Say which copy this edit started from and which fields changed, so a colleague's newer edit is merged, not lost.
+    const v = vers.get(p + '|' + id);
+    if(v && v.data && op.data && !SYNTH.includes(p)){
+      op.base = v.t;
+      op.changed = [...new Set([...Object.keys(v.data), ...Object.keys(op.data)])].filter(k => k !== 'id' && JSON.stringify(v.data[k]) !== JSON.stringify(op.data[k]));
+    }
+    pending.push(op);
     clearTimeout(flushT); flushT = setTimeout(flush, 120);
     return new Promise((ok, no) => waiters.push({ok, no}));
   }
@@ -69,6 +90,10 @@
       const j = await r.json().catch(() => ({}));
       if(r.status === 401){ location.href = '/'; return; }
       if(!r.ok){ const err = {code: r.status >= 500 ? 'unavailable' : 'invalid_argument', message:j.error || ('HTTP ' + r.status)}; ws.forEach(w => w.no(err)); if(r.status < 500){ ops.forEach(o => { if(SYNTH.includes(o.path)) synthSeen[o.path] = ''; else cache.set(o.path, new Map()); }); since = 0; } schedule(50); return; }
+      (j.results || []).forEach((x, i) => { const o = ops.find(q => q.path === x.path && q.id === x.id); if(o && x.t && !x.merged) vers.set(o.path + '|' + o.id, {t:x.t, data:o.data}); });
+      if(j.merged) schedule(50);
+      const acts = (j.results || []).filter(x => x.act);
+      if(acts.length) fire([...actFns], acts.map(x => Object.assign({}, x, {data:(ops.find(q => q.path === x.path && q.id === x.id) || {}).data})));
       ws.forEach(w => w.ok()); schedule(400);
     }catch(e){ ws.forEach(w => w.no({code:'unavailable', message:String(e.message||e)})); schedule(2000); }
   }
@@ -125,5 +150,10 @@
 
   const impl = {db, user, sample, mcp, assets, room, downloads};
   window.claude = { use: async name => { if(!impl[name]) return null; if(!started && !busy) sync(); return impl[name]; } };
-  window.FIOS_HUB = { ready, me: () => me, sync, _cache: cache };
+  const getJ = async url => { const r = await fetch(url, {credentials:'same-origin', cache:'no-store'}); const j = await r.json().catch(() => ({})); if(!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; };
+  window.FIOS_HUB = { ready, me: () => me, sync, _cache: cache, isLive: () => live,
+    onActivity: fn => { actFns.add(fn); return () => actFns.delete(fn); },
+    activity: (path, id) => getJ('/api/hub/activity?' + new URLSearchParams(path ? {path, id} : {})),
+    deleted: () => getJ('/api/hub/activity?deleted=1'),
+    restore: async act => { const j = await post('/api/hub/restore', {act}); schedule(30); return j; } };
 })();

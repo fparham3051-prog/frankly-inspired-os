@@ -928,3 +928,12 @@ a.btn{text-decoration:none;display:inline-block}
 .wk-table input.wk-num { width: 110px; padding: 6px 8px; font: inherit; }
 .wk-note { font-size: .82rem; margin: 6px 0 0; }
 @media (max-width: 600px) { .wk-table th:nth-child(3), .wk-table td:nth-child(3) { display: none; } .wk-table input.wk-num { width: 90px; } }
+
+/* Start your day strip on Today */
+.start-day{margin-bottom:16px;}
+.start-day-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;}
+.start-day-links{display:flex;gap:8px;flex-wrap:wrap;}
+.start-day-cal{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:4px;font-size:.92rem;}
+.start-day-cal .when{display:inline-block;min-width:72px;color:var(--ink-soft, #5b6579);}
+.start-day-sys{margin-top:10px;}
+.start-day-sys.warn{color:#9a5b00;}

@@ -174,7 +174,64 @@ async function tokenUser(pool, header) {
   return { uid: r.uid, userId, role: u.role, owner: u.role === "owner" };
 }
 
-function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME }) {
+// ---------- the morning: everything that needs Franklin today, from every system ----------
+const q = async (pool, sql, args) => (await pool.query(sql, args || []).catch(() => ({ rows: [] }))).rows;
+async function buildMorning(pool, jobRegistry) {
+  const nyNow = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(nyNow);
+  const in7 = new Date(Date.parse(today + "T12:00:00Z") + 7 * 864e5).toISOString().slice(0, 10);
+  const owner = (await q(pool, "SELECT id FROM app_users WHERE role = 'owner' AND NOT disabled ORDER BY id LIMIT 1"))[0];
+  const uid = "u" + (owner ? owner.id : 0);
+  const out = { date: today, weekday: new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long" }).format(nyNow), link: PUBLIC() };
+  // Calendar: today's events from the calendar the morning task posts each day.
+  out.calendar = (await q(pool, "SELECT title, starts_at, ends_at, location, status_label, url FROM week_events ORDER BY starts_at")).filter((e) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(e.starts_at)) === today)
+    .map((e) => ({ title: e.title, starts: e.starts_at, ends: e.ends_at || "", location: e.location || "", flag: e.status_label || "", url: e.url || "" }));
+  // Projects & Team: your tasks, Inbox, projects that need attention.
+  try { const d = await hub.dayFor(pool, uid); out.projects = { tasks: d.items, open: d.open, risky: d.risky, inboxUnread: d.inbox.unread, inbox: d.inbox.top }; } catch (e) { out.projects = { error: e.message }; }
+  // Pipeline next steps due this week or overdue.
+  out.nextSteps = (await q(pool, "SELECT id, org, name, stage, next_step, next_step_date FROM pipeline WHERE archived_at IS NULL AND COALESCE(next_step_date, '') <> '' AND next_step_date <= $1 AND stage NOT IN ('graduated', 'referred', 'lost') ORDER BY next_step_date LIMIT 10", [in7]))
+    .map((p) => ({ who: p.org || p.name, step: p.next_step, due: p.next_step_date, overdue: p.next_step_date < today }));
+  // Money: sent and unpaid.
+  const inv = await q(pool, "SELECT i.amount, i.due_date, p.org, p.name FROM invoices i JOIN pipeline p ON p.id = i.pipeline_id WHERE i.archived_at IS NULL AND i.status = 'sent' ORDER BY i.due_date");
+  out.money = { outstanding: inv.reduce((t, i) => t + (Number(i.amount) || 0), 0), overdue: inv.filter((i) => i.due_date && i.due_date < today).map((i) => ({ who: i.org || i.name, amount: Number(i.amount) || 0, due: i.due_date })), dueThisWeek: inv.filter((i) => i.due_date >= today && i.due_date <= in7).map((i) => ({ who: i.org || i.name, amount: Number(i.amount) || 0, due: i.due_date })) };
+  // InstitutionalOS clients: what each 90-Day Improvement Plan needs.
+  const clients = [];
+  for (const d of await q(pool, "SELECT org, name, ios_plan, ios_record FROM pipeline WHERE archived_at IS NULL AND ios_org_id IS NOT NULL")) {
+    let plan = null, rec = {}; try { plan = JSON.parse(d.ios_plan || "null"); } catch (e) { /* none */ } try { rec = JSON.parse(d.ios_record || "{}") || {}; } catch (e) { /* none */ }
+    const who = d.org || d.name;
+    if (!plan || !plan.startDate) { if (rec.verifiedConstraint) clients.push({ who, need: "Write the 90-Day Improvement Plan" }); continue; }
+    if (plan.active === false) continue;
+    if (plan.review90On && plan.review90On <= today && !plan.review90Done) clients.push({ who, need: "90-day review due" });
+    if (plan.actionsBlocked) clients.push({ who, need: `${plan.actionsBlocked} action(s) blocked` });
+    if (plan.weeklyReviewDue) clients.push({ who, need: "Weekly check-in due" });
+  }
+  out.clients = clients;
+  // New leads since yesterday morning, and everyone waiting.
+  const since = new Date(Date.now() - 26 * 3600e3).toISOString();
+  out.leads = { new: (await q(pool, "SELECT name, org, source, created_at FROM prospects WHERE archived_at IS NULL AND created_at >= $1 ORDER BY created_at DESC LIMIT 10", [since])).map((p) => ({ who: [p.name, p.org].filter(Boolean).join(", "), source: p.source })),
+    waiting: Number(((await q(pool, "SELECT count(*)::int AS n FROM prospects WHERE archived_at IS NULL AND status IN ('new', 'researching')"))[0] || {}).n || 0) };
+  // Weekly Meeting: open issues and off-track priorities.
+  const issues = await q(pool, "SELECT title, created_at FROM issues WHERE archived_at IS NULL AND status <> 'solved' ORDER BY created_at");
+  out.issues = { open: issues.length, oldest: issues[0] ? issues[0].title : "" };
+  out.offTrack = (await q(pool, "SELECT title FROM rocks WHERE archived_at IS NULL AND status = 'off-track'")).map((r) => r.title);
+  // Messages drafted for approval (checklists and AI first replies).
+  out.drafts = Number(((await q(pool, "SELECT count(*)::int AS n FROM proc_outbox o LEFT JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND (r.id IS NULL OR r.archived_at IS NULL)"))[0] || {}).n || 0);
+  // Systems: scheduled jobs that failed or went quiet, errors, and the last cross-system check.
+  const last = await q(pool, "SELECT DISTINCT ON (job_key) job_key, job_label, status, message, ran_at FROM automation_runs ORDER BY job_key, ran_at DESC");
+  const byKey = Object.fromEntries(last.map((r) => [r.job_key, r]));
+  const problems = [];
+  for (const j of jobRegistry || []) {
+    const r = byKey[j.key];
+    if (r && r.status === "error") problems.push(`${j.label}: ${String(r.message || "error").slice(0, 160)}`);
+    else if (!r || Date.now() - Date.parse(r.ran_at) > j.cadenceHours * 3600e3) problems.push(`${j.label} hasn't reported ${r ? "since " + String(r.ran_at).slice(0, 10) : "yet"}`);
+  }
+  const errs = Number(((await q(pool, "SELECT count(*)::int AS n FROM app_errors WHERE at > now() - interval '1 day' AND source <> 'csp'"))[0] || {}).n || 0);
+  const rec = byKey["systems-reconcile"];
+  out.systems = { ok: !problems.length && !errs && !(rec && rec.status === "error"), problems, errorsLastDay: errs, reconcile: rec ? { status: rec.status, message: rec.message, at: rec.ran_at } : null };
+  return out;
+}
+
+function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdminScope, jobRegistry }) {
   poolRef = pool;
   const H = () => app.locals.hub;
   pool._hubApply = (op, me) => H().applyOp(op, me);
@@ -187,6 +244,14 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME }) {
       await pushTo(pool, c.after.to, { title: "Frankly Inspired", body: clip(c.after.text, 180), url: notifUrl(c.after), tag: "n-" + c.id });
     }
     if (["tasks", "msgs", "projects", "goals"].includes(c.path)) await fireWebhooks(pool, c);
+  });
+
+  // ---------- the morning ----------
+  app.get("/api/admin/morning", requireAdminScope("status"), async (req, res) => {
+    try { res.json(Object.assign({ ok: true }, await buildMorning(pool, jobRegistry))); } catch (e) { console.error("morning", e); res.status(500).json({ error: "Couldn't build the morning summary." }); }
+  });
+  app.get("/api/morning", requireAuth, async (req, res) => {
+    try { res.json(Object.assign({ ok: true }, await buildMorning(pool, jobRegistry))); } catch (e) { console.error("morning", e); res.status(500).json({ error: "Couldn't build the morning summary." }); }
   });
 
   // ---------- health and errors ----------
@@ -381,4 +446,4 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME }) {
   }
 }
 
-module.exports = { mount, mailTick, alertTick, recordError, pushTo, eventFor };
+module.exports = { mount, mailTick, alertTick, recordError, pushTo, eventFor, buildMorning };

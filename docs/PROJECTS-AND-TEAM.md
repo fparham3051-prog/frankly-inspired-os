@@ -144,3 +144,11 @@ Team list: until there is a named owner account, the shared-password sign-in (us
 **Dependencies.** Each "waits for" link has a type (after it finishes / once it starts) and a lag in days (`t.depOpts[id] = {type, lag}`). Moving dates, the "waiting on" check and the critical path all use them.
 
 **Browser tests.** `test/e2e.js` runs two people (desktop and phone) through the app in Chrome; GitHub runs it on every push (`.github/workflows/e2e.yml`).
+
+## One morning (v15)
+
+- **Start your day** on Operations → Today: one sentence from every system (Inbox, your tasks, overdue next steps, overdue invoices, client follow-ups, drafts waiting for approval, new leads), today's calendar, and whether every scheduled job ran and the systems agree. From `GET /api/morning` (signed in) or `GET /api/admin/morning` (status token, used by the Morning brief task).
+- **Client follow-ups (InstitutionalOS)** project in Projects & Team: weekly check-ins, 90-day reviews, blocked actions and plans to write, from each linked deal's 90-Day Improvement Plan. Do the work in InstitutionalOS and the task clears itself; finishing it in the hub hides it until the next one is due.
+- **Calendar**: the events the Morning brief posts each weekday (`POST /api/admin/week-events`) also appear on the Projects & Team calendar (`events/fios-cal-*`, type `gcal`) and in the morning summary.
+- **Automation health** now tracks every scheduled job: checklist automation, nightly backup, the daily systems check, both reminder jobs, the market scan and the Morning brief.
+- A mirrored record that no longer needs doing (its source returns nothing) now leaves the hub lists, for every kind.

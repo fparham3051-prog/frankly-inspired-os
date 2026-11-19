@@ -84,6 +84,12 @@
     <!-- ================= TODAY ================= -->
     <section class="view" data-view="today">
       <div class="view-head"><h2 id="today-greeting">Today</h2><span class="tag" id="today-date"></span></div>
+      <div class="fw-card start-day" id="start-day" aria-live="polite">
+        <div class="start-day-row"><div><h3>Start your day</h3><p class="today-sub" id="start-day-sum">Gathering everything from Operations, Projects &amp; Team, InstitutionalOS and the website…</p></div>
+          <div class="start-day-links"><a href="/hub/#inbox" class="btn" id="start-day-inbox">Inbox</a><a href="#" class="btn ghost" data-go-view="briefing">Morning briefing</a></div></div>
+        <ul class="start-day-cal" id="start-day-cal" hidden></ul>
+        <p class="today-sub start-day-sys" id="start-day-sys" hidden></p>
+      </div>
       <div class="today-grid">
         <div class="fw-card today-card">
           <h3>Your next steps</h3>

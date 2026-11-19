@@ -105,8 +105,10 @@ const step = async (name, fn) => { try { await fn(); results.push(["ok", name]);
     await pb.goto(B + "/hub/#inbox"); await pb.waitForTimeout(1500); await shot(pb, "inbox-phone");
     assert.ok(await pb.locator(".inbox-row").count() >= 1);
   });
-  await step("the operations app opens without errors", async () => {
-    await pa.goto(B + "/"); await pa.waitForTimeout(1500);
+  await step("the operations app opens, and Today starts the day from every system", async () => {
+    await pa.goto(B + "/"); await pa.waitForFunction(() => { const e = document.getElementById("start-day-sum"); return e && !/Gathering/.test(e.textContent); }, null, { timeout: 15000 });
+    assert.ok(!/Couldn't/.test(await pa.locator("#start-day-sum").textContent()));
+    await shot(pa, "today-start-your-day");
   });
   await step("no page errors along the way", async () => { assert.deepStrictEqual(errs, []); });
   await br.close(); srv.kill();

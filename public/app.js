@@ -890,9 +890,42 @@
       return '<li' + (it.rank === 0 ? ' class="row-overdue"' : '') + '><span><span class="who">' + esc(it.who) + '</span><br>' + esc(it.what) + '</span></li>';
     }).join("") : '<li class="empty-note" style="border:none;">No client follow-ups due.</li>';
 
-    // 4. Your tasks from Projects & Team.
+    // 4. Your tasks from Projects & Team, and the start-your-day strip.
     renderTodayHub();
+    renderStartDay();
   }
+  // The strip at the top of Today: one sentence from every system, today's calendar, and system health.
+  var morningAt = 0;
+  function renderStartDay(){
+    var el = document.getElementById("start-day"); if(!el) return;
+    if(Date.now() - morningAt < 60000) return; morningAt = Date.now();
+    apiFetch("/api/morning").then(function(m){
+      var bits = [];
+      var pj = m.projects || {};
+      if(pj.inboxUnread) bits.push(pj.inboxUnread + " unread in your Inbox");
+      if(pj.tasks && pj.tasks.length) bits.push(pj.tasks.length + " task" + (pj.tasks.length === 1 ? "" : "s") + " need you");
+      var over = (m.nextSteps || []).filter(function(s){ return s.overdue; }).length;
+      if(over) bits.push(over + " deal next step" + (over === 1 ? " is" : "s are") + " overdue");
+      if(m.money && m.money.overdue && m.money.overdue.length) bits.push(m.money.overdue.length + " invoice" + (m.money.overdue.length === 1 ? "" : "s") + " overdue");
+      if(m.clients && m.clients.length) bits.push(m.clients.length + " client follow-up" + (m.clients.length === 1 ? "" : "s"));
+      if(m.drafts) bits.push(m.drafts + " message" + (m.drafts === 1 ? "" : "s") + " waiting for your approval");
+      if(m.leads && m.leads.new && m.leads.new.length) bits.push(m.leads.new.length + " new lead" + (m.leads.new.length === 1 ? "" : "s") + " since yesterday");
+      document.getElementById("start-day-sum").textContent = bits.length ? cap1(bits.join(", ")) + "." : "Nothing is overdue or waiting on you. A clear start.";
+      var ib = document.getElementById("start-day-inbox"); ib.textContent = pj.inboxUnread ? "Inbox (" + pj.inboxUnread + ")" : "Inbox";
+      var cal = document.getElementById("start-day-cal"), evs = m.calendar || [];
+      cal.hidden = !evs.length;
+      cal.innerHTML = evs.map(function(e){
+        var t = /T/.test(e.starts) ? new Date(e.starts).toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit", timeZone:"America/New_York" }) : "All day";
+        return '<li><span class="when mono">' + esc(t) + '</span> ' + (e.url ? '<a href="' + esc(e.url) + '" target="_blank" rel="noopener">' + esc(e.title) + '</a>' : esc(e.title)) + (e.location ? ' <span class="muted">· ' + esc(e.location) + '</span>' : '') + (e.flag ? ' <span class="overdue-tag">' + esc(e.flag) + '</span>' : '') + '</li>';
+      }).join("");
+      var sys = document.getElementById("start-day-sys"), s = m.systems || {};
+      sys.hidden = false;
+      var probs = (s.reconcile && s.reconcile.status === "error" ? ["the systems check: " + s.reconcile.message] : []).concat(s.errorsLastDay ? [s.errorsLastDay + " error" + (s.errorsLastDay === 1 ? "" : "s") + " in the last day"] : []).concat(s.problems || []);
+      sys.innerHTML = s.ok ? "✓ All systems ran overnight and agree with each other." : "Needs a look: " + esc(probs.slice(0, 3).join("; ")) + (probs.length > 3 ? " and " + (probs.length - 3) + " more" : "") + '. <a href="#" data-go-view="command-center">See automation health</a>';
+      sys.className = "today-sub start-day-sys" + (s.ok ? "" : " warn");
+    }).catch(function(){ document.getElementById("start-day-sum").textContent = "Couldn't gather the morning summary just now."; });
+  }
+  function cap1(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
   var hubTodayAt = 0;
   function renderTodayHub(){
     var el = document.getElementById("today-hub"); if(!el) return;
@@ -900,7 +933,8 @@
     var WHY = { blocked: "Blocked", approval: "Needs your approval", overdue: "Overdue", today: "Today", soon: "" };
     apiFetch("/api/hub/today").then(function(d){
       var items = d.items || [];
-      document.getElementById("today-hub-sub").textContent = d.open ? (d.open + " open task" + (d.open === 1 ? "" : "s") + " are yours in Projects & Team" + (d.risky && d.risky.length ? "; " + d.risky.length + " project" + (d.risky.length === 1 ? " needs" : "s need") + " attention." : ".")) : "Nothing open in Projects & Team.";
+      var unread = d.inbox && d.inbox.unread ? " " + d.inbox.unread + " unread in your Inbox." : "";
+      document.getElementById("today-hub-sub").textContent = (d.open ? (d.open + " open task" + (d.open === 1 ? "" : "s") + " are yours in Projects & Team" + (d.risky && d.risky.length ? "; " + d.risky.length + " project" + (d.risky.length === 1 ? " needs" : "s need") + " attention." : ".")) : "Nothing open in Projects & Team.") + unread;
       el.innerHTML = items.length ? items.map(function(t){
         var hot = t.why === "blocked" || t.why === "overdue" || t.why === "approval";
         return '<li' + (hot ? ' class="row-overdue"' : '') + '><span><a class="who" href="/hub/#task/' + encodeURIComponent(t.id) + '">' + esc(t.title) + '</a>' + (t.project ? '<br>' + esc(t.project) : '') + '</span>' +

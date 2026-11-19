@@ -22,11 +22,24 @@ function talkTarget(on){
   if(k === 'client'){ const e = S.engagements[id]; return e ? {kind:k, id, title:e.org, eng:id, project:'', people:[e.lead]} : null; }
   return null;
 }
-function notifyOn(to, text, on, email){
+function notifyOn(to, text, on, email, parent){
   if(!to || to === S.me || !S.team[to]) return;
   const tg = talkTarget(on) || {};
   put('notifs', uid(), {to, text, on, task:tg.kind === 'task' ? tg.id : '', eng:tg.eng || '', by:S.me || '', at:nowISO(), read:false});
-  if(email && typeof emailAlert === 'function') emailAlert(to, text);
+  if(!email) return;
+  if(window.FLOWHUB_HOST === 'fios') mailAlert(to, text, on, parent); else if(typeof emailAlert === 'function') emailAlert(to, text);
+}
+// In the operations app, a mention goes out by email with the conversation attached,
+// so the person can answer by replying to the email; the answer lands in the thread.
+function mailAlert(to, text, on, parent){
+  const me = mem(S.me), r = mem(to);
+  if(!me || !me.emailAlerts || !r || !r.email) return;
+  const tg = talkTarget(on) || {};
+  const link = location.origin + '/hub/#' + (tg.kind === 'task' ? 'task/' + encodeURIComponent(tg.id) : tg.kind === 'project' ? 'project/' + encodeURIComponent(tg.id) : 'inbox');
+  fetch('/api/hub/email', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({to:r.email, on, parent:parent || '',
+    subject:`[Frankly Inspired] ${text.length > 72 ? text.slice(0, 70) + '…' : text}`,
+    body:`${text}\n\nReply to this email to answer in the conversation, or open it here: ${link}\n\nSent from Projects & Team by ${me.name}.`})})
+    .then(x => { if(!x.ok && !mailAlert._warned){ mailAlert._warned = true; toast('Mention saved; the email alert was not sent.'); } }).catch(() => {});
 }
 function postMsg(on, text, {parent = '', by, rule = '', quiet = false} = {}){
   text = String(text || '').trim(); if(!text || !on) return null;
@@ -38,7 +51,7 @@ function postMsg(on, text, {parent = '', by, rule = '', quiet = false} = {}){
   const thread = parent ? [S.msgs[parent] && S.msgs[parent].by, ...repliesTo(parent).map(r => r.by)] : [];
   new Set([...mentions, ...thread, ...tg.people].filter(Boolean)).forEach(p => notifyOn(p,
     mentions.includes(p) ? `${name} mentioned you on “${tg.title}”: ${snip}` : parent ? `${name} replied on “${tg.title}”: ${snip}` : `${name} wrote on “${tg.title}”: ${snip}`,
-    on, mentions.includes(p)));
+    on, mentions.includes(p), parent || id));
   return id;
 }
 // Older code calls addComment(taskId, text); it now posts a message on the task.
@@ -82,7 +95,7 @@ function msgHtml(m, reply){
   const editing = S.talkEdit === m.id;
   const tref = m.taskRef && S.tasks[m.taskRef];
   return `<div class="talk-msg${reply ? ' reply' : ''}${m.decision ? ' decided' : ''}" id="msg-${esc(m.id)}">
-    <div class="talk-head">${sys ? '<span class="av empty" title="Automation">⚙</span>' : av(m.by)} <b>${esc(sys ? 'Automation' : mname(m.by))}</b> <span class="muted small">${fmtWhen(m.at)}${m.edited ? ' · edited' : ''}</span>${m.decision ? ` <span class="flag" style="margin:0" title="Recorded by ${esc(mname(m.decision.by))}">Decision</span>` : ''}</div>
+    <div class="talk-head">${sys ? '<span class="av empty" title="Automation">⚙</span>' : m.guest ? '<span class="av empty" title="Replied by email">@</span>' : av(m.by)} <b>${esc(sys ? 'Automation' : m.guest || mname(m.by))}</b>${m.via === 'email' ? ' <span class="small muted">by email</span>' : m.via === 'api' ? ' <span class="small muted">via API</span>' : ''} <span class="muted small">${fmtWhen(m.at)}${m.edited ? ' · edited' : ''}</span>${m.decision ? ` <span class="flag" style="margin:0" title="Recorded by ${esc(mname(m.decision.by))}">Decision</span>` : ''}</div>
     ${editing ? `<form class="talk-form" id="talkedit-${esc(m.id)}" data-talkedit="${esc(m.id)}"><textarea aria-label="Edit message" rows="2">${esc(m.text)}</textarea><span class="row"><button class="btn sm primary" type="submit">Save</button><button type="button" class="btn sm ghost" data-talk="edit-cancel">Cancel</button></span></form>`
       : `<div class="talk-body">${talkText(m.text)}</div>`}
     <div class="talk-acts">${chips}
@@ -139,7 +152,7 @@ async function talkUndo(act){
   try{ const j = await window.FIOS_HUB.restore(act); toast(j.back ? 'Put back.' : 'Undone.'); S.talkHist = {}; S.talkDeleted = null; setTimeout(rerenderTalk, 400); }
   catch(e){ toast('Could not undo that: ' + (e.message || 'try again')); }
 }
-// An undo bar after deleting a task, project or goal, or after a bulk change.
+// An undo bar after deleting a task, project or goal.
 function undoBar(text, acts){
   let bar = document.getElementById('undoBar');
   if(!bar){ bar = document.createElement('div'); bar.id = 'undoBar'; bar.className = 'undo-bar'; bar.setAttribute('role', 'status'); document.body.appendChild(bar); }
@@ -151,8 +164,8 @@ if(window.FIOS_HUB && window.FIOS_HUB.onActivity){
   window.FIOS_HUB.onActivity(acts => {
     const big = acts.filter(a => ['tasks', 'projects', 'goals'].includes(a.path));
     const gone = big.filter(a => a.data == null);
+    // Only deletions get the bar; any other change is undone from its History panel, on purpose.
     if(gone.length) undoBar(gone.length === 1 ? `${{tasks:'Task', projects:'Project', goals:'Goal'}[gone[0].path]} deleted.` : `${gone.length} items deleted.`, gone.map(a => a.act));
-    else if(big.length >= 3) undoBar(`${big.length} changes saved.`, big.map(a => a.act));
   });
 }
 

@@ -162,6 +162,18 @@ app.set("trust proxy", 1);
 // by default still applies: X-Content-Type-Options: nosniff, a frame-options
 // header, dropping the X-Powered-By: Express fingerprint, and a few others.
 app.use(helmet({ contentSecurityPolicy: false }));
+// The policy we mean to enforce, in report-only mode for now: the browser blocks
+// nothing, only reports what would have been blocked (to /api/csp-report, shown in
+// Projects & Team > Setup > Connections). Enforce it once a week of reports is clean.
+const CSP_REPORT_ONLY = ["default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com data:", "img-src 'self' data: blob: https:", "connect-src 'self'", "frame-src 'self' https://grantpass-landing.onrender.com", "frame-ancestors 'self'", "base-uri 'self'", "form-action 'self' https://accounts.google.com", "object-src 'none'", "report-uri /api/csp-report"].join("; ");
+app.use((req, res, next) => { if (!req.path.startsWith("/api/")) res.setHeader("Content-Security-Policy-Report-Only", CSP_REPORT_ONLY); next(); });
+// Any request that ends in a server error is recorded for monitoring.
+app.use((req, res, next) => {
+  res.on("finish", () => {
+    if (res.statusCode >= 500 && req.path !== "/api/health") require("./hubplus").recordError("server", `${res.statusCode} ${req.method} ${req.path}`, "", req.originalUrl.slice(0, 300), "");
+  });
+  next();
+});
 app.use(compression());
 // Documents for the AI Diagnostic first pass are larger than any other request.
 app.use("/api/ai/diagnostic", express.json({ limit: "30mb" }));
@@ -1795,6 +1807,7 @@ require("./ai-features").mount(app, { pool, requireAuth });
 require("./weekly").mount(app, { pool, requireAuth });
 require("./meetings").mount(app, { pool, requireAuth });
 require("./hub").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope });
+require("./hubplus").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task
@@ -1814,6 +1827,8 @@ async function automationTick() {
   try { out.hub = await require("./hub").digestTick(pool); } catch (e) { out.hubError = String(e.message || e); }
   try { out.report = await require("./sheets").dailyRefresh(pool); } catch (e) { out.reportError = String(e.message || e); }
   try { out.gmail = await G.checkReplies(pool); if (out.gmail.replies) await A.evaluate(pool); } catch (e) { out.gmailError = String(e.message || e); }
+  try { out.hubMail = await require("./hubplus").mailTick(pool); } catch (e) { out.hubMailError = String(e.message || e); }
+  try { out.errors = await require("./hubplus").alertTick(pool); } catch (e) { out.errorsError = String(e.message || e); }
   const drafts = (await pool.query("SELECT o.id FROM proc_outbox o LEFT JOIN proc_runs r ON r.id = o.run_id WHERE o.status = 'draft' AND (r.id IS NULL OR r.archived_at IS NULL)").catch(() => ({ rows: [] }))).rows.map((r) => r.id);
   const seen = new Set(JSON.parse((await pool.query("SELECT value FROM app_settings WHERE key = 'tick_notified'").catch(() => ({ rows: [] }))).rows[0]?.value || "[]"));
   const fresh = drafts.filter((id) => !seen.has(id));
@@ -1905,3 +1920,6 @@ initSchema()
     console.error("Failed to initialize schema", err);
     process.exit(1);
   });
+
+// Unexpected failures are recorded for monitoring instead of only scrolling past in the logs.
+process.on("unhandledRejection", (e) => { console.error("unhandled rejection", e); require("./hubplus").recordError("server", "Unhandled: " + String((e && e.message) || e).slice(0, 300), String((e && e.stack) || "").slice(0, 3000), "", ""); });

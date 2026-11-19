@@ -5,6 +5,11 @@
    endpoints (hub.js on the server), so the rest of the hub runs unchanged. */
 (function(){
   window.FLOWHUB_HOST = 'fios';
+
+  // Errors in this page are reported for monitoring (Setup > Connections), at most 10 per visit.
+  (function(){ let n = 0; const send = (message, detail) => { if(n++ >= 10) return; try{ navigator.sendBeacon ? navigator.sendBeacon('/api/client-error', new Blob([JSON.stringify({source:'projects-and-team', message:String(message).slice(0, 500), detail:String(detail || '').slice(0, 3000), url:location.pathname + location.hash})], {type:'application/json'})) : 0; }catch(_){ } };
+    window.addEventListener('error', e => { if(e && e.message) send(e.message, (e.filename || '') + ':' + (e.lineno || '') + ' ' + ((e.error && e.error.stack) || '')); });
+    window.addEventListener('unhandledrejection', e => { const r = e && e.reason; send('Unhandled: ' + ((r && r.message) || r), r && r.stack); }); })();
   const TAB = Math.random().toString(36).slice(2, 12);
   const SYNTH = ['team', 'engagements'];
   const cache = new Map();          // collection path -> Map(id -> data)

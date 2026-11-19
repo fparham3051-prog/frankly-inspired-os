@@ -67,6 +67,8 @@ const LOGGED = new Set(["tasks", "projects", "goals", "msgs", "events", "dashboa
 const APPEND_ONLY = new Set(["history", "timeLog", "comments", "updates"]);
 // On someone else's message, these are the only fields you can change.
 const MSG_SHARED_KEYS = new Set(["decision", "taskRef", "pinned"]);
+const applied = []; // listeners told about every saved change: fn({ path, id, before, after, me, action })
+const onApplied = (fn) => applied.push(fn);
 const changes = new (require("events").EventEmitter)();
 changes.setMaxListeners(500);
 let changeT = null;
@@ -495,11 +497,14 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
         [me.uid, op.path, op.id, action, keys.slice(0, 40), merged, stored, data]);
       act = Number(r.rows[0].id);
     }
+    for (const fn of applied) { try { Promise.resolve(fn({ path: op.path, id: op.id, before: stored, after: data, me, action: opts.restore ? "restore" : !stored ? "create" : !data ? "delete" : "update" })).catch((e) => console.error("hub hook", e.message)); } catch (e) { console.error("hub hook", e.message); } }
     let time = 0;
     if (op.path === "tasks" && data) { try { time = await syncTime(prev, data, op.id); } catch (e) { console.error("hub time sync", e.message); } }
     announce();
     return { t, act, merged, time };
   }
+
+  app.locals.hub = { applyOp, meFor };
 
   app.post("/api/hub/write", requireAuth, async (req, res) => {
     try {
@@ -626,6 +631,13 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
       if (sendLog.length >= 80) return res.status(429).json({ error: "Too many emails this hour.", code: "rate_limited" });
       sendLog.push(Date.now());
       const r = await G().send(pool, { to: to.join(", "), subject: String(req.body.subject || "").slice(0, 300), body: String(req.body.body || "").slice(0, 20000) });
+      // A mention or reply sent by email: remember the thread, so an emailed answer comes back into the conversation.
+      const on = String((req.body && req.body.on) || "");
+      if (on && r.threadId && /^(task|project|client):[A-Za-z0-9_.-]{1,120}$/.test(on)) {
+        const me = await meFor(req.session);
+        await pool.query(`INSERT INTO hub_mail (thread_id, account, on_ref, parent, by_user, to_email, sent_at) VALUES ($1, $2, $3, $4, $5, $6, now())
+          ON CONFLICT (thread_id) DO UPDATE SET sent_at = now()`, [r.threadId, r.account || "", on, String(req.body.parent || "").slice(0, 120), me.uid, to.join(", ")]).catch((e) => console.error("hub mail", e.message));
+      }
       res.json({ ok: true, id: r.id });
     } catch (e) { res.status(/isn't connected/.test(String(e.message)) ? 409 : 502).json({ error: String(e.message || e), code: /isn't connected/.test(String(e.message)) ? "server_not_connected" : "tool_error" }); }
   });
@@ -733,4 +745,4 @@ async function digestTick(pool, { force } = {}) {
   return { digest: "sent", count: out.length, to: out };
 }
 
-module.exports = { mount, digestTick, digestText, canRead, canWrite, mirror, hubFlags };
+module.exports = { mount, digestTick, digestText, canRead, canWrite, mirror, hubFlags, onApplied };

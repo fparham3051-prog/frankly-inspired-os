@@ -47,6 +47,7 @@ async function t(name, fn) {
       const u = new URL(q.url, "http://x"), json = (o, st) => { r.writeHead(st || 200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
       if (u.pathname === "/token") { const f = new URLSearchParams(body); return json(f.get("grant_type") === "authorization_code" ? (f.get("code") === "good-code" ? { access_token: "at1", refresh_token: "rt1", expires_in: 3600, scope: "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file" } : { error: "invalid_grant" }) : { access_token: "at2", expires_in: 3600 }, f.get("code") === "bad" ? 400 : 200); }
       if (u.pathname === "/revoke") return json({});
+      if (u.pathname === "/hook") { (MOCK.hooks = MOCK.hooks || []).push({ headers: q.headers, body }); return json({ ok: true }); }
       // Stand-in for the website server: the AI relay and field notes.
       if (u.pathname.startsWith("/api/admin/") && q.headers["x-reminder-secret"] !== "ws") return json({ ok: false }, 401);
       if (u.pathname === "/api/admin/ai" && q.method === "GET") return json({ ok: true, configured: true, model: "test-model" });
@@ -106,7 +107,7 @@ async function t(name, fn) {
   });
   await new Promise((ok) => mock.listen(0, ok)); MOCK.port = mock.address().port;
   const GURL = "http://localhost:" + MOCK.port;
-  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, WEBSITE_API_URL: GURL, WEBSITE_ADMIN_SECRET: "ws", SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000", HUB_MIRROR_MS: "0" });
+  const env = Object.assign({}, process.env, { GOOGLE_AUTH_URL: GURL + "/auth", GOOGLE_TOKEN_URL: GURL + "/token", GOOGLE_REVOKE_URL: GURL + "/revoke", GMAIL_API_BASE: GURL, WEBSITE_API_URL: GURL, WEBSITE_ADMIN_SECRET: "ws", SHEETS_API_BASE: GURL, DRIVE_API_BASE: GURL, PUBLIC_URL: BASE + "/" }, { PORT: String(PORT), DATABASE_URL: DB, ADMIN_PASSWORD: "practice-pw", ADMIN_API_TOKEN: "test-token", SESSION_SECRET: "test-secret", GRANTPASS_INTEGRATION_KEY: "", LOGIN_MAX_ATTEMPTS: "1000", HUB_MIRROR_MS: "0", HUB_NO_TIMERS: "1", HUB_WEBHOOK_ALLOW_HTTP: "1" });
   const srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   srv.stdout.on("data", (d) => (log += d)); srv.stderr.on("data", (d) => (log += d));
@@ -966,6 +967,64 @@ async function t(name, fn) {
     await Promise.race([wait, new Promise((_, no) => setTimeout(() => no(new Error("no change event")), 3000))]);
     ac.abort();
   });
+  await t("hub: health check, error reports and search across messages", async () => {
+    assert.strictEqual((await fetch(BASE + "/api/health").then((r) => r.json())).ok, true);
+    assert.strictEqual((await fetch(BASE + "/api/client-error", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "projects-and-team", message: "Test boom" }) })).status, 204);
+    const errs = (await req("owner1", "GET", "/api/hub/errors")).data;
+    assert.ok(errs.items.some((e) => e.message === "Test boom"));
+    assert.strictEqual((await req("staff", "GET", "/api/hub/errors")).status, 403);
+    await hubW("staff", [{ path: "msgs", id: "srch1", data: { on: "task:x1", parent: "", text: "The Hillcrest venue quoted twelve hundred", at: "2026-11-19T12:00:00Z" } }]);
+    const s1 = (await req("staff", "GET", "/api/hub/search?q=hillcrest")).data.items;
+    assert.ok(s1.some((x) => x.kind === "message" && x.id === "srch1" && /Hillcrest/.test(x.title)), JSON.stringify(s1));
+    const page = await fetch(BASE + "/", { headers: { Cookie: jar.staff } });
+    assert.match(page.headers.get("content-security-policy-report-only") || "", /report-uri \/api\/csp-report/);
+  });
+  await t("hub: API tokens read and write tasks and messages; revoked tokens stop working", async () => {
+    const tok = (await req("staff", "POST", "/api/hub/tokens", { name: "Zapier" })).data.token;
+    assert.match(tok, /^fios_/);
+    const api = (m, p, b, k) => fetch(BASE + "/api/v1" + p, { method: m, headers: { Authorization: "Bearer " + (k || tok), "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => ({})) }));
+    assert.strictEqual((await api("GET", "/tasks", null, "fios_wrongwrongwrongwrongwrong")).status, 401);
+    const made = await api("POST", "/tasks", { title: "From Zapier", due: "2026-12-01" });
+    assert.strictEqual(made.status, 201); assert.strictEqual(made.data.src, "api");
+    const done = await api("PATCH", "/tasks/" + made.data.id, { status: "done" });
+    assert.strictEqual(done.data.status, "done"); assert.ok(done.data.doneAt);
+    assert.ok((await api("GET", "/tasks?status=done")).data.items.some((x) => x.id === made.data.id));
+    const msg = await api("POST", "/messages", { on: "task:" + made.data.id, text: "Posted by a script" });
+    assert.strictEqual(msg.status, 201); assert.strictEqual(msg.data.by, await uid("staff@test.org"));
+    assert.strictEqual((await api("GET", "/messages?on=task:" + made.data.id)).data.items.length, 1);
+    const hist = (await req("staff", "GET", "/api/hub/activity?path=tasks&id=" + made.data.id)).data.items;
+    assert.ok(hist.length >= 2, "API changes are in the history");
+    const id = (await req("staff", "GET", "/api/hub/tokens")).data.items.find((x) => x.name === "Zapier").id;
+    await req("staff", "DELETE", "/api/hub/tokens/" + id);
+    assert.strictEqual((await api("GET", "/tasks")).status, 401);
+  });
+  await t("hub: webhooks fire on finished tasks and decisions, signed; Slack gets a readable line", async () => {
+    assert.strictEqual((await req("staff", "POST", "/api/hub/webhooks", { url: GURL + "/hook" })).status, 403);
+    assert.strictEqual((await req("owner1", "POST", "/api/hub/webhooks", { url: "http://10.0.0.1/x" })).status, 400);
+    const h = (await req("owner1", "POST", "/api/hub/webhooks", { url: GURL + "/hook", events: ["task.completed", "decision.recorded"] })).data;
+    MOCK.hooks = [];
+    await hubW("staff", [{ path: "tasks", id: "wh1", data: { title: "Hook me", status: "in_progress" } }]);
+    await hubW("staff", [{ path: "tasks", id: "wh1", data: { title: "Hook me", status: "done" } }]);
+    await new Promise((ok) => setTimeout(ok, 300));
+    assert.strictEqual(MOCK.hooks.length, 1, "only the completion fires");
+    const body = JSON.parse(MOCK.hooks[0].body);
+    assert.strictEqual(body.event, "task.completed"); assert.strictEqual(body.data.title, "Hook me");
+    const sig = require("crypto").createHmac("sha256", h.secret).update(MOCK.hooks[0].body).digest("hex");
+    assert.strictEqual(MOCK.hooks[0].headers["x-fios-signature"], "sha256=" + sig);
+    const test = (await req("owner1", "POST", "/api/hub/webhooks/" + h.id + "/test")).data;
+    assert.strictEqual(test.status, "200");
+    await req("owner1", "DELETE", "/api/hub/webhooks/" + h.id);
+    await hubW("staff", [{ path: "tasks", id: "wh1", data: null }]);
+  });
+  await t("hub: a device can sign up for notifications; bad subscriptions are refused", async () => {
+    const k = (await req("staff", "GET", "/api/hub/push/key")).data;
+    assert.ok(k.key && k.key.length > 40); assert.strictEqual(k.devices, 0);
+    assert.strictEqual((await req("staff", "POST", "/api/hub/push/subscribe", { sub: { endpoint: "http://bad" } })).status, 400);
+    assert.strictEqual((await req("staff", "POST", "/api/hub/push/subscribe", { sub: { endpoint: "https://push.example.com/abc", keys: { p256dh: "x", auth: "y" } } })).status, 200);
+    assert.strictEqual((await req("staff", "GET", "/api/hub/push/key")).data.devices, 1);
+    await req("staff", "POST", "/api/hub/push/unsubscribe", { endpoint: "https://push.example.com/abc" });
+    assert.strictEqual((await req("staff", "GET", "/api/hub/push/key")).data.devices, 0);
+  });
   await t("hub: staff save a project and task; the owner sees them; board can't change anything", async () => {
     assert.strictEqual((await hubW("staff", [{ path: "projects", id: "hp1", data: { name: "Board retreat", sections: [{ id: "s1", name: "To do" }] } }, { path: "tasks", id: "ht1", data: { title: "Book venue", project: "hp1", status: "assigned" } }])).status, 200);
     const d = await hubS("owner1");
@@ -1043,6 +1102,22 @@ async function t(name, fn) {
     assert.strictEqual(on.status, 200, JSON.stringify(on.data)); assert.strictEqual(MOCK.sends.length, n + 1);
     assert.match(mailText(MOCK.sends[n].raw), /On track/);
     assert.strictEqual((await req("board", "POST", "/api/hub/email", { to: ["x@test.org"] })).status, 403);
+  });
+  await t("hub: an emailed answer to a mention comes back into the thread, and the sender hears about it", async () => {
+    const me = await uid("staff@test.org");
+    const r = await req("staff", "POST", "/api/hub/email", { to: ["pat@test.org"], subject: "Franklin mentioned you", body: "Can you hold Saturday?", on: "task:mailtask", parent: "" });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.data));
+    const tid = MOCK.sends[MOCK.sends.length - 1].threadId || ("t" + MOCK.sends.length);
+    const th = Object.keys(MOCK.threads).find((k) => MOCK.threads[k].some((m) => m.id === r.data.id)) || tid;
+    MOCK.threads[th].push({ id: "rep1", internalDate: String(Date.now() + 5000), payload: { mimeType: "text/plain", headers: [{ name: "From", value: "Pat Lee <pat@test.org>" }], body: { data: Buffer.from("Yes, Saturday works.\n\nOn Mon, Franklin wrote:\n> Can you hold Saturday?").toString("base64url") } } });
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    const d = await hubS("staff");
+    const m = d.docs.find((x) => x.path === "msgs" && x.id === "em-rep1");
+    assert.ok(m, "reply not posted");
+    assert.strictEqual(m.data.text, "Yes, Saturday works."); assert.strictEqual(m.data.guest, "Pat Lee"); assert.strictEqual(m.data.on, "task:mailtask");
+    assert.ok(d.docs.some((x) => x.path === "notifs" && x.data && x.data.to === me && /replied by email/.test(x.data.text)));
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    assert.strictEqual((await hubS("staff")).docs.filter((x) => x.path === "msgs" && /Saturday works/.test((x.data || {}).text || "")).length, 1, "posted once");
   });
   await t("hub: the morning digest goes to people who opted in, once a day", async () => {
     const s = await uid("staff@test.org");

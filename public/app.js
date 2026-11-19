@@ -1066,7 +1066,7 @@
         '<td>' + esc(p.nextStep || "") + '</td>' +
         '<td>' + fmtDate(p.nextStepDate) + (overdue ? ' <span class="overdue-tag">Overdue</span>' : '') + '</td>' +
         '<td class="dim">' + esc(p.source || "") + '</td>' +
-        '<td class="row-actions"><button type="button" class="btn ai-deal-open" data-deal="' + esc(p.id) + '" title="Pre-call brief, call notes, Diagnostic first pass">AI</button> <a class="btn secondary" href="/letter/engagement?pipeline=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener" title="Proposal and engagement letter for this record">Letter</a> <button type="button" class="btn danger pl-delete">Remove</button></td>' +
+        '<td class="row-actions"><button type="button" class="btn ai-deal-open" data-deal="' + esc(p.id) + '" title="Pre-call brief, call notes, Diagnostic first pass">AI</button> <button type="button" class="btn secondary cw-open" data-deal="' + esc(p.id) + '" title="The client’s private workspace: links, conversation, outcomes report">Workspace</button> <a class="btn secondary" href="/letter/engagement?pipeline=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener" title="Proposal and engagement letter for this record">Letter</a> <button type="button" class="btn danger pl-delete">Remove</button></td>' +
         '</tr>';
     }).join("");
   }

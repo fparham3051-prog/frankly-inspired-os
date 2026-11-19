@@ -52,6 +52,7 @@ function projectDialog(id){
     <label class="full">Name<input id="pp-name" required value="${esc(p.name)}"></label>
     <label>Owner<select id="pp-owner">${team().map(m=>`<option value="${m.id}" ${m.id===p.owner?'selected':''}>${esc(m.name)}</option>`).join('')}</select></label>
     <label>${esc(cap(LBL.entity))} (optional)<select id="pp-eng"><option value="">None</option>${list('engagements').filter(e=>!e.archived).map(e=>`<option value="${e.id}" ${e.id===p.eng?'selected':''}>${esc(e.org)}</option>`).join('')}</select></label>
+    ${window.FLOWHUB_HOST==='fios' ? `<label class="switch full"><input type="checkbox" id="pp-client" ${p.clientHidden?'':'checked'}>When linked to a client, they see this project's tasks in their client workspace</label>` : ''}
     <label>Start<input id="pp-start" type="date" value="${esc(p.start||'')}"></label><label>Due<input id="pp-due" type="date" value="${esc(p.due||'')}"></label>
     <label class="full">What is this project for?<textarea id="pp-desc" placeholder="Goal, scope, what done looks like">${esc(p.desc||'')}</textarea></label>
     <div class="row" style="grid-column:1/-1;justify-content:space-between">${id?`<button type="button" class="btn ghost danger" data-pm="archive" data-id="${esc(id)}">Archive project</button>`:'<span></span>'}<span class="row"><button type="button" class="btn ghost" data-act="close-dlg" data-dlg="pmDlg">Cancel</button><button class="btn primary" type="submit">${id?'Save':'Create project'}</button></span></div></form>`;

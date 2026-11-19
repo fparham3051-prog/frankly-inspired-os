@@ -864,11 +864,13 @@ app.post("/api/admin/ios-sync", requireAdminScope("ios"), async (req, res) => {
   if (deal) {
     await pool.query(
       `UPDATE pipeline SET ios_org_id = $1, ios_overall = $2, ios_decision = $3, ios_constraint = $4, ios_next_session = $5,
-         ios_record = $6, ios_synced_at = $7, ios_link_error = '', ios_plan = $9 WHERE id = $8`,
+         ios_record = $6, ios_synced_at = $7, ios_link_error = '', ios_plan = $9,
+         ios_comparison = CASE WHEN $10::text IS NULL THEN ios_comparison ELSE $10 END WHERE id = $8`,
       [orgId, Number.isFinite(Number(b.overall)) ? Number(b.overall) : null, clip(b.decision, 120),
        clip(rec.verifiedConstraint || b.lowestDimension, 300), clip(b.nextSessionAt, 40),
        JSON.stringify({ ...rec, dimensions: b.dimensions || null, lowestDimension: b.lowestDimension || "", perception: b.perception || null }).slice(0, 20000), now, deal.id,
-       b.plan && typeof b.plan === "object" ? JSON.stringify(b.plan).slice(0, 8000) : ""]
+       b.plan && typeof b.plan === "object" ? JSON.stringify(b.plan).slice(0, 8000) : "",
+       "comparison" in b ? (b.comparison && typeof b.comparison === "object" ? JSON.stringify(b.comparison).slice(0, 8000) : "") : null]
     );
   }
   // Problem Log: only once there's something to log.
@@ -1815,6 +1817,7 @@ require("./weekly").mount(app, { pool, requireAuth });
 require("./meetings").mount(app, { pool, requireAuth });
 require("./hub").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope });
 require("./hubplus").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope, jobRegistry: JOB_REGISTRY });
+require("./clientspace").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task

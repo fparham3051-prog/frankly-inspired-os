@@ -1134,3 +1134,22 @@ CREATE TABLE IF NOT EXISTS hub_files (
   by_user TEXT DEFAULT '',
   created_at TEXT
 );
+
+-- ---------- Client workspace (clientspace.js) ----------
+-- Private links a client organization uses to see its own plan, shared
+-- projects, conversation with the team and outcomes. Only a hash of each
+-- link's secret is kept; revoking a link stops it at once.
+CREATE TABLE IF NOT EXISTS client_access (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT NOT NULL REFERENCES pipeline(id),
+  name TEXT NOT NULL DEFAULT '',
+  email TEXT DEFAULT '',
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS client_access_deal ON client_access (pipeline_id);
+-- Before-and-after scores InstitutionalOS sends with each sync (outcomes report).
+ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_comparison TEXT DEFAULT '';

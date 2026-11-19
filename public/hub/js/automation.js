@@ -374,7 +374,7 @@ document.addEventListener('change', ev => {
 });
 document.addEventListener('submit', ev => {
   const f = ev.target; const id = f.dataset && f.dataset.id;
-  if(f.id==='pmProjForm'){ ev.preventDefault(); const v = {name:$('#pp-name').value.trim(), owner:$('#pp-owner').value, eng:$('#pp-eng').value, start:$('#pp-start').value, due:$('#pp-due').value, desc:$('#pp-desc').value};
+  if(f.id==='pmProjForm'){ ev.preventDefault(); const v = {name:$('#pp-name').value.trim(), owner:$('#pp-owner').value, eng:$('#pp-eng').value, start:$('#pp-start').value, due:$('#pp-due').value, desc:$('#pp-desc').value}; if($('#pp-client')) v.clientHidden = !$('#pp-client').checked;
     if(id){ const p = S.projects[id]; put('projects', id, {...p, ...v}); audit('Edited a project', v.name); $('#pmDlg').close(); render(); } else { const pid = newProject(v); $('#pmDlg').close(); openProject(pid, 'list'); } return; }
   if(f.id==='pmFieldForm'){ ev.preventDefault(); const p = S.projects[S.projectOpen]; if(!p) return; const fl = {id:'f'+uid().slice(0,6), name:$('#pf-name').value.trim(), type:$('#pf-type').value, options:$('#pf-opts').value.split('\n').map(x=>x.trim()).filter(Boolean)}; put('projects', p.id, {...p, fields:[...p.fields, fl]}); $('#pmDlg').close(); render(); return; }
   if(f.dataset && f.dataset.pmadd){ ev.preventDefault(); const inp = f.querySelector('input'); const tt = inp.value.trim(); if(!tt || !S.projectOpen) return; pmTask(S.projectOpen, tt, {section:f.dataset.pmadd, owner:''}); inp.value = ''; render(); setTimeout(()=>{ const n = document.getElementById(inp.id); if(n) n.focus(); }, 0); return; }

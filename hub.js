@@ -461,7 +461,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
   }
 
   // ---------- page ----------
-  app.use("/hub", (req, res, next) => (verifySession(req.cookies[COOKIE_NAME]) ? next() : res.redirect("/")), express.static(path.join(__dirname, "public", "hub"), { index: "index.html", maxAge: 0 }));
+  app.use("/hub", (req, res, next) => (verifySession(req.cookies[COOKIE_NAME]) ? next() : res.redirect("/")), require("./org").hubSender(), express.static(path.join(__dirname, "public", "hub"), { index: "index.html", maxAge: 0 }));
 
   // ---------- sync ----------
   app.get("/api/hub/sync", requireAuth, async (req, res) => {
@@ -774,7 +774,7 @@ async function digestTick(pool, { force } = {}) {
   for (const r of rows) docs[r.path][r.id] = r.data || {};
   const users = (await pool.query("SELECT id, email, name, role FROM app_users WHERE NOT disabled")).rows;
   for (const u of users) docs.team["u" + u.id] = Object.assign({}, docs.team["u" + u.id], { lead: u.role === "owner" });
-  const hubUrl = (process.env.PUBLIC_URL || "https://frankly-inspired-os.onrender.com/").replace(/\/?$/, "/") + "hub/";
+  const hubUrl = require("./org").publicUrl() + "hub/";
   const out = [];
   for (const u of users) {
     const x = docs.team["u" + u.id] || {};

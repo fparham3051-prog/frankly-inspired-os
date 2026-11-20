@@ -14,7 +14,8 @@ const express = require("express");
 const hub = require("./hub");
 const { ORG } = require("./accounts");
 
-const PUBLIC = () => (process.env.PUBLIC_URL || "https://frankly-inspired-os.onrender.com/").replace(/\/?$/, "/");
+const ORGINFO = require("./org");
+const PUBLIC = () => ORGINFO.publicUrl();
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const clip = (s, n) => String(s == null ? "" : s).slice(0, n);
 let poolRef = null;
@@ -41,7 +42,7 @@ async function alertTick(pool) {
   const to = await ownerEmail(pool); if (!to) return { errors: n, alerted: false };
   const top = (await pool.query("SELECT source, message, count(*)::int AS n FROM app_errors WHERE at > now() - interval '1 hour' AND source <> 'csp' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 5")).rows;
   try {
-    await require("./gmail").send(pool, { to, subject: `Frankly Inspired: ${n} errors in the last hour`, body: `The operations app logged ${n} errors in the last hour.\n\n${top.map((x) => `${x.n} x ${x.source}: ${x.message}`).join("\n")}\n\nSee them in Projects & Team, Setup, Connections: ${PUBLIC()}hub/#setup\n` });
+    await require("./gmail").send(pool, { to, subject: `${ORGINFO.info().shortName}: ${n} errors in the last hour`, body: `The operations app logged ${n} errors in the last hour.\n\n${top.map((x) => `${x.n} x ${x.source}: ${x.message}`).join("\n")}\n\nSee them in Projects & Team, Setup, Connections: ${PUBLIC()}hub/#setup\n` });
     await setS(pool, "errors_alerted_at", Date.now());
     return { errors: n, alerted: true };
   } catch (e) { return { errors: n, alerted: false, why: e.message }; }
@@ -59,7 +60,7 @@ async function pushTo(pool, uid, payload) {
   const subs = (await pool.query("SELECT endpoint, sub FROM hub_push WHERE uid = $1", [uid])).rows;
   if (!subs.length) return 0;
   const wp = require("web-push"), v = await vapid(pool);
-  const contact = "mailto:" + ((await ownerEmail(pool)) || "admin@franklyinspired.associates");
+  const contact = "mailto:" + ((await ownerEmail(pool)) || ORGINFO.info().email || "admin@example.org");
   let sent = 0;
   for (const s of subs) {
     try { await wp.sendNotification(s.sub, JSON.stringify(payload), { TTL: 6 * 3600, vapidDetails: { subject: contact, publicKey: v.publicKey, privateKey: v.privateKey } }); sent++; }
@@ -241,7 +242,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
   // Every saved change: phone notifications for new Inbox items, and webhooks.
   hub.onApplied(async (c) => {
     if (c.path === "notifs" && c.action === "create" && c.after && c.after.to) {
-      await pushTo(pool, c.after.to, { title: "Frankly Inspired", body: clip(c.after.text, 180), url: notifUrl(c.after), tag: "n-" + c.id });
+      await pushTo(pool, c.after.to, { title: ORGINFO.info().shortName, body: clip(c.after.text, 180), url: notifUrl(c.after), tag: "n-" + c.id });
     }
     if (["tasks", "msgs", "projects", "goals"].includes(c.path)) await fireWebhooks(pool, c);
   });
@@ -302,7 +303,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
   });
   app.post("/api/hub/push/test", requireAuth, async (req, res) => {
     const me = await sessionMe(req);
-    const n = await pushTo(pool, me.uid, { title: "Frankly Inspired", body: "Notifications are on. Mentions, replies and approvals will reach this device.", url: "/hub/#inbox", tag: "test" });
+    const n = await pushTo(pool, me.uid, { title: ORGINFO.info().shortName, body: "Notifications are on. Mentions, replies and approvals will reach this device.", url: "/hub/#inbox", tag: "test" });
     res.json({ ok: true, sent: n });
   });
 
@@ -368,7 +369,7 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
     const me = await ownerOnly(req, res); if (!me) return;
     const h = (await pool.query("SELECT * FROM hub_webhooks WHERE id = $1", [req.params.id])).rows[0];
     if (!h) return res.status(404).json({ error: "No such webhook." });
-    const status = await deliver(pool, h, "test", { event: "test", at: new Date().toISOString(), text: "Test from Frankly Inspired Projects & Team. Webhooks are working.", link: PUBLIC() + "hub/" });
+    const status = await deliver(pool, h, "test", { event: "test", at: new Date().toISOString(), text: `Test from ${ORGINFO.info().shortName} Projects & Team. Webhooks are working.`, link: PUBLIC() + "hub/" });
     res.json({ ok: true, status });
   });
 

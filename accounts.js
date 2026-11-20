@@ -29,7 +29,12 @@ const BOARD_ALLOWED_WRITES = ["/api/logout", "/api/me/password", "/api/me/2fa"];
 // ---------- organization profile ----------
 const ORG_PATH = path.join(__dirname, "org.config.json");
 let ORG = {};
-try { ORG = JSON.parse(fs.readFileSync(ORG_PATH, "utf8")); } catch (e) { console.error("org.config.json missing or invalid:", e.message); }
+// A copy of the stack for another organization can keep its profile out of the
+// code: ORG_CONFIG (the whole JSON) or ORG_CONFIG_PATH (a file) in its Render
+// environment. Every copy then runs the same code from the same repository.
+try {
+  ORG = process.env.ORG_CONFIG ? JSON.parse(process.env.ORG_CONFIG) : JSON.parse(fs.readFileSync(process.env.ORG_CONFIG_PATH || ORG_PATH, "utf8"));
+} catch (e) { console.error("organization profile missing or invalid (ORG_CONFIG, ORG_CONFIG_PATH or org.config.json):", e.message); }
 
 // ---------- passwords (scrypt) ----------
 function hashPassword(password) {

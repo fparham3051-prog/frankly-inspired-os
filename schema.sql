@@ -1153,3 +1153,8 @@ CREATE TABLE IF NOT EXISTS client_access (
 CREATE INDEX IF NOT EXISTS client_access_deal ON client_access (pipeline_id);
 -- Before-and-after scores InstitutionalOS sends with each sync (outcomes report).
 ALTER TABLE pipeline ADD COLUMN IF NOT EXISTS ios_comparison TEXT DEFAULT '';
+
+-- ---------- Storage (storage.js) ----------
+-- Attachments can live in Google Drive: then data is NULL and drive_id points to the file.
+ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS drive_id TEXT;
+ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS drive_account TEXT;

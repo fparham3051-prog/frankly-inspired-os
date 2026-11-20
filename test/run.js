@@ -85,6 +85,16 @@ async function t(name, fn) {
           SH.values[tab] = (SH.values[tab] || []).concat(JSON.parse(body).values); return json({});
         }
         if (SH && u.pathname === "/drive/v3/files/s1/permissions") { SH.perms.push(JSON.parse(body)); return json({ id: "p" + SH.perms.length }); }
+        // Google Drive for attachments (storage.js): a folder, multipart uploads, downloads.
+        MOCK.drive = MOCK.drive || { files: {}, n: 0 };
+        if (u.pathname === "/drive/v3/files" && q.method === "POST") { const j = JSON.parse(body); MOCK.drive.folder = j; return json({ id: "folder1" }); }
+        if (u.pathname === "/upload/drive/v3/files" && q.method === "POST") {
+          const b = /boundary=(\S+)/.exec(q.headers["content-type"])[1], parts = body.split("--" + b);
+          const meta = JSON.parse(parts[1].split("\r\n\r\n")[1]), content = parts[2].split("\r\n\r\n").slice(1).join("\r\n\r\n").replace(/\r\n$/, "");
+          const id = "d" + (++MOCK.drive.n); MOCK.drive.files[id] = { meta, content }; return json({ id });
+        }
+        const dm = /^\/drive\/v3\/files\/(d\d+)$/.exec(u.pathname);
+        if (dm && u.searchParams.get("alt") === "media" && MOCK.drive.files[dm[1]]) { r.writeHead(200, { "Content-Type": "application/octet-stream" }); return r.end(MOCK.drive.files[dm[1]].content); }
       }
       if (q.headers.authorization !== "Bearer at1" && q.headers.authorization !== "Bearer at2") return json({ error: { message: "bad token" } }, 401);
       if (u.pathname === "/gmail/v1/users/me/profile") return json({ emailAddress: "Owner@Gmail.test" });
@@ -1280,6 +1290,58 @@ async function t(name, fn) {
     assert.strictEqual((await hubW("staff", [{ path: "../x", id: "a", data: {} }])).status, 400);
     assert.strictEqual((await hubW("staff", [{ path: "secrets", id: "a", data: {} }])).status, 403);
     assert.strictEqual((await hubW("staff", [{ path: "tasks", id: "big", data: { x: "y".repeat(500000) } }])).status, 413);
+  });
+  // ---------- Storage ----------
+  await t("storage: attachments go to Google Drive when connected, open from there, and old ones move over", async () => {
+    // One file already in the database (as before Drive was used).
+    await Q.query("INSERT INTO hub_files (id, name, type, size, data, by_user, created_at) VALUES ('fold-db', 'old.txt', 'text/plain', 9, $1, 'u1', now()::text)", [Buffer.from("old bytes")]);
+    const up = await fetch(BASE + "/api/hub/files", { method: "POST", headers: { Cookie: jar.owner1, "Content-Type": "text/plain", "X-File-Name": "board-pack.txt" }, body: "board pack text" });
+    const uj = await up.json(); assert.strictEqual(up.status, 200, JSON.stringify(uj)); assert.strictEqual(uj.stored, "drive");
+    const row = (await Q.query("SELECT data, drive_id FROM hub_files WHERE id = $1", [uj.id])).rows[0];
+    assert.strictEqual(row.data, null, "nothing stored in the database"); assert.ok(row.drive_id);
+    assert.match(MOCK.drive.folder.name, /Files$/);
+    const dl = await fetch(BASE + uj.url, { headers: { Cookie: jar.owner1 } }); assert.strictEqual(await dl.text(), "board pack text");
+    let m = (await req("owner1", "GET", "/api/settings/storage")).data;
+    assert.ok(m.usedMb > 0 && m.planMb === 1024); assert.strictEqual(m.files.inDatabase, 1); assert.ok(m.files.inDrive >= 1);
+    const mv = (await req("owner1", "POST", "/api/settings/storage/move-files", {})).data; assert.strictEqual(mv.moved, 1); assert.strictEqual(mv.left, 0);
+    assert.strictEqual(await (await fetch(BASE + "/api/hub/files/fold-db", { headers: { Cookie: jar.owner1 } })).text(), "old bytes");
+    // Turning Drive off keeps new files in the database.
+    await req("owner1", "POST", "/api/settings/storage", { filesInDrive: false });
+    const up2 = await (await fetch(BASE + "/api/hub/files", { method: "POST", headers: { Cookie: jar.owner1, "Content-Type": "text/plain", "X-File-Name": "x.txt" }, body: "x" })).json();
+    assert.strictEqual(up2.stored, "database");
+    await req("owner1", "POST", "/api/settings/storage", { filesInDrive: true });
+    assert.strictEqual((await req("staff", "POST", "/api/settings/storage", { planMb: 500 })).status, 403);
+  });
+  await t("storage: the morning brief warns at 70% full; backups can be compressed and restored", async () => {
+    const used = (await req("owner1", "GET", "/api/settings/storage")).data.usedMb;
+    // A plan just big enough that the database is 80% full (set directly: the form won't take under 100 MB).
+    await Q.query("INSERT INTO app_settings (key, value) VALUES ('storage_plan_mb', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [String(Math.max(1, Math.floor(used / 0.8)))]);
+    const mo = (await req("owner1", "GET", "/api/morning")).data;
+    assert.ok(mo.systems.problems.some((p) => /database is \d+% full/.test(p)), JSON.stringify(mo.systems.problems));
+    await req("owner1", "POST", "/api/settings/storage", { planMb: 1024 });
+    const gz = await fetch(BASE + "/api/admin/backup-all?gzip=1", { headers: { "X-Admin-Token": "test-token" } });
+    assert.strictEqual(gz.headers.get("content-type"), "application/gzip");
+    const buf = Buffer.from(await gz.arrayBuffer()); assert.strictEqual(buf[0], 0x1f);
+    const all = JSON.parse(require("zlib").gunzipSync(buf).toString()); assert.strictEqual(all.kind, "full-system-backup");
+    assert.ok(all.operations.tables.hub_files.some((f) => f.drive_id), "Drive references are in the backup");
+  });
+  await t("storage: a yearly archive downloads finished work; trimming needs the owner's typed confirmation", async () => {
+    const yr = new Date().getFullYear() - 3, when = yr + "-06-01T12:00:00.000Z";
+    await hubW("owner1", [
+      { path: "projects", id: "arc-p", data: { name: "Old capital campaign", archived: true, archivedAt: when, sections: [] } },
+      { path: "tasks", id: "arc-t", data: { title: "Thank the donors", project: "arc-p", done: true, status: "done", doneAt: when } },
+      { path: "msgs", id: "arc-m", data: { on: "project:arc-p", text: "Wrapped up.", at: when } }
+    ]);
+    const pv = (await req("owner1", "GET", `/api/settings/archive?preview=1&year=${yr}`)).data.counts;
+    assert.strictEqual(pv.projects, 1); assert.strictEqual(pv.tasks, 1); assert.strictEqual(pv.messages, 1);
+    const f = await fetch(BASE + `/api/settings/archive?year=${yr}`, { headers: { Cookie: jar.owner1 } });
+    const a = JSON.parse(require("zlib").gunzipSync(Buffer.from(await f.arrayBuffer())).toString()); assert.strictEqual(a.projects[0].name, "Old capital campaign");
+    assert.strictEqual((await req("owner1", "POST", "/api/settings/archive/trim", { year: yr, confirm: "yes" })).status, 400);
+    assert.strictEqual((await req("owner1", "POST", "/api/settings/archive/trim", { year: new Date().getFullYear(), confirm: "DELETE " + new Date().getFullYear() })).status, 400, "not the current year");
+    assert.strictEqual((await req("staff", "POST", "/api/settings/archive/trim", { year: yr, confirm: "DELETE " + yr })).status, 403);
+    const tr = (await req("owner1", "POST", "/api/settings/archive/trim", { year: yr, confirm: "DELETE " + yr })).data;
+    assert.deepStrictEqual(tr.removed, { projects: 1, tasks: 1, messages: 1 });
+    assert.strictEqual((await Q.query("SELECT count(*)::int AS n FROM hub_docs WHERE id IN ('arc-p','arc-t','arc-m') AND NOT deleted")).rows[0].n, 0);
   });
   await t("gmail: disconnect goes back to opening in my email", async () => {
     assert.strictEqual((await req("owner1", "POST", "/api/gmail/disconnect", { account: "owner@gmail.test" })).status, 200);

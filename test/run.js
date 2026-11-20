@@ -1409,6 +1409,25 @@ async function t(name, fn) {
     assert.strictEqual((await req("owner1", "POST", `/api/clients/${deal}/message`, { decide: "cw-m-internal" })).status, 404, "private discussion can't be touched from here");
     const w2 = (await req("anon", "GET", "/api/client/" + token)).data;
     assert.ok(w2.messages.some((m) => m.parent === sent.data.id && m.team && m.decision)); assert.strictEqual(w2.outcomes.decisions, 2);
+    // Growth Pathway: arrives from InstitutionalOS, shows to the client, and turns into tasks once.
+    assert.strictEqual((await req("owner1", "POST", `/api/clients/${deal}/growth-plan`, {})).status, 400, "nothing to plan before a score arrives");
+    const growth = { stage: 2, stageName: "Emerging", score: 14, outOf: 20, band: "Strengthen before adding staff", baseline: { stage: 2, score: 10, at: "2026-08-15" },
+      pillars: [{ name: "Structure", score: 2 }, { name: "Money", score: 3 }, { name: "Fundraising", score: 3 }, { name: "Board", score: 2 }, { name: "Compliance", score: 4 }],
+      nextHires: ["Operations / admin coordinator", "Front-line program staff"], fundraising: "Build the system: a grants calendar", boardGaps: ["Get to 100% board giving"] };
+    await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 62, growth }, { "X-Admin-Token": "test-token" });
+    const wg = (await req("anon", "GET", "/api/client/" + token)).data;
+    assert.strictEqual(wg.growth.stageName, "Emerging"); assert.strictEqual(wg.growth.score, 14); assert.strictEqual(wg.growth.baseline.score, 10);
+    assert.deepStrictEqual(wg.growth.nextHires, ["Operations / admin coordinator", "Front-line program staff"]);
+    assert.strictEqual(wg.outcomes.comparison.overallAfter, 61, "a growth sync keeps the comparison");
+    assert.strictEqual((await req("board", "POST", `/api/clients/${deal}/growth-plan`, {})).status, 403);
+    const gp = await req("owner1", "POST", `/api/clients/${deal}/growth-plan`, {});
+    assert.strictEqual(gp.status, 200, JSON.stringify(gp.data)); assert.strictEqual(gp.data.made, 4);
+    assert.strictEqual((await req("owner1", "POST", `/api/clients/${deal}/growth-plan`, {})).data.made, 0, "running again adds nothing");
+    const gpt = (await Q.query("SELECT data FROM hub_docs WHERE path = 'tasks' AND id LIKE $1 AND NOT deleted", ["gp-" + deal + "-%"])).rows.map((r) => r.data);
+    assert.ok(gpt.some((t) => t.seat === "Board chair" && /100% board giving/.test(t.title)));
+    assert.ok((await req("anon", "GET", "/api/client/" + token)).data.projects.some((p) => /^Growth Plan: /.test(p.name)), "the client sees the Growth Plan project");
+    await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 62 }, { "X-Admin-Token": "test-token" });
+    assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).data.growth.score, 14, "a sync without growth keeps the last one");
     // Revoked links stop at once; made-up links never work.
     assert.strictEqual((await req("owner1", "DELETE", `/api/clients/access/${made.data.id}`)).status, 200);
     assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).status, 404);

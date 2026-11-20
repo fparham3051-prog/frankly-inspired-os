@@ -55,6 +55,14 @@
           (ro ? "" : '<button type="button" class="btn danger fd-sm cw-revoke" data-id="' + esc(l.id) + '">Revoke</button>') + "</div>";
       }).join("") : '<p class="fd-small fd-dim">No links yet.</p>') +
       (ro ? "" : '<form id="cw-new" class="fd-form" style="margin-top:10px"><label>Name<input name="name" required placeholder="e.g. their executive director"></label><label>Email (optional)<input name="email" type="email"></label><p class="fd-wide"><button type="submit" class="btn">Make a link</button></p></form>') + "</div>";
+    // growth pathway
+    var g = w.growth;
+    h += '<div class="fw-card"><h3>Growth Pathway</h3>' + (g ? '<p><b>Stage ' + esc(g.stage) + ': ' + esc(g.stageName) + '</b> &middot; ' + esc(g.score) + ' of ' + esc(g.outOf) + ' (' + esc(g.band) + ')' + (g.baseline && g.baseline.score !== g.score ? ' &middot; started at ' + esc(g.baseline.score) : '') + '</p>' +
+      '<p class="fd-small">' + g.pillars.map(function (p) { return esc(p.name) + ' ' + esc(p.score) + '/4'; }).join(' &middot; ') + '</p>' +
+      (g.nextHires.length ? '<p class="fd-small"><b>Next hires:</b> ' + g.nextHires.map(esc).join('; ') + '</p>' : '') +
+      (g.boardGaps.length ? '<p class="fd-small"><b>Board:</b> ' + g.boardGaps.map(esc).join('; ') + '</p>' : '') +
+      (board() ? '' : '<p><button type="button" class="btn fd-sm cw-growth">Turn next steps into tasks</button> <span class="fd-small fd-dim">Makes a "Growth Plan" project they see, one task per step, each with its seat. Safe to run again.</span></p>')
+      : '<p class="fd-small fd-dim">Not scored yet. Fill in the Growth Pathway panel for this client in InstitutionalOS; it arrives here on its own.</p>') + '</div>';
     // projects
     h += '<div class="fw-card"><h3>Projects they see</h3>' + (w.projects.length ? w.projects.map(function (p) { return "<div>" + esc(p.name) + ' <span class="fd-small fd-dim">' + p.done + " of " + p.total + " done</span></div>"; }).join("") : '<p class="fd-small fd-dim">None yet.</p>') +
       '<p class="fd-small fd-dim">' + (w.hiddenProjects ? w.hiddenProjects + " linked project" + (w.hiddenProjects === 1 ? " is" : "s are") + " hidden from them. " : "") + 'Link a project to this client in Projects &amp; Team (project settings); untick "they see this project" there to keep one private.</p></div>';
@@ -74,6 +82,11 @@
     if ((b = e.target.closest(".cw-revoke"))) {
       if (!confirm("Revoke this link? It stops working right away.")) return;
       api("/api/clients/access/" + encodeURIComponent(b.getAttribute("data-id")), { method: "DELETE" }).then(function () { toast("Link revoked."); load(); }).catch(function (x) { toast(x.message); });
+      return;
+    }
+    if ((b = e.target.closest(".cw-growth"))) {
+      b.disabled = true;
+      api("/api/clients/" + encodeURIComponent(DEAL) + "/growth-plan", { method: "POST", body: {} }).then(function (r) { toast(r.made ? r.made + " task" + (r.made === 1 ? "" : "s") + " added to the Growth Plan project." : "The Growth Plan project is already up to date."); load(); }).catch(function (x) { b.disabled = false; toast(x.message); });
       return;
     }
     if ((b = e.target.closest(".cw-decide"))) {

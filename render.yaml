@@ -1,0 +1,41 @@
+# One-click setup for a NEW organization's copy of the operations app
+# (Operations + Projects & Team + client workspaces).
+#
+# Frankly Inspired's own services were made by hand and are not managed by
+# this file; creating a Blueprint from it makes new services and changes
+# nothing that already exists.
+#
+# In Render: New > Blueprint > pick this repository. Render asks for the
+# values marked sync: false. See docs/NEW-ORGANIZATION.md.
+#
+# The database is NOT created here on purpose: Render's free Postgres is
+# deleted 30 days after it is created. Use a database that lasts (a free
+# plan that doesn't expire elsewhere, or a paid one) and paste its address
+# into DATABASE_URL.
+services:
+  - type: web
+    name: ops-NEW-ORGANIZATION        # rename: e.g. ops-riverbend
+    runtime: node
+    plan: free                         # sleeps when idle; Starter keeps it awake
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true                   # every fix merged to main reaches this copy
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL              # the lasting Postgres database's connection address
+        sync: false
+      - key: ORG_CONFIG                # the organization profile, as JSON (see docs/NEW-ORGANIZATION.md)
+        sync: false
+      - key: PUBLIC_URL                # this service's address, e.g. https://ops-riverbend.onrender.com/
+        sync: false
+      - key: ADMIN_PASSWORD            # the one-time setup password; turned off once the owner has two-step sign-in
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_API_TOKEN
+        generateValue: true
+      - key: STARTER_PACK              # optional: a starter pack exported from another copy (JSON)
+        sync: false

@@ -181,6 +181,8 @@ app.use("/api/ai/diagnostic", express.json({ limit: "30mb" }));
 app.use("/api/hub/write", express.json({ limit: "8mb" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
+// Another organization's copy: brand pages, scripts and styles from its profile (no-op for Frankly Inspired).
+app.use(require("./org").middleware(path.join(__dirname, "public")));
 
 // ---------- auth routes (accounts.js: sign-in, people, roles, two-step, settings, one sign-in) ----------
 accounts.mount(app, { pool, sign, verifySession: verify, requireAuth, onUserChanged: (id) => disabledCache.delete(id), COOKIE_NAME, COOKIE_MAX_AGE_MS, ADMIN_PASSWORD, timingSafeStringEqual, loginRateLimited });
@@ -784,7 +786,7 @@ function cleanSelfScores(v) {
   return Object.keys(out).length ? JSON.stringify(out) : "";
 }
 const GRANTPASS_API = (process.env.GRANTPASS_API || "https://grantpass-backend.onrender.com").replace(/\/+$/, "");
-const GRANTPASS_DASHBOARD = (process.env.GRANTPASS_DASHBOARD || "https://grantpass-dashboard.onrender.com").replace(/\/+$/, "");
+const GRANTPASS_DASHBOARD = (process.env.GRANTPASS_DASHBOARD || (accounts.ORG.links && accounts.ORG.links.clients) || "https://grantpass-dashboard.onrender.com").replace(/\/+$/, "");
 const GRANTPASS_INTEGRATION_KEY = process.env.GRANTPASS_INTEGRATION_KEY || "";
 async function iosFetch(pathname, opts = {}) {
   // grantpass-backend sleeps on Render's free tier; a cold start can take ~50s.
@@ -1818,6 +1820,7 @@ require("./meetings").mount(app, { pool, requireAuth });
 require("./hub").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope });
 require("./hubplus").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope, jobRegistry: JOB_REGISTRY });
 require("./clientspace").mount(app, { pool, requireAuth });
+require("./setup").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task

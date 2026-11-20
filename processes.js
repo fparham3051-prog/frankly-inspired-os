@@ -121,15 +121,35 @@ const STARTER = [
       s("Orientation with the executive director and the chair", 14), s("Check in after their first meeting", 45)] },
 ];
 
+// Starter pack: what a new copy of the stack loads on day one. By default the
+// built-in STARTER checklists and the library materials in the organization
+// profile. A copy can instead load a pack exported from another copy
+// (Settings > Starter pack, /api/settings/starter-pack): put it in
+// starter-pack.json, or in the STARTER_PACK environment setting.
+function starterPack() {
+  const BRAND = require("./org");
+  let pack = null;
+  try {
+    if (process.env.STARTER_PACK) pack = JSON.parse(process.env.STARTER_PACK);
+    else if (require("fs").existsSync(require("path").join(__dirname, "starter-pack.json"))) pack = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "starter-pack.json"), "utf8"));
+  } catch (e) { console.error("starter pack unreadable, using the built-in one:", e.message); pack = null; }
+  const processes = pack && Array.isArray(pack.processes) ? pack.processes : STARTER;
+  const materials = pack && Array.isArray(pack.materials) ? pack.materials : ((ORG.library || {}).materials || []);
+  // Another organization's copy: its own name in the text.
+  const b = (x) => JSON.parse(BRAND.brand(JSON.stringify(x), "json"));
+  return { processes: b(processes), materials: b(materials), fromPack: !!pack };
+}
+
 async function ensureStarter(pool) {
   const flag = (await pool.query("SELECT value FROM app_settings WHERE key = 'library_seeded'")).rows[0];
   if (flag) return;
   const have = (await pool.query("SELECT (SELECT count(*) FROM proc_processes)::int + (SELECT count(*) FROM lib_materials)::int AS n")).rows[0].n;
   if (!have) {
-    const mats = ((ORG.library || {}).materials || []);
+    const pack = starterPack();
+    const mats = pack.materials;
     const byTitle = {};
     for (const m of mats) { const row = await insertRow(pool, "lib_materials", m); byTitle[m.title] = row.link; }
-    for (const p of STARTER) {
+    for (const p of pack.processes) {
       const auto = AUTO.AUTOMATION[p.name] || [];
       const steps = p.steps.map((x, i) => Object.assign({}, x, auto[i] || {}));
       await insertRow(pool, "proc_processes", Object.assign({ reviewEveryMonths: 12, docLink: p.docTitle ? byTitle[p.docTitle] || "" : "" }, p, { steps }));
@@ -393,6 +413,20 @@ function mount(app, { pool, requireAuth }) {
   }));
 
   // ----- summary: suggestions, open checklists, steps due, reviews due -----
+  // Export this copy's checklists and library as a starter pack for a new copy (owner only: /api/settings).
+  app.get("/api/settings/starter-pack", requireAuth, wrap(async (req, res) => {
+    const procs = (await pool.query("SELECT * FROM proc_processes WHERE archived_at IS NULL ORDER BY area, name")).rows.map((r) => toApi("proc_processes", r));
+    const mats = (await pool.query("SELECT * FROM lib_materials WHERE archived_at IS NULL ORDER BY area, title")).rows.map((r) => toApi("lib_materials", r));
+    const keep = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "").map((k) => [k, o[k]]));
+    const pack = {
+      _about: "Starter pack exported from " + ((ORG.org || {}).name || "a copy of the stack") + ". Save as starter-pack.json in a new copy (or paste into its STARTER_PACK setting) before its first start. Links point to the original organization's files; share them, or replace them, before the new organization relies on them.",
+      exportedAt: nowIso(), version: 1,
+      processes: procs.map((p) => keep(p, ["name", "area", "purpose", "usedWhen", "owner", "steps", "suggestOn", "reviewEveryMonths"])).map((p, i) => Object.assign(p, { owner: "", docTitle: ((mats.find((m) => m.link && m.link === procs[i].docLink)) || {}).title || undefined, steps: (p.steps || []).map((x) => keep(x, ["text", "days", "auto", "action", "message"])) })),
+      materials: mats.map((m) => keep(m, ["title", "kind", "audience", "area", "link", "notes"]))
+    };
+    res.setHeader("Content-Disposition", 'attachment; filename="starter-pack.json"');
+    res.json(pack);
+  }));
   app.get("/api/proc/summary", requireAuth, wrap(async (req, res) => {
     await ensureStarter(pool);
     await AUTO.upgradeStarter(pool);
@@ -449,4 +483,4 @@ const replies = (await pool.query("SELECT o.run_id, o.subject, o.reply_from, o.r
   }));
 }
 
-module.exports = { mount, STARTER, ensureStarter };
+module.exports = { mount, STARTER, ensureStarter, starterPack };

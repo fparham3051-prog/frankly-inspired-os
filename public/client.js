@@ -52,12 +52,12 @@
 
   function talk() {
     const roots = W.messages.filter((m) => !m.parent);
-    const one = (m, reply) => `<div class="msg ${reply ? "reply" : ""}"><span class="who">${esc(m.from)}</span>${m.team ? ' <span class="small muted">Frankly Inspired</span>' : ""} <span class="small muted">${when(m.at)}</span>${m.decision ? '<span class="flag">Decision</span>' : ""}
+    const one = (m, reply) => `<div class="msg ${reply ? "reply" : ""}"><span class="who">${esc(m.from)}</span>${m.team ? ' <span class="small muted">' + esc(W.consultant.short || W.consultant.firm) + '</span>' : ""} <span class="small muted">${when(m.at)}</span>${m.decision ? '<span class="flag">Decision</span>' : ""}
       <div class="text">${m.deleted ? '<span class="muted">Message removed</span>' : esc(m.text)}</div>
       ${!reply && !preview ? `<button class="linkbtn small noprint" data-reply="${esc(m.id)}">Reply</button>` : ""}</div>`;
     const box = preview ? `<p class="small muted">Preview: your team answers from Projects & Team, in “Conversation with the client”.</p>` : `<form id="say" class="noprint" style="margin-top:12px">
       ${replyTo ? `<p class="small">Replying to ${esc((W.messages.find((m) => m.id === replyTo) || {}).from || "a message")} · <button type="button" class="linkbtn" data-reply="">cancel</button></p>` : ""}
-      <label class="small muted" for="say-text">${replyTo ? "Your reply" : "Write to the Frankly Inspired team"}</label>
+      <label class="small muted" for="say-text">${replyTo ? "Your reply" : "Write to the " + esc(W.consultant.short || W.consultant.firm) + " team"}</label>
       <textarea id="say-text" required maxlength="8000">${esc(draft)}</textarea>
       <div style="margin-top:8px"><button class="btn" type="submit">Send</button> <span class="small muted" id="say-note"></span></div></form>`;
     return `<div class="card"><h2>Conversation</h2>

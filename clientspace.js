@@ -31,7 +31,8 @@ const { ORG } = require("./accounts");
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const clip = (s, n) => String(s == null ? "" : s).slice(0, n);
 const json = (s, d) => { try { const v = JSON.parse(s || ""); return v == null ? d : v; } catch (e) { return d; } };
-const PUBLIC = () => (process.env.PUBLIC_URL || "https://frankly-inspired-os.onrender.com/").replace(/\/?$/, "/");
+const ORGINFO = require("./org");
+const PUBLIC = () => ORGINFO.publicUrl();
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 const DONE = (t) => t.status === "done" || t.done === true;
 const STATUS_FOR_CLIENT = (t) => DONE(t) ? "Done" : t.status === "blocked" ? "Waiting on something" : ["in_progress", "review"].includes(t.status) ? "In progress" : "Not started";
@@ -42,7 +43,7 @@ async function docs(pool, p) {
 async function names(pool) {
   const rows = (await pool.query("SELECT id, name, email FROM app_users").catch(() => ({ rows: [] }))).rows;
   const m = new Map(rows.map((u) => ["u" + u.id, clip(u.name || String(u.email || "").split("@")[0], 80)]));
-  return (uid) => m.get(uid) || (ORG.org && ORG.org.leader && ORG.org.leader.name) || "Frankly Inspired";
+  return (uid) => m.get(uid) || ORGINFO.info().leaderName;
 }
 
 // Everything the client may see, built in one place so the preview and the client get the same thing.
@@ -68,7 +69,7 @@ async function workspace(pool, dealId) {
   const p = plan && plan.startDate ? plan : null;
   return {
     org: d.org || d.name || "Your organization",
-    consultant: { name: (ORG.org && ORG.org.leader && ORG.org.leader.name) || "Franklin D. Parham", firm: (ORG.org && ORG.org.name) || "Frankly Inspired and Associates", email: (ORG.org && ORG.org.email) || "" },
+    consultant: { name: ORGINFO.info().leaderName, firm: ORGINFO.info().name, short: ORGINFO.info().shortName, email: ORGINFO.info().email },
     portalUrl: d.ios_portal_url || "",
     plan: p ? {
       startDate: p.startDate, target: clip(p.target, 400), baseline: clip(p.baseline, 400),
@@ -174,10 +175,10 @@ function mount(app, { pool, requireAuth }) {
   app.get("/api/client/:token", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     const a = await byToken(req.params.token);
-    if (!a) return res.status(404).json({ error: "This link isn't active. Ask Frankly Inspired for a new one." });
+    if (!a) return res.status(404).json({ error: `This link isn't active. Ask ${ORGINFO.info().shortName} for a new one.` });
     pool.query("UPDATE client_access SET last_seen_at = now() WHERE id = $1", [a.id]).catch(() => {});
     const w = await workspace(pool, a.pipeline_id);
-    if (!w) return res.status(404).json({ error: "This link isn't active. Ask Frankly Inspired for a new one." });
+    if (!w) return res.status(404).json({ error: `This link isn't active. Ask ${ORGINFO.info().shortName} for a new one.` });
     res.json(Object.assign({ ok: true, preview: false, me: a.name }, w));
   });
   const recent = new Map(); // link id -> times of recent messages (at most 20 an hour)

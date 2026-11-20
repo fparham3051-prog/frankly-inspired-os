@@ -693,14 +693,14 @@ function mount(app, { pool, requireAuth, verifySession, COOKIE_NAME, requireAdmi
       const id = "f" + crypto.randomBytes(9).toString("hex");
       const name = decodeURIComponent(String(req.get("X-File-Name") || "file")).replace(/[\r\n"]/g, "").slice(0, 200);
       const type = String(req.get("Content-Type") || "application/octet-stream").slice(0, 100);
-      await pool.query("INSERT INTO hub_files (id, name, type, size, data, by_user, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)", [id, name, type, buf.length, buf, me.uid, new Date().toISOString()]);
-      res.json({ id, url: "/api/hub/files/" + id, sizeBytes: buf.length, contentType: type });
+      const where = await require("./storage").saveFile(pool, { id, name, type, buf, by: me.uid });
+      res.json({ id, url: "/api/hub/files/" + id, sizeBytes: buf.length, contentType: type, stored: where });
     } catch (e) { console.error("hub file", e); res.status(500).json({ error: "Upload failed." }); }
   });
   app.get("/api/hub/files/:id", requireAuth, async (req, res) => {
-    const r = await pool.query("SELECT name, type, data FROM hub_files WHERE id = $1", [req.params.id]);
-    if (!r.rows[0]) return res.status(404).json({ error: "Not found" });
-    const f = r.rows[0]; const safe = /^(image\/(png|jpeg|gif|webp)|application\/pdf|text\/plain|text\/csv)$/.test(f.type);
+    let f;
+    try { f = await require("./storage").readFile(pool, req.params.id); } catch (e) { return res.status(502).json({ error: "Couldn't fetch the file from Google Drive: " + e.message }); }
+    if (!f) return res.status(404).json({ error: "Not found" }); const safe = /^(image\/(png|jpeg|gif|webp)|application\/pdf|text\/plain|text\/csv)$/.test(f.type);
     res.set({ "Content-Type": safe ? f.type : "application/octet-stream", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox", "Content-Disposition": (safe ? "inline" : "attachment") + "; filename=\"" + encodeURIComponent(f.name) + "\"" });
     res.send(f.data);
   });

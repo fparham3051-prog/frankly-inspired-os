@@ -1644,7 +1644,7 @@ async function exportAllTables(db) {
   const tables = {};
   for (const { table_name } of t.rows) {
     // Files go out as base64 text (restore-backup.js turns them back into bytes).
-    tables[table_name] = (await db.query(table_name === "hub_files" ? "SELECT id, name, type, size, encode(data, 'base64') AS data, by_user, created_at FROM hub_files" : `SELECT * FROM "${table_name}"`)).rows;
+    tables[table_name] = (await db.query(table_name === "hub_files" ? "SELECT id, name, type, size, encode(data, 'base64') AS data, by_user, created_at, drive_id, drive_account FROM hub_files" : `SELECT * FROM "${table_name}"`)).rows;
   }
   return tables;
 }
@@ -1677,6 +1677,8 @@ app.get("/api/admin/backup-all", requireAdminScope("backup"), async (req, res) =
     await pool.query("INSERT INTO app_settings (key, value) VALUES ('last_backup', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
       [JSON.stringify({ at: out.exportedAt, ok: out.ok, errors: out.errors, rows: Object.values(out.counts).reduce((t, c) => t + Object.values(c).reduce((a, b) => a + b, 0), 0) })]);
   } catch (e) {}
+  // ?gzip=1: the same backup, compressed (typically about a tenth of the size).
+  if (req.query.gzip) return res.set({ "Content-Type": "application/gzip", "Content-Disposition": `attachment; filename="backup-${out.exportedAt.slice(0, 10)}.json.gz"` }).send(require("zlib").gzipSync(Buffer.from(JSON.stringify(out))));
   res.json(out);
 });
 
@@ -1821,6 +1823,7 @@ require("./hub").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_N
 require("./hubplus").mount(app, { pool, requireAuth, verifySession: verify, COOKIE_NAME, requireAdminScope, jobRegistry: JOB_REGISTRY });
 require("./clientspace").mount(app, { pool, requireAuth });
 require("./setup").mount(app, { pool, requireAuth });
+require("./storage").mount(app, { pool, requireAuth });
 
 // ---------- background automation ----------
 // Every 15 minutes while the app is awake (and whenever a scheduled task

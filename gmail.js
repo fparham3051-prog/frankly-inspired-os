@@ -260,4 +260,4 @@ function mount(app, { pool, requireAuth }) {
   }));
 }
 
-module.exports = { mount, send, sender, checkReplies, accounts, gapi, onReply, bodyText, _mime: mime };
+module.exports = { mount, send, sender, checkReplies, accounts, gapi, accessToken, onReply, bodyText, _mime: mime };

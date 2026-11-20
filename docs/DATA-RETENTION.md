@@ -28,3 +28,15 @@ request roll off within 30 days.
 ## Where this is promised
 - The engagement letter ("Your data" paragraph, from org.config.json > engagement.data)
 - The website privacy page (visit counting and cookies)
+
+## Storage (Settings > Storage)
+
+How a copy stays small for years:
+
+- **Attachments live in Google Drive.** When a Google account is connected (Settings > Connected email), new attachments on tasks and projects go to a "<name> Files" folder in that account's Drive. The database keeps only each file's name and Drive reference. Without a connection they stay in the database, as before. **Move files to Drive** moves existing ones. Files open from Projects & Team exactly as before.
+- **Storage meter.** Shows the database size against the plan's size (set yours: Neon's free plan is 1,024 MB). At 70% full, the morning brief says so. That's the time to move files, archive old years, or move to a bigger plan.
+- **Compressed backups.** `GET /api/admin/backup-all?gzip=1` sends the full backup gzipped, typically about a tenth of the size. `scripts/restore-backup.js` reads either form.
+- **Yearly archive.** Settings > Storage downloads one file per year (`archive-YYYY.json.gz`) with everything finished that year: closed projects with their tasks and messages, paid invoices and closed pipeline records. Keep it with the organization's records. Financial and donor records are commonly kept about seven years; confirm with the organization's accountant.
+- **Trim a year.** After downloading, the owner can remove that year's closed projects, tasks and messages from the live system. This works only for years that ended more than a year ago, and only after typing `DELETE <year>`. Invoices and client records are never trimmed. A trimmed year comes back only from the archive file or a backup.
+
+Rough growth for a busy small nonprofit: 50 to 70 MB a year without attachments, about 250 to 350 MB after five years.

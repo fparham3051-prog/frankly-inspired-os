@@ -226,6 +226,7 @@ async function buildMorning(pool, jobRegistry) {
     if (r && r.status === "error") problems.push(`${j.label}: ${String(r.message || "error").slice(0, 160)}`);
     else if (!r || Date.now() - Date.parse(r.ran_at) > j.cadenceHours * 3600e3) problems.push(`${j.label} hasn't reported ${r ? "since " + String(r.ran_at).slice(0, 10) : "yet"}`);
   }
+  const full = await require("./storage").warning(pool); if (full) problems.push(full);
   const errs = Number(((await q(pool, "SELECT count(*)::int AS n FROM app_errors WHERE at > now() - interval '1 day' AND source <> 'csp'"))[0] || {}).n || 0);
   const rec = byKey["systems-reconcile"];
   out.systems = { ok: !problems.length && !errs && !(rec && rec.status === "error"), problems, errorsLastDay: errs, reconcile: rec ? { status: rec.status, message: rec.message, at: rec.ran_at } : null };

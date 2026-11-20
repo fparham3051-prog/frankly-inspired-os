@@ -1,4 +1,4 @@
-/* Client workspace, Franklin's side (Pipeline & Money → Workspace on a deal).
+/* Client workspace, Franklin's side (Pipeline & Money → Share on a deal).
    Private links for the client's people, the conversation the client sees,
    which projects they see, a preview, and the outcomes report.
    Server side: clientspace.js. */

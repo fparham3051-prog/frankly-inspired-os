@@ -63,10 +63,10 @@ const CLIENTS = [
   const now = new Date().toISOString();
   const ops = [
     { path: "projects", id: "demo-funders", data: { name: "Funder pipeline build", eng: maple, status: "on_track", due: day(30), sections: [{ id: "s1", name: "Research" }, { id: "s2", name: "Outreach" }], fields: [], files: [], updates: [] } },
-    { path: "tasks", id: "demo-t1", data: { title: "List 20 aligned foundations", project: "demo-funders", section: "s1", status: "done", done: true, doneAt: day(-20) } },
-    { path: "tasks", id: "demo-t2", data: { title: "Board members each name three contacts", project: "demo-funders", section: "s1", status: "done", done: true, doneAt: day(-9) } },
-    { path: "tasks", id: "demo-t3", data: { title: "Draft the case for support", project: "demo-funders", section: "s2", status: "in_progress", due: day(7) } },
-    { path: "tasks", id: "demo-t4", data: { title: "First five introduction emails", project: "demo-funders", section: "s2", status: "todo", due: day(14) } },
+    { path: "tasks", id: "demo-t1", data: { title: "List 20 aligned foundations", project: "demo-funders", section: "s1", status: "done", done: true, doneAt: day(-20), owner: "u0" } },
+    { path: "tasks", id: "demo-t2", data: { title: "Board members each name three contacts", project: "demo-funders", section: "s1", status: "done", done: true, doneAt: day(-9), owner: "u0" } },
+    { path: "tasks", id: "demo-t3", data: { title: "Draft the case for support", project: "demo-funders", section: "s2", status: "in_progress", due: day(7), owner: "u0" } },
+    { path: "tasks", id: "demo-t4", data: { title: "First five introduction emails", project: "demo-funders", section: "s2", status: "todo", due: day(14), owner: "u0" } },
     { path: "msgs", id: "demo-m1", data: { on: "with:" + maple, text: "Could we add the Lee Family Foundation? Our board chair knows their director.", at: day(-8) + "T15:00:00.000Z", via: "client", guest: "Renee Alvarez", mentions: [] } },
     { path: "msgs", id: "demo-m2", data: { on: "with:" + maple, parent: "demo-m1", text: "Yes. Adding them, and we'll ask your chair for a warm introduction this month.", at: day(-8) + "T17:30:00.000Z", decision: { by: "demo", at: now }, mentions: [] } }
   ];

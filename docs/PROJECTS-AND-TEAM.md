@@ -155,7 +155,7 @@ Team list: until there is a named owner account, the shared-password sign-in (us
 
 ## Client workspace and outcomes report
 
-**Pipeline & Money → Workspace** on any deal opens that client's workspace screen.
+**Pipeline & Money → Share** on any deal opens that client's workspace screen.
 
 **Links.** Make a private link for each person at the client (name, and an email if you want the "Email it" button). The link is the key: no account or password. Only a hash of the link is stored, so copy it when it's shown. Revoke a link and it stops working at once. You can see when each link was last opened.
 

@@ -24,6 +24,19 @@
     } catch (e) { app.innerHTML = `<div class="card"><h2>We couldn't open this workspace</h2><p>${esc(e.message)}</p></div>`; }
   }
 
+  function growth() {
+    const g = W.growth;
+    if (!g) return "";
+    const moved = g.baseline && g.baseline.score !== g.score ? ` That's ${g.score > g.baseline.score ? "up" : "down"} ${Math.abs(g.score - g.baseline.score)} from where you started.` : "";
+    return `<div class="card"><h2>Your Growth Pathway</h2>
+      <p>You're at <b>stage ${esc(g.stage)}, ${esc(g.stageName)}</b>. Stage Readiness Score: <b>${esc(g.score)} of ${esc(g.outOf)}</b> (${esc(String(g.band || "").toLowerCase())}).${moved}</p>
+      <p class="small">${g.pillars.map((p) => esc(p.name) + " " + esc(p.score) + "/4").join(" · ")}</p>
+      ${g.nextHires.length ? `<p><b>What to build next:</b> ${g.nextHires.map(esc).join("; ")}</p>` : ""}
+      ${g.fundraising ? `<p><b>How to fund it:</b> ${esc(g.fundraising)}</p>` : ""}
+      ${g.boardGaps.length ? `<p><b>Your board:</b> ${g.boardGaps.map(esc).join("; ")}</p>` : ""}
+      <p class="small muted">Planning guidance, not legal or accounting advice.</p></div>`;
+  }
+
   function overview() {
     const p = W.plan;
     return `${p ? `<div class="card"><h2>Your 90-Day Improvement Plan</h2>
@@ -32,6 +45,7 @@
       ${p.next ? `<p><b>Next:</b> ${esc(p.next)}</p>` : ""}
       <p class="small muted">Started ${day(p.startDate)}${p.review90On ? ` · 90-day review ${p.review90Done ? "held" : day(p.review90On)}` : ""}${p.reassessOn ? ` · six-month reassessment ${p.reassessDone ? "held" : day(p.reassessOn)}` : ""}</p></div>`
       : `<div class="card"><h2>Your plan</h2><p class="muted">Your 90-Day Improvement Plan will show here once it's set.</p>${W.constraint ? `<p><b>What we're working on:</b> ${esc(W.constraint)}</p>` : ""}</div>`}
+    ${growth()}
     <div class="stats">
       <div class="stat"><b>${W.projects.reduce((a, x) => a + x.done, 0)}/${W.projects.reduce((a, x) => a + x.total, 0)}</b><span class="small muted">tasks done</span></div>
       <div class="stat"><b>${W.outcomes.sessions.done}</b><span class="small muted">sessions delivered</span></div>

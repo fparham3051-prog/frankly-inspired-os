@@ -46,12 +46,27 @@ async function names(pool) {
   return (uid) => m.get(uid) || ORGINFO.info().leaderName;
 }
 
+// The Growth Pathway as InstitutionalOS last sent it, trimmed to what the client may see.
+function growthFor(g) {
+  if (!g || !g.stage) return null;
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  return {
+    stage: n(g.stage), stageName: clip(g.stageName, 60), score: n(g.score), outOf: n(g.outOf) || 20, band: clip(g.band, 80),
+    baseline: g.baseline && n(g.baseline.score) != null ? { stage: n(g.baseline.stage), score: n(g.baseline.score), at: clip(g.baseline.at, 40) } : null,
+    nextStage: g.nextStage && g.nextStage.name ? { name: clip(g.nextStage.name, 60), at: n(g.nextStage.at) } : null,
+    pillars: (Array.isArray(g.pillars) ? g.pillars : []).slice(0, 5).map((p) => ({ name: clip(p.name, 40), score: n(p.score) })),
+    nextHires: (Array.isArray(g.nextHires) ? g.nextHires : []).slice(0, 3).map((h) => clip(h, 120)),
+    fundraising: clip(g.fundraising, 400),
+    boardGaps: (Array.isArray(g.boardGaps) ? g.boardGaps : []).slice(0, 6).map((x) => clip(x, 200))
+  };
+}
+
 // Everything the client may see, built in one place so the preview and the client get the same thing.
 async function workspace(pool, dealId) {
   const d = (await pool.query("SELECT * FROM pipeline WHERE id = $1 AND archived_at IS NULL", [dealId])).rows[0];
   if (!d) return null;
   const nameOf = await names(pool);
-  const plan = json(d.ios_plan, null), rec = json(d.ios_record, {}) || {}, cmp = json(d.ios_comparison, null);
+  const plan = json(d.ios_plan, null), rec = json(d.ios_record, {}) || {}, cmp = json(d.ios_comparison, null), gr = json(d.ios_growth, null);
   const allProjects = (await docs(pool, "projects")).filter((p) => p.eng === dealId && !p.archived);
   const projects = allProjects.filter((p) => !p.clientHidden);
   const pids = new Set(projects.map((p) => p.id));
@@ -88,6 +103,7 @@ async function workspace(pool, dealId) {
           .map((t) => ({ title: clip(t.title, 300), status: STATUS_FOR_CLIENT(t), done: DONE(t), due: t.due || "", doneAt: t.doneAt || "", section: secName(t.section), who: t.owner ? nameOf(t.owner) : "" }))
       };
     }),
+    growth: growthFor(gr),
     hiddenProjects: allProjects.length - projects.length,
     messages: msgOut,
     decisions: msgOut.filter((m) => m.decision && !m.deleted).map((m) => ({ at: m.at, text: m.text, from: m.from })),
@@ -166,6 +182,40 @@ function mount(app, { pool, requireAuth }) {
     const id = "ct-" + crypto.randomBytes(8).toString("hex");
     await hub.applyOp({ path: "msgs", id, data: { on, parent, text: clip(text, 8000), at: new Date().toISOString(), mentions: [] } }, me);
     res.json({ ok: true, id });
+  });
+  // Turn the Growth Pathway's next steps into a project the client sees, one task each.
+  // Safe to run again: tasks already made are left as they are (ids come from the text).
+  app.post("/api/clients/:deal/growth-plan", requireAuth, async (req, res) => {
+    if (!staff(req, res)) return;
+    const hub = app.locals.hub; if (!hub) return res.status(503).json({ error: "Not available." });
+    const d = (await pool.query("SELECT id, org, name, ios_growth FROM pipeline WHERE id = $1 AND archived_at IS NULL", [req.params.deal])).rows[0];
+    if (!d) return res.status(404).json({ error: "No such client." });
+    const g = growthFor(json(d.ios_growth, null));
+    if (!g) return res.status(400).json({ error: "No Growth Pathway yet. Score the client in InstitutionalOS (Growth Pathway panel) first." });
+    const me = await hub.meFor(req.session), pid = "gp-" + d.id;
+    const proj = (await pool.query("SELECT data FROM hub_docs WHERE path = 'projects' AND id = $1 AND NOT deleted", [pid])).rows[0];
+    if (!proj) {
+      await hub.applyOp({ path: "projects", id: pid, data: {
+        name: "Growth Plan: " + clip(d.org || d.name || "client", 120), eng: d.id, owner: me.uid, status: "on_track", color: "#B28E42",
+        desc: "Next steps from the Growth Pathway (stage " + g.stage + ", " + g.stageName + "). Each task names the seat that owns it.",
+        sections: [{ id: "hires", name: "Next hires" }, { id: "fund", name: "Fundraising" }, { id: "board", name: "Board" }],
+        start: new Date().toISOString().slice(0, 10), due: "", fields: [], files: [], updates: [], doc: "", form: { on: false, intro: "" }, created: new Date().toISOString(), createdBy: me.uid
+      } }, me);
+    }
+    const want = [].concat(
+      g.nextHires.map((h) => ({ section: "hires", seat: "Executive director", title: "Plan and fund the hire: " + h })),
+      g.fundraising ? [{ section: "fund", seat: "Development lead", title: "Fundraising move: " + g.fundraising }] : [],
+      g.boardGaps.map((x) => ({ section: "board", seat: "Board chair", title: "Board: " + x }))
+    );
+    const have = new Set((await pool.query("SELECT id FROM hub_docs WHERE path = 'tasks' AND id LIKE $1 AND NOT deleted", [pid + "-%"])).rows.map((r) => r.id));
+    let made = 0;
+    for (const t of want) {
+      const id = pid + "-" + crypto.createHash("sha1").update(t.title).digest("hex").slice(0, 10);
+      if (have.has(id)) continue;
+      await hub.applyOp({ path: "tasks", id, data: { title: clip(t.title, 300), project: pid, section: t.section, seat: t.seat, status: "unassigned", created: new Date().toISOString() } }, me);
+      made++;
+    }
+    res.json({ ok: true, project: pid, made, total: want.length });
   });
   app.get("/workspace-admin.js", requireAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "workspace-admin.js")));
 

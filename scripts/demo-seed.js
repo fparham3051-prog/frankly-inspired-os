@@ -26,11 +26,11 @@ async function call(method, url, body, headers) {
 }
 
 const CLIENTS = [
-  { org: "Maple Street Literacy Project", name: "Renee Alvarez", email: "renee@maplestreet.example", stage: "contracted", track: "institutionalos", dealValue: 2500, nextStep: "90-day review", nextStepDate: day(12),
+  { org: "Maple Street Literacy Project", name: "Renee Alvarez", email: "renee@maplestreet.example", stage: "engaged", track: "institutionalos", dealValue: 2500, nextStep: "90-day review", nextStepDate: day(12),
     plan: { startDate: day(-60), target: "Three new foundation funders in active conversation", baseline: "One funder provides 62% of revenue", actionsTotal: 6, actionsDone: 4, actionsBlocked: 0, actionsOverdue: 0, review90On: day(30), nextAction: { text: "Send the board the list of 20 aligned funders" } },
     comparison: { baselineDate: day(-75), baselineLabel: "At the Diagnostic", overallBefore: 48, overallAfter: 63, overallChange: 15, dimensions: [{ name: "Revenue and Financial Health", before: 31, after: 54, change: 23 }, { name: "Board and Governance", before: 52, after: 61, change: 9 }, { name: "Leadership and Succession", before: 55, after: 58, change: 3 }, { name: "Programs and Evidence", before: 60, after: 66, change: 6 }] },
     constraint: "Revenue depends on one funder", overall: 63 },
-  { org: "Eastside Youth Arts", name: "Marcus Bell", email: "marcus@eastsidearts.example", stage: "contracted", track: "retainer", dealValue: 3000, nextStep: "Monthly advisory call", nextStepDate: day(5) },
+  { org: "Eastside Youth Arts", name: "Marcus Bell", email: "marcus@eastsidearts.example", stage: "engaged", track: "retainer", dealValue: 3000, nextStep: "Monthly advisory call", nextStepDate: day(5) },
   { org: "Harbor Food Collective", name: "Priya Nair", email: "priya@harborfood.example", stage: "assessment", track: "institutionalos", dealValue: 2500, nextStep: "Send the Diagnostic proposal", nextStepDate: day(2) },
   { org: "Northgate Senior Services", name: "Tom Okafor", email: "tom@northgate.example", stage: "discovery", track: "institutionalos", dealValue: 2500, nextStep: "Discovery call", nextStepDate: day(4) },
   { org: "Riverside Housing Partners", name: "Alicia Grant", email: "alicia@riversidehousing.example", stage: "lead", track: "institutionalos", nextStep: "Reply with the booking link", nextStepDate: day(1) }

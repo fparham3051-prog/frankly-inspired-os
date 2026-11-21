@@ -1941,9 +1941,18 @@ async function demoAutoseed() {
   if (process.env.DEMO_AUTOSEED !== "1") return;
   try {
     const n = (await pool.query("SELECT count(*)::int AS n FROM pipeline")).rows[0].n;
-    if (n > 0) return console.log("Demo autoseed: pipeline already has records; skipping.");
+    const args = [path.join(__dirname, "scripts", "demo-seed.js"), "http://127.0.0.1:" + PORT];
+    if (n > 0) {
+      // A copy loaded before the loader marked Growth Plan progress: catch its untouched Growth Plan up, once.
+      const gp = (await pool.query(`SELECT p.id FROM hub_docs p WHERE p.path = 'projects' AND p.id LIKE 'gp-%' AND NOT p.deleted
+        AND EXISTS (SELECT 1 FROM hub_docs t WHERE t.path = 'tasks' AND t.id LIKE p.id || '-%' AND NOT t.deleted)
+        AND NOT EXISTS (SELECT 1 FROM hub_docs t WHERE t.path = 'tasks' AND t.id LIKE p.id || '-%' AND NOT t.deleted AND COALESCE(t.data->>'status', '') <> 'unassigned')
+        ORDER BY p.id LIMIT 1`)).rows[0];
+      if (!gp) return console.log("Demo autoseed: pipeline already has records; skipping.");
+      args.push("--progress-only=" + gp.id);
+    }
     const { spawn } = require("child_process");
-    const p = spawn(process.execPath, [path.join(__dirname, "scripts", "demo-seed.js"), "http://127.0.0.1:" + PORT], {
+    const p = spawn(process.execPath, args, {
       env: Object.assign({}, process.env, { DEMO_PASSWORD: ADMIN_PASSWORD, DEMO_TOKEN: ADMIN_API_TOKEN })
     });
     p.stdout.on("data", (d) => process.stdout.write("[demo-seed] " + d));

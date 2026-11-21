@@ -58,6 +58,12 @@ const CLIENTS = [
 
 (async () => {
   await call("POST", "/api/login", { password: process.env.DEMO_PASSWORD });
+  const only = (process.argv.find((a) => a.startsWith("--progress-only=")) || "").split("=")[1];
+  if (only) { // Catch an existing demo copy's Growth Plan up; touches only those task records.
+    if (!/^gp-[\w-]+$/.test(only)) { console.error("Bad Growth Plan id."); process.exit(1); }
+    await call("POST", "/api/hub/write", { ops: growthProgressOps(only) });
+    return console.log("Growth Plan progress added (" + only + ").");
+  }
   const state = await call("GET", "/api/state");
   if ((state.pipeline || []).length && !FORCE) { console.error("This copy already has pipeline records. It looks like a real copy; not adding demo data. Use --force on a demo copy."); process.exit(1); }
   const ids = {};

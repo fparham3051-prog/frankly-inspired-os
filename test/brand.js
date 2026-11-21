@@ -115,7 +115,7 @@ const FI = /Frankly Inspired|franklyinspired|Franklin|Parham|fparham/;
     assert.strictEqual(w.org, "Maple Street Literacy Project"); assert.strictEqual(w.outcomes.comparison.overallChange, 15);
     assert.strictEqual(w.outcomes.sessions.done, 4); assert.strictEqual(w.outcomes.hours, 11.5); assert.strictEqual(w.decisions.length, 1);
     assert.strictEqual(w.growth.score, 14); assert.strictEqual(w.growth.baseline.score, 10);
-    assert.ok(w.projects.some((p) => /^Growth Plan: /.test(p.name) && p.total === 7), "the Growth Plan project shows with its tasks");
+    assert.ok(w.projects.some((p) => /^Growth Plan: /.test(p.name) && p.total === 7 && p.done === 2), "the Growth Plan project shows underway: 7 tasks, 2 done");
     assert.strictEqual(w.consultant.firm, "Riverbend Youth Alliance");
     const again = await new Promise((ok) => { const p = spawn(process.execPath, [path.join(ROOT, "scripts", "demo-seed.js"), s.base], { env: Object.assign({}, process.env, { DEMO_PASSWORD: "pw", DEMO_TOKEN: "tok" }) }); p.on("close", (code) => ok(code)); });
     assert.strictEqual(again, 1, "refuses to add demo data to a copy that already has records");

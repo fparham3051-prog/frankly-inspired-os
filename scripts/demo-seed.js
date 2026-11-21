@@ -29,7 +29,14 @@ const CLIENTS = [
   { org: "Maple Street Literacy Project", name: "Renee Alvarez", email: "renee@maplestreet.example", stage: "engaged", track: "institutionalos", dealValue: 2500, nextStep: "90-day review", nextStepDate: day(12),
     plan: { startDate: day(-60), target: "Three new foundation funders in active conversation", baseline: "One funder provides 62% of revenue", actionsTotal: 6, actionsDone: 4, actionsBlocked: 0, actionsOverdue: 0, review90On: day(30), nextAction: { text: "Send the board the list of 20 aligned funders" } },
     comparison: { baselineDate: day(-75), baselineLabel: "At the Diagnostic", overallBefore: 48, overallAfter: 63, overallChange: 15, dimensions: [{ name: "Revenue and Financial Health", before: 31, after: 54, change: 23 }, { name: "Board and Governance", before: 52, after: 61, change: 9 }, { name: "Leadership and Succession", before: 55, after: 58, change: 3 }, { name: "Programs and Evidence", before: 60, after: 66, change: 6 }] },
-    constraint: "Revenue depends on one funder", overall: 63 },
+    constraint: "Revenue depends on one funder", overall: 63,
+    // The Growth Pathway, matching the InstitutionalOS sample portal (stage 2, 10 -> 14 of 20).
+    growth: { stage: 2, stageName: "Emerging", score: 14, outOf: 20, band: "Strengthen before adding staff", baseline: { stage: 2, score: 10, at: day(-90) },
+      nextStage: { stage: 3, name: "Established", at: 1000000 },
+      pillars: [{ name: "Structure", score: 2 }, { name: "Money", score: 3 }, { name: "Fundraising", score: 3 }, { name: "Board", score: 2 }, { name: "Compliance", score: 4 }],
+      nextHires: ["Operations / admin coordinator", "Front-line program staff"],
+      fundraising: "Build the system: a grants calendar, two appeals a year, a second-gift program, mid-level donors, and the ED's first $10K+ asks",
+      boardGaps: ["The next stage needs 11 to 15 members (governing board)", "Get to 100% board giving", "Adopt: Operating reserve policy", "Adopt: Board member agreements with give-or-get"] } },
   { org: "Eastside Youth Arts", name: "Marcus Bell", email: "marcus@eastsidearts.example", stage: "engaged", track: "retainer", dealValue: 3000, nextStep: "Monthly advisory call", nextStepDate: day(5) },
   { org: "Harbor Food Collective", name: "Priya Nair", email: "priya@harborfood.example", stage: "assessment", track: "institutionalos", dealValue: 2500, nextStep: "Send the Diagnostic proposal", nextStepDate: day(2) },
   { org: "Northgate Senior Services", name: "Tom Okafor", email: "tom@northgate.example", stage: "discovery", track: "institutionalos", dealValue: 2500, nextStep: "Discovery call", nextStepDate: day(4) },
@@ -58,7 +65,7 @@ const CLIENTS = [
     await call("POST", "/api/time-entries", { pipelineId: maple, minutes: mins, entryDate: day(-ago), note });
   // Plan progress and before-and-after scores, as InstitutionalOS would send them.
   const c = CLIENTS[0];
-  await call("POST", "/api/admin/ios-sync", { orgId: 990001, externalRef: maple, overall: c.overall, decision: "Fund", record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison }, { "X-Admin-Token": process.env.DEMO_TOKEN });
+  await call("POST", "/api/admin/ios-sync", { orgId: 990001, externalRef: maple, overall: c.overall, decision: "Fund", record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth }, { "X-Admin-Token": process.env.DEMO_TOKEN });
   // Projects & Team: a delivery project the client sees, with a conversation and a decision.
   const now = new Date().toISOString();
   const ops = [
@@ -71,6 +78,9 @@ const CLIENTS = [
     { path: "msgs", id: "demo-m2", data: { on: "with:" + maple, parent: "demo-m1", text: "Yes. Adding them, and we'll ask your chair for a warm introduction this month.", at: day(-8) + "T17:30:00.000Z", decision: { by: "demo", at: now }, mentions: [] } }
   ];
   await call("POST", "/api/hub/write", { ops });
+  // The Growth Pathway's next steps as a Growth Plan project the client sees.
+  const gp = await call("POST", `/api/clients/${maple}/growth-plan`, {});
+  console.log("  growth plan", gp.made, "tasks");
   const link = await call("POST", `/api/clients/${maple}/access`, { name: "Renee Alvarez", email: "renee@maplestreet.example" });
   console.log("\nDemo data loaded.\nClient workspace for Maple Street Literacy Project (open it to show a prospect):\n  " + link.url);
 })().catch((e) => { console.error(e.message); process.exit(1); });

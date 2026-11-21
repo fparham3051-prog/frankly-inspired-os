@@ -18,7 +18,7 @@ services:
     runtime: node
     plan: free                         # sleeps when idle; Starter keeps it awake
     region: virginia
-    buildCommand: npm ci
+    buildCommand: npm install          # no lock file is kept in the repo, so not npm ci
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true                   # every fix merged to main reaches this copy

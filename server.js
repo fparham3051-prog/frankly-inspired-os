@@ -1934,9 +1934,26 @@ app.get("/", (req, res) => {
 
 app.use((req, res) => res.status(404).send("Not found"));
 
+// A demo copy (DEMO_AUTOSEED=1) loads the fictional sample data on its first
+// start, so it can be set up without running the loader from another machine.
+// It only runs on an empty copy; a real copy never sets DEMO_AUTOSEED.
+async function demoAutoseed() {
+  if (process.env.DEMO_AUTOSEED !== "1") return;
+  try {
+    const n = (await pool.query("SELECT count(*)::int AS n FROM pipeline")).rows[0].n;
+    if (n > 0) return console.log("Demo autoseed: pipeline already has records; skipping.");
+    const { spawn } = require("child_process");
+    const p = spawn(process.execPath, [path.join(__dirname, "scripts", "demo-seed.js"), "http://127.0.0.1:" + PORT], {
+      env: Object.assign({}, process.env, { DEMO_PASSWORD: ADMIN_PASSWORD, DEMO_TOKEN: ADMIN_API_TOKEN })
+    });
+    p.stdout.on("data", (d) => process.stdout.write("[demo-seed] " + d));
+    p.stderr.on("data", (d) => process.stderr.write("[demo-seed] " + d));
+  } catch (e) { console.error("Demo autoseed failed:", e.message); }
+}
+
 initSchema()
   .then(() => {
-    app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+    app.listen(PORT, () => { console.log(`Listening on ${PORT}`); demoAutoseed(); });
   })
   .catch((err) => {
     console.error("Failed to initialize schema", err);

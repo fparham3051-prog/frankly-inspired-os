@@ -16,6 +16,19 @@ if (!/^https?:\/\//.test(BASE) || !process.env.DEMO_PASSWORD || !process.env.DEM
   process.exit(1);
 }
 const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+const crypto = require("crypto");
+// Growth Plan tasks partway done. Ids match the growth-plan endpoint (sha1 of the title).
+const GROWTH_PROGRESS = [
+  { section: "hires", seat: "Executive director", title: "Plan and fund the hire: Operations / admin coordinator", status: "in_progress", due: 21 },
+  { section: "fund", seat: "Development lead", title: "Fundraising move: Build the system: a grants calendar, two appeals a year, a second-gift program, mid-level donors, and the ED's first $10K+ asks", status: "in_progress", due: 30 },
+  { section: "board", seat: "Board chair", title: "Board: Get to 100% board giving", status: "done", doneAgo: 12 },
+  { section: "board", seat: "Board chair", title: "Board: Adopt: Operating reserve policy", status: "done", doneAgo: 5 }
+];
+function growthProgressOps(pid) {
+  return GROWTH_PROGRESS.map((t) => ({ path: "tasks", id: pid + "-" + crypto.createHash("sha1").update(t.title).digest("hex").slice(0, 10),
+    data: Object.assign({ title: t.title, project: pid, section: t.section, seat: t.seat, status: t.status, owner: "u0", created: day(-55) },
+      t.status === "done" ? { done: true, doneAt: day(-t.doneAgo) } : { due: day(t.due) }) }));
+}
 let cookie = "";
 async function call(method, url, body, headers) {
   const r = await fetch(BASE + url, { method, headers: Object.assign({ "Content-Type": "application/json" }, cookie ? { Cookie: cookie } : {}, headers || {}), body: body ? JSON.stringify(body) : undefined, redirect: "manual" });
@@ -81,6 +94,10 @@ const CLIENTS = [
   // The Growth Pathway's next steps as a Growth Plan project the client sees.
   const gp = await call("POST", `/api/clients/${maple}/growth-plan`, {});
   console.log("  growth plan", gp.made, "tasks");
+  // Show the Growth Plan underway (about 60 days in), not freshly made: 2 done, 2 in progress.
+  const progress = growthProgressOps(gp.project);
+  await call("POST", "/api/hub/write", { ops: progress });
+  console.log("  growth plan progress", progress.length, "tasks updated");
   const link = await call("POST", `/api/clients/${maple}/access`, { name: "Renee Alvarez", email: "renee@maplestreet.example" });
   console.log("\nDemo data loaded.\nClient workspace for Maple Street Literacy Project (open it to show a prospect):\n  " + link.url);
 })().catch((e) => { console.error(e.message); process.exit(1); });

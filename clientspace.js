@@ -47,6 +47,21 @@ async function names(pool) {
 }
 
 // The Growth Pathway as InstitutionalOS last sent it, trimmed to what the client may see.
+// The client's path (messaging system, Nov 2026): the Diagnostic stage set on the
+// deal wins; otherwise the growth stage suggests one (1 Build, 2 Fund, 3+ Sustain).
+const PATHS = {
+  build: { key: "build", name: "Build", line: "Get the foundation right" },
+  fund: { key: "fund", name: "Fund", line: "Get ready for bigger money" },
+  sustain: { key: "sustain", name: "Sustain", line: "Make it last beyond one person" }
+};
+function pathFor(diagnosticStage, g) {
+  const k = String(diagnosticStage || "").toLowerCase();
+  if (PATHS[k]) return PATHS[k];
+  const s = g && Number(g.stage);
+  if (!s) return null;
+  return s <= 1 ? PATHS.build : s === 2 ? PATHS.fund : PATHS.sustain;
+}
+
 function growthFor(g) {
   if (!g || !g.stage) return null;
   const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -104,6 +119,7 @@ async function workspace(pool, dealId) {
       };
     }),
     growth: growthFor(gr),
+    path: pathFor(d.diagnostic_stage, gr),
     hiddenProjects: allProjects.length - projects.length,
     messages: msgOut,
     decisions: msgOut.filter((m) => m.decision && !m.deleted).map((m) => ({ at: m.at, text: m.text, from: m.from })),

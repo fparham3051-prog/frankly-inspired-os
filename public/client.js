@@ -86,12 +86,12 @@
       <p>Overall <b>${c.overallBefore}</b> → <b>${c.overallAfter}</b> <span class="${c.overallChange >= 0 ? "up" : "down"}">(${signed(c.overallChange)})</span></p>
       <table class="cmp"><thead><tr><th>Area</th><th>${day(c.baselineDate)}</th><th>Today</th><th>Change</th></tr></thead><tbody>
       ${(c.dimensions || []).map((d) => `<tr><td>${esc(d.name)}</td><td>${d.before}</td><td>${d.after}</td><td class="${d.change > 0 ? "up" : d.change < 0 ? "down" : ""}">${signed(d.change)}</td></tr>`).join("")}</tbody></table>
-      <p class="small muted">Scores out of 100 from the InstitutionalOS Diagnostic.</p></div>`
+      <p class="small muted">Scores out of 100 from the Diagnostic, built on InstitutionalOS.</p></div>`
       : `<div class="card"><h2>Scores</h2><p class="muted">${o.overallNow != null ? `Your overall score is <b>${o.overallNow}</b>${o.decisionBand ? ` (${esc(o.decisionBand)})` : ""}. ` : ""}The before-and-after comparison appears once you've been rescored after the Diagnostic.</p></div>`;
     const plan = o.plan ? `<p><b>${o.plan.done} of ${o.plan.total}</b> plan actions done${o.plan.review90Done ? " · 90-day review held" : ""}${o.plan.reassessDone ? " · six-month reassessment held" : ""}${o.plan.standardizeTotal ? ` · ${o.plan.standardizeDone} of ${o.plan.standardizeTotal} changes made standard practice` : ""}</p>${bar(o.plan.done, o.plan.total)}` : "";
     return `<div class="noprint" style="text-align:right;margin-bottom:8px"><button class="btn ghost" id="print">Print or save as PDF</button></div>
-      <div class="card"><h2>Outcomes report: ${esc(W.org)}</h2><p class="small muted">Since ${day(o.since)} · as of ${day(W.asOf)} · prepared by ${esc(W.consultant.firm)}</p>
-      ${W.constraint ? `<p><b>The constraint we set out to fix:</b> ${esc(W.constraint)}</p>` : ""}${W.plan && W.plan.target ? `<p><b>The 90-day target:</b> ${esc(W.plan.target)}</p>` : ""}${plan}</div>
+      <div class="card"><h2>Outcomes report: ${esc(W.org)}</h2><p class="small muted">${W.path ? `${esc(W.path.name)} path · ` : ""}Since ${day(o.since)} · as of ${day(W.asOf)} · prepared by ${esc(W.consultant.firm)}</p>
+      ${W.constraint ? `<p><b>The gap we set out to close:</b> ${esc(W.constraint)}</p>` : ""}${W.plan && W.plan.target ? `<p><b>The 90-day target:</b> ${esc(W.plan.target)}</p>` : ""}${plan}</div>
       ${scores}
       <div class="card"><h2>What was delivered</h2><div class="stats">
         <div class="stat"><b>${o.sessions.done}${o.sessions.total ? "/" + o.sessions.total : ""}</b><span class="small muted">sessions delivered</span></div>
@@ -107,7 +107,7 @@
     if (!TABS.some((t) => t[0] === tab)) tab = "overview";
     const keep = document.getElementById("say-text"); if (keep) draft = keep.value;
     app.innerHTML = `${preview ? `<div class="banner small"><b>Preview.</b> This is what ${esc(W.org)} sees with their link${W.hiddenProjects ? ` (${W.hiddenProjects} project${W.hiddenProjects === 1 ? "" : "s"} hidden from them)` : ""}.</div>` : ""}
-      <h1>${esc(W.org)}</h1><p class="sub">${W.me ? `Welcome, ${esc(W.me)}. ` : ""}Your work with ${esc(W.consultant.firm)}.</p>
+      <h1>${esc(W.org)}</h1><p class="sub">${W.me ? `Welcome, ${esc(W.me)}. ` : ""}Your work with ${esc(W.consultant.firm)}.${W.path ? ` Your path: <b>${esc(W.path.name)}</b>, ${esc(W.path.line.toLowerCase())}.` : ""}</p>
       <nav role="tablist">${TABS.map(([id, name]) => `<button role="tab" aria-selected="${id === tab}" data-go="${id}">${name}${id === "talk" && W.messages.length ? ` (${W.messages.filter((m) => !m.deleted).length})` : ""}</button>`).join("")}</nav>
       ${TABS.map(([id, , fn]) => `<section data-tab="${id}" ${id === tab ? "" : "hidden"}>${fn()}</section>`).join("")}`;
     document.title = W.org + " | Client workspace";

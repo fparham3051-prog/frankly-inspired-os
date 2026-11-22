@@ -114,14 +114,14 @@ const FI = /Frankly Inspired|franklyinspired|Franklin|Parham|fparham/;
     const w = await (await fetch(s.base + "/api/client/" + url)).json();
     assert.strictEqual(w.org, "Maple Street Literacy Project"); assert.strictEqual(w.outcomes.comparison.overallChange, 15);
     assert.strictEqual(w.outcomes.sessions.done, 4); assert.strictEqual(w.outcomes.hours, 11.5); assert.strictEqual(w.decisions.length, 1);
-    assert.strictEqual(w.growth.score, 14); assert.strictEqual(w.growth.baseline.score, 10);
+    assert.strictEqual(w.growth.score, 14); assert.strictEqual(w.growth.baseline.score, 10); assert.strictEqual(w.path.name, "Fund");
     assert.ok(w.projects.some((p) => /^Growth Plan: /.test(p.name) && p.total === 7 && p.done === 2), "the Growth Plan project shows underway: 7 tasks, 2 done");
     assert.strictEqual(w.consultant.firm, "Riverbend Youth Alliance");
     // The Build and Sustain samples get their own workspaces.
     for (const [label, org, stage, gp] of [["Build", "Harbor Food Collective", 1, 3], ["Sustain", "Eastside Youth Arts", 3, 3]]) {
       const tok = (out.o.match(new RegExp(label + " \\(" + org + "\\): \\S+/client/([A-Za-z0-9_-]{32,})")) || [])[1]; assert.ok(tok, label + " link: " + out.o);
       const x = await (await fetch(s.base + "/api/client/" + tok)).json();
-      assert.strictEqual(x.org, org); assert.strictEqual(x.growth.stage, stage); assert.ok(x.outcomes.comparison.overallChange > 0);
+      assert.strictEqual(x.org, org); assert.strictEqual(x.growth.stage, stage); assert.strictEqual(x.path.name, label); assert.ok(x.outcomes.comparison.overallChange > 0);
       assert.ok(x.projects.some((p) => /^Growth Plan: /.test(p.name) && p.done === 1 && p.total >= 6), label + " Growth Plan underway");
       assert.strictEqual(x.decisions.length, 1);
     }

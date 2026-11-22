@@ -51,10 +51,76 @@ const CLIENTS = [
       fundraising: "Build the system: a grants calendar, two appeals a year, a second-gift program, mid-level donors, and the ED's first $10K+ asks",
       boardGaps: ["The next stage needs 11 to 15 members (governing board)", "Get to 100% board giving", "Adopt: Operating reserve policy", "Adopt: Board member agreements with give-or-get"] } },
   { org: "Eastside Youth Arts", name: "Marcus Bell", email: "marcus@eastsidearts.example", stage: "engaged", track: "retainer", dealValue: 3000, nextStep: "Monthly advisory call", nextStepDate: day(5) },
-  { org: "Harbor Food Collective", name: "Priya Nair", email: "priya@harborfood.example", stage: "assessment", track: "institutionalos", dealValue: 2500, nextStep: "Send the Diagnostic proposal", nextStepDate: day(2) },
+  { org: "Harbor Food Collective", name: "Priya Nair", email: "priya@harborfood.example", stage: "engaged", track: "institutionalos", dealValue: 2000, nextStep: "Board votes on the first policies", nextStepDate: day(6) },
   { org: "Northgate Senior Services", name: "Tom Okafor", email: "tom@northgate.example", stage: "discovery", track: "institutionalos", dealValue: 2500, nextStep: "Discovery call", nextStepDate: day(4) },
   { org: "Riverside Housing Partners", name: "Alicia Grant", email: "alicia@riversidehousing.example", stage: "lead", track: "institutionalos", nextStep: "Reply with the booking link", nextStepDate: day(1) }
 ];
+
+// Two more sample clients, one for each of the other Diagnostic stages (Maple Street is Fund).
+// Build = Formation Readiness; Sustain = Institutional Durability. All fictional.
+const STAGE_CLIENTS = {
+  "Harbor Food Collective": { key: "b", label: "Build", orgId: 990002, decision: "Build",
+    constraint: "Governance isn't in place yet: a board of four, no policies, and the founder signs every check", overall: 49,
+    plan: { startDate: day(-45), target: "A working board of seven, five core policies adopted, and two signers on every check", baseline: "Board of four; no policies adopted; the founder signs every check", actionsTotal: 6, actionsDone: 3, actionsBlocked: 0, actionsOverdue: 0, review90On: day(45), nextAction: { text: "Board votes on the conflict of interest and two-signer policies" } },
+    comparison: { baselineDate: day(-60), baselineLabel: "At the Diagnostic", overallBefore: 35, overallAfter: 49, overallChange: 14, dimensions: [
+      { name: "Governance and Risk", before: 22, after: 47, change: 25 }, { name: "Strategy and Positioning", before: 30, after: 48, change: 18 },
+      { name: "Revenue and Financial Health", before: 36, after: 43, change: 7 }, { name: "Program and Impact Evidence", before: 48, after: 53, change: 5 }] },
+    growth: { stage: 1, stageName: "Founder-led", score: 9, outOf: 20, band: "Stabilize first", baseline: { stage: 1, score: 5, at: day(-60) },
+      nextStage: { stage: 2, name: "Emerging", at: 250000 },
+      pillars: [{ name: "Structure", score: 1 }, { name: "Money", score: 2 }, { name: "Fundraising", score: 2 }, { name: "Board", score: 1 }, { name: "Compliance", score: 3 }],
+      nextHires: ["Contract bookkeeper", "Founder paid (part- to full-time)"],
+      fundraising: "Prove people will give: the founder's and board's networks, 100% board giving, three to five local foundation grants, one peer-to-peer or GivingTuesday campaign",
+      boardGaps: ["The next stage needs 7 to 11 members (moving to a governing board)", "Get to 100% board giving", "Adopt: Conflict of interest policy", "Adopt: Financial controls with two signers"] },
+    modules: [["Diagnostic intake", -58, "complete"], ["Governance review and scoring", -52, "complete"], ["Board readout", -46, "complete"], ["Policy working session", -20, "complete"], ["90-day review", 45, "scheduled"]],
+    project: { name: "Board and policies", sections: ["Board", "Policies"], tasks: [
+      ["Recruit three board members with finance, legal and community ties", 0, "in_progress", 14], ["Board approves updated bylaws", 0, "done", -25],
+      ["Adopt a conflict of interest policy", 1, "done", -12], ["Set up two signers at the bank", 1, "todo", 10]] },
+    msgs: ["Our treasurer wants a template for the two-signer policy. Do you have one?", "Yes. It's in your Policies folder now, with a one-page cover note for the board vote."],
+    growthProgress: { done: ["Board: Adopt: Conflict of interest policy"], doing: ["Plan and fund the hire: Contract bookkeeper", "Board: Get to 100% board giving"] } },
+  "Eastside Youth Arts": { key: "s", label: "Sustain", orgId: 990003, decision: "Sustain",
+    constraint: "Everything runs through the founding executive director, with no succession plan", overall: 72,
+    plan: { startDate: day(-70), target: "An emergency succession plan adopted, a deputy director in place, and key funder relationships shared", baseline: "The founder holds every major funder relationship; no deputy; two months of reserves", actionsTotal: 7, actionsDone: 5, actionsBlocked: 0, actionsOverdue: 0, review90On: day(20), nextAction: { text: "Board approves the emergency succession plan" } },
+    comparison: { baselineDate: day(-85), baselineLabel: "At the Diagnostic", overallBefore: 61, overallAfter: 72, overallChange: 11, dimensions: [
+      { name: "Leadership and Organizational Capacity", before: 38, after: 61, change: 23 }, { name: "Operations and Infrastructure", before: 55, after: 66, change: 11 },
+      { name: "Revenue and Financial Health", before: 59, after: 67, change: 8 }, { name: "Governance and Risk", before: 66, after: 72, change: 6 }] },
+    growth: { stage: 3, stageName: "Established", score: 16, outOf: 20, band: "Ready to grow", baseline: { stage: 3, score: 13, at: day(-85) },
+      nextStage: { stage: 4, name: "Large", at: 5000000 },
+      pillars: [{ name: "Structure", score: 3 }, { name: "Money", score: 3 }, { name: "Fundraising", score: 3 }, { name: "Board", score: 3 }, { name: "Compliance", score: 4 }],
+      nextHires: ["Development director", "Program director"],
+      fundraising: "Build major gifts: a development director with a portfolio of 150 or fewer qualified donors, a planned giving launch, corporate partnerships",
+      boardGaps: ["The next stage needs 15 to 21 members (institutional board)", "Adopt: ED succession plan", "Adopt: Audit committee charter", "Adopt: Yearly board self-assessment"] },
+    modules: [["Diagnostic intake", -84, "complete"], ["Leadership interviews and scoring", -78, "complete"], ["Board readout", -70, "complete"], ["Succession working session", -35, "complete"], ["Quarterly re-score", 20, "scheduled"]],
+    project: { name: "Leadership and succession", sections: ["Succession", "Relationships"], tasks: [
+      ["Draft the emergency succession plan", 0, "done", -18], ["Write the deputy director job description", 0, "done", -30],
+      ["Introduce the deputy to the top ten funders", 1, "in_progress", 21], ["Move funder notes into the shared donor database", 1, "todo", 30]] },
+    msgs: ["The board chair asked whether the succession plan covers a sudden absence, not just a planned retirement.", "It covers both. The emergency section names an acting ED and who signs in the first 30 days."],
+    growthProgress: { done: ["Board: Adopt: ED succession plan"], doing: ["Plan and fund the hire: Development director", "Board: Adopt: Audit committee charter"] } }
+};
+function stageProgressOps(pid, gp) {
+  const t = (title) => pid + "-" + crypto.createHash("sha1").update(title).digest("hex").slice(0, 10);
+  const meta = (title) => (title.startsWith("Board:") ? ["board", "Board chair"] : title.startsWith("Fundraising") ? ["fund", "Development lead"] : ["hires", "Executive director"]);
+  return [].concat(
+    gp.done.map((title, i) => ({ path: "tasks", id: t(title), data: { title, project: pid, section: meta(title)[0], seat: meta(title)[1], status: "done", done: true, doneAt: day(-6 - 5 * i), owner: "u0", created: day(-40) } })),
+    gp.doing.map((title, i) => ({ path: "tasks", id: t(title), data: { title, project: pid, section: meta(title)[0], seat: meta(title)[1], status: "in_progress", due: day(14 + 7 * i), owner: "u0", created: day(-40) } })));
+}
+// Everything a stage client's workspace shows. Safe on an existing demo copy: ids are fixed per client.
+async function fillStageClient(org, id) {
+  const c = STAGE_CLIENTS[org], k = "demo-" + c.key, base = CLIENTS.find((x) => x.org === org);
+  for (const [m, when, st] of c.modules) await call("POST", "/api/engagement-modules", { pipelineId: id, moduleName: m, sessionDate: day(when), status: st });
+  for (const [mins, ago, note] of [[150, c.modules[0][1] * -1, "Intake and document review"], [210, c.modules[1][1] * -1, "Scoring and memo"], [90, c.modules[2][1] * -1, "Readout"], [120, c.modules[3][1] * -1, "Working session"]])
+    await call("POST", "/api/time-entries", { pipelineId: id, minutes: mins, entryDate: day(-ago), note });
+  await call("POST", "/api/admin/ios-sync", { orgId: c.orgId, externalRef: id, overall: c.overall, decision: c.decision, record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth }, { "X-Admin-Token": process.env.DEMO_TOKEN });
+  const ops = [{ path: "projects", id: k + "-proj", data: { name: c.project.name, eng: id, status: "on_track", due: day(30), sections: c.project.sections.map((n, i) => ({ id: "s" + (i + 1), name: n })), fields: [], files: [], updates: [] } }]
+    .concat(c.project.tasks.map(([title, sec, st, d], i) => ({ path: "tasks", id: k + "-t" + (i + 1), data: Object.assign({ title, project: k + "-proj", section: "s" + (sec + 1), status: st, owner: "u0" }, st === "done" ? { done: true, doneAt: day(d) } : { due: day(d) }) })))
+    .concat([{ path: "msgs", id: k + "-m1", data: { on: "with:" + id, text: c.msgs[0], at: day(-9) + "T15:00:00.000Z", via: "client", guest: base.name, mentions: [] } },
+      { path: "msgs", id: k + "-m2", data: { on: "with:" + id, parent: k + "-m1", text: c.msgs[1], at: day(-9) + "T18:10:00.000Z", decision: { by: "demo", at: new Date().toISOString() }, mentions: [] } }]);
+  await call("POST", "/api/hub/write", { ops });
+  const gp = await call("POST", `/api/clients/${id}/growth-plan`, {});
+  await call("POST", "/api/hub/write", { ops: stageProgressOps(gp.project, c.growthProgress) });
+  const link = await call("POST", `/api/clients/${id}/access`, { name: base.name, email: base.email });
+  console.log(`  ${c.label} sample: ${org}, growth plan ${gp.total} tasks`);
+  return link.url;
+}
 
 (async () => {
   await call("POST", "/api/login", { password: process.env.DEMO_PASSWORD });
@@ -65,6 +131,15 @@ const CLIENTS = [
     return console.log("Growth Plan progress added (" + only + ").");
   }
   const state = await call("GET", "/api/state");
+  if (process.argv.includes("--upgrade")) { // An existing demo copy: add the Build and Sustain samples if they aren't filled yet.
+    const out = [];
+    for (const org of Object.keys(STAGE_CLIENTS)) {
+      const row = (state.pipeline || []).find((r) => r.org === org && /Demo data/.test(r.source || ""));
+      if (!row || row.ios) continue;
+      out.push(STAGE_CLIENTS[org].label + ": " + await fillStageClient(org, row.id));
+    }
+    return console.log(out.length ? "Stage samples added.\n  " + out.join("\n  ") : "Stage samples already present.");
+  }
   if ((state.pipeline || []).length && !FORCE) { console.error("This copy already has pipeline records. It looks like a real copy; not adding demo data. Use --force on a demo copy."); process.exit(1); }
   const ids = {};
   for (const c of CLIENTS) {
@@ -105,5 +180,7 @@ const CLIENTS = [
   await call("POST", "/api/hub/write", { ops: progress });
   console.log("  growth plan progress", progress.length, "tasks updated");
   const link = await call("POST", `/api/clients/${maple}/access`, { name: "Renee Alvarez", email: "renee@maplestreet.example" });
-  console.log("\nDemo data loaded.\nClient workspace for Maple Street Literacy Project (open it to show a prospect):\n  " + link.url);
+  const more = [];
+  for (const org of Object.keys(STAGE_CLIENTS)) more.push(STAGE_CLIENTS[org].label + " (" + org + "): " + await fillStageClient(org, ids[org]));
+  console.log("\nDemo data loaded.\nClient workspace for Maple Street Literacy Project (open it to show a prospect):\n  " + link.url + "\nOther stages:\n  " + more.join("\n  "));
 })().catch((e) => { console.error(e.message); process.exit(1); });

@@ -117,6 +117,14 @@ const FI = /Frankly Inspired|franklyinspired|Franklin|Parham|fparham/;
     assert.strictEqual(w.growth.score, 14); assert.strictEqual(w.growth.baseline.score, 10);
     assert.ok(w.projects.some((p) => /^Growth Plan: /.test(p.name) && p.total === 7 && p.done === 2), "the Growth Plan project shows underway: 7 tasks, 2 done");
     assert.strictEqual(w.consultant.firm, "Riverbend Youth Alliance");
+    // The Build and Sustain samples get their own workspaces.
+    for (const [label, org, stage, gp] of [["Build", "Harbor Food Collective", 1, 3], ["Sustain", "Eastside Youth Arts", 3, 3]]) {
+      const tok = (out.o.match(new RegExp(label + " \\(" + org + "\\): \\S+/client/([A-Za-z0-9_-]{32,})")) || [])[1]; assert.ok(tok, label + " link: " + out.o);
+      const x = await (await fetch(s.base + "/api/client/" + tok)).json();
+      assert.strictEqual(x.org, org); assert.strictEqual(x.growth.stage, stage); assert.ok(x.outcomes.comparison.overallChange > 0);
+      assert.ok(x.projects.some((p) => /^Growth Plan: /.test(p.name) && p.done === 1 && p.total >= 6), label + " Growth Plan underway");
+      assert.strictEqual(x.decisions.length, 1);
+    }
     const again = await new Promise((ok) => { const p = spawn(process.execPath, [path.join(ROOT, "scripts", "demo-seed.js"), s.base], { env: Object.assign({}, process.env, { DEMO_PASSWORD: "pw", DEMO_TOKEN: "tok" }) }); p.on("close", (code) => ok(code)); });
     assert.strictEqual(again, 1, "refuses to add demo data to a copy that already has records");
   });

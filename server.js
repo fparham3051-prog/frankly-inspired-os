@@ -1948,8 +1948,13 @@ async function demoAutoseed() {
         AND EXISTS (SELECT 1 FROM hub_docs t WHERE t.path = 'tasks' AND t.id LIKE p.id || '-%' AND NOT t.deleted)
         AND NOT EXISTS (SELECT 1 FROM hub_docs t WHERE t.path = 'tasks' AND t.id LIKE p.id || '-%' AND NOT t.deleted AND COALESCE(t.data->>'status', '') <> 'unassigned')
         ORDER BY p.id LIMIT 1`)).rows[0];
-      if (!gp) return console.log("Demo autoseed: pipeline already has records; skipping.");
-      args.push("--progress-only=" + gp.id);
+      if (gp) args.push("--progress-only=" + gp.id);
+      else {
+        // Sample clients loaded before the Build and Sustain samples existed: add them, once.
+        const bare = (await pool.query("SELECT count(*)::int AS n FROM pipeline WHERE source = 'Demo data' AND ios_org_id IS NULL AND org IN ('Harbor Food Collective', 'Eastside Youth Arts')")).rows[0].n;
+        if (!bare) return console.log("Demo autoseed: pipeline already has records; skipping.");
+        args.push("--upgrade");
+      }
     }
     const { spawn } = require("child_process");
     const p = spawn(process.execPath, args, {

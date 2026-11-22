@@ -57,7 +57,7 @@
       (ro ? "" : '<form id="cw-new" class="fd-form" style="margin-top:10px"><label>Name<input name="name" required placeholder="e.g. their executive director"></label><label>Email (optional)<input name="email" type="email"></label><p class="fd-wide"><button type="submit" class="btn">Make a link</button></p></form>') + "</div>";
     // growth pathway
     var g = w.growth;
-    h += '<div class="fw-card"><h3>Growth Pathway</h3>' + (g ? '<p><b>Stage ' + esc(g.stage) + ': ' + esc(g.stageName) + '</b> &middot; ' + esc(g.score) + ' of ' + esc(g.outOf) + ' (' + esc(g.band) + ')' + (g.baseline && g.baseline.score !== g.score ? ' &middot; started at ' + esc(g.baseline.score) : '') + '</p>' +
+    h += '<div class="fw-card"><h3>Growth Pathway</h3>' + (w.path ? '<p class="fd-small">Path: <b>' + esc(w.path.name) + '</b>, ' + esc(w.path.line.toLowerCase()) + '</p>' : '') + (g ? '<p><b>Stage ' + esc(g.stage) + ': ' + esc(g.stageName) + '</b> &middot; ' + esc(g.score) + ' of ' + esc(g.outOf) + ' (' + esc(g.band) + ')' + (g.baseline && g.baseline.score !== g.score ? ' &middot; started at ' + esc(g.baseline.score) : '') + '</p>' +
       '<p class="fd-small">' + g.pillars.map(function (p) { return esc(p.name) + ' ' + esc(p.score) + '/4'; }).join(' &middot; ') + '</p>' +
       (g.nextHires.length ? '<p class="fd-small"><b>Next hires:</b> ' + g.nextHires.map(esc).join('; ') + '</p>' : '') +
       (g.boardGaps.length ? '<p class="fd-small"><b>Board:</b> ' + g.boardGaps.map(esc).join('; ') + '</p>' : '') +

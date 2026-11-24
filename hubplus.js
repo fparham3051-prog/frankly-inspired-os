@@ -211,6 +211,7 @@ async function buildMorning(pool, jobRegistry) {
   const since = new Date(Date.now() - 26 * 3600e3).toISOString();
   out.leads = { new: (await q(pool, "SELECT name, org, source, created_at FROM prospects WHERE archived_at IS NULL AND created_at >= $1 ORDER BY created_at DESC LIMIT 10", [since])).map((p) => ({ who: [p.name, p.org].filter(Boolean).join(", "), source: p.source })),
     waiting: Number(((await q(pool, "SELECT count(*)::int AS n FROM prospects WHERE archived_at IS NULL AND status IN ('new', 'researching')"))[0] || {}).n || 0) };
+  try { const om = await require("./out-mode").load(pool); out.outMode = { on: om.on, since: om.since, until: om.until, backupName: om.backupName }; } catch (e) { out.outMode = { on: false }; }
   // Free check-ups: completed on the website (anonymous included), how many left an email, and follow-ups due.
   out.checkups = { followupsDue: await require("./checkup-followup").due(pool).catch(() => []) };
   const site = (process.env.WEBSITE_API_URL || "").replace(/\/+$/, ""), secret = process.env.WEBSITE_ADMIN_SECRET || "";

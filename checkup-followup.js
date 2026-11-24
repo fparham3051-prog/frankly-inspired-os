@@ -116,6 +116,8 @@ async function tick(pool) {
     if (!has && await start(pool, p.id)) out.started++;
   }
   const today = nyToday();
+  // While the owner is marked out, no day-3/day-10 drafts are written; they catch up on return.
+  const away = await require("./out-mode").isOn(pool).catch(() => false);
   const runs = (await pool.query("SELECT * FROM proc_runs WHERE process_name = $1 AND subject_kind = 'prospect' AND archived_at IS NULL AND NOT skipped AND COALESCE(completed_on, '') = ''", [NAME])).rows;
   for (const run of runs) {
     const steps = parse(run.steps || "[]", []);
@@ -143,7 +145,7 @@ async function tick(pool) {
       // Write the next note once the first has gone out and its day has come.
       for (let i = 1; i < steps.length; i++) {
         const s = steps[i];
-        if (s.doneOn || !steps[0].doneOn || s.dueOn > today) continue;
+        if (away || s.doneOn || !steps[0].doneOn || s.dueOn > today) continue;
         if (msgs.some((m) => m.run_id === run.id && m.step_index === i)) continue;
         if (i === 2 && !steps[1].doneOn) continue;
         await followNote(pool, p, email, run, i); out.drafted++; log.push("Drafted for approval: " + s.text);

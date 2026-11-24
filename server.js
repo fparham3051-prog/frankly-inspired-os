@@ -1820,6 +1820,7 @@ require("./report").mountLetter(app, { pool, requireAuth });
 require("./foundation").mount(app, { pool, requireAuth });
 require("./governance").mount(app, { pool, requireAuth });
 require("./processes").mount(app, { pool, requireAuth });
+require("./out-mode").mount(app, { pool, requireAuth, requireAdminScope });
 require("./contacts").mount(app, { pool, requireAuth });
 require("./gmail").mount(app, { pool, requireAuth });
 require("./sheets").mount(app, { pool, requireAuth });

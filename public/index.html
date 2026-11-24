@@ -1573,6 +1573,34 @@
         </div>
       </div>
 
+      <div class="fw-card owner-only" id="out-card">
+        <h3>Out of office</h3>
+        <p class="view-intro">If you're unexpectedly out, turn this on. It sends the note below, exactly as you approved it, once to each active client (Engaged or Diagnostic stage), and pauses follow-up drafts to new check-up leads. It sends nothing else, and turning it off sends nothing.</p>
+        <p id="out-status" class="view-intro" role="status"></p>
+        <div class="settings-form settings-grid">
+          <label>Backup contact name<input type="text" id="out-backup-name" maxlength="80"></label>
+          <label>Backup contact email<input type="email" id="out-backup-email" maxlength="120"></label>
+        </div>
+        <label class="settings-form">Subject<input type="text" id="out-subject" maxlength="200"></label>
+        <label class="settings-form">Note to clients<textarea id="out-body" rows="8"></textarea></label>
+        <p class="view-intro">Fills in: {first} first name, {org} organization, {until} return date, {backupName}, {backupEmail}, {me} your first name. Your signature is added.</p>
+        <div class="settings-form">
+          <button type="button" class="btn secondary" id="out-save">Save</button>
+          <button type="button" class="btn" id="out-approve">Approve this wording</button>
+          <span class="form-msg" id="out-msg" role="status"></span>
+        </div>
+        <h4 class="settings-h4">Turn it on or off</h4>
+        <div class="settings-form">
+          <label>Expected back (optional)<input type="date" id="out-until"></label>
+          <button type="button" class="btn" id="out-on">I'm out: send the note</button>
+          <button type="button" class="btn secondary" id="out-off" hidden>I'm back: turn off</button>
+        </div>
+        <p class="view-intro" id="out-recipients"></p>
+        <h4 class="settings-h4">Backup contact's link</h4>
+        <p class="view-intro">A private link your backup can open on a phone to turn Out mode on or off. It can do nothing else. Making a new one cancels the old one.</p>
+        <div class="settings-form"><button type="button" class="btn secondary" id="out-link">Make the link</button> <code id="out-link-text" class="secret-key"></code></div>
+      </div>
+
       <div class="fw-card owner-only">
         <h3>People</h3>
         <p class="view-intro"><strong>Owner</strong>: everything. <strong>Staff</strong>: runs the practice; no people, settings, or My Desk. <strong>Board</strong>: can see everything except My Desk, can't change anything.</p>

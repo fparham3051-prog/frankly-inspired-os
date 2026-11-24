@@ -759,6 +759,43 @@ async function t(name, fn) {
     assert.ok(!m.checkups.followupsDue.some((f) => /Jordan Lee/.test(f.who)));
     assert.strictEqual(MOCK.sends.length, sends, "nothing sent on its own");
   });
+  await t("out mode: the approved note goes once to each active client, the backup link works, and nothing else sends", async () => {
+    const now = new Date().toISOString();
+    await Q.query("INSERT INTO pipeline (id, name, org, stage, created_at, updated_at) VALUES ('om-deal-1', 'Sprint', 'Harborview Arts', 'engaged', $1, $1), ('om-deal-2', 'Lead', 'Coldwater', 'lead', $1, $1), ('om-deal-3', 'Diag', 'No Email Org', 'assessment', $1, $1)", [now]);
+    await Q.query("INSERT INTO contacts (id, name, email, created_at) VALUES ('om-c1', 'Dana Reyes', 'dana@harborview.org', $1), ('om-c2', 'Lee Cold', 'lee@coldwater.org', $1)", [now]);
+    await Q.query("INSERT INTO contact_links (id, kind, ref_id, contact_id, role, created_at) VALUES ('om-l1', 'pipeline', 'om-deal-1', 'om-c1', 'client', $1), ('om-l2', 'pipeline', 'om-deal-2', 'om-c2', 'client', $1)", [now]);
+    // Not approved yet: it refuses.
+    assert.strictEqual((await req("owner1", "POST", "/api/settings/out-mode/on", { until: "2030-01-10" })).status, 409);
+    assert.ok([401, 403].includes((await req("board", "GET", "/api/settings/out-mode")).status), "owner only");
+    let d = (await req("owner1", "POST", "/api/settings/out-mode", { backupName: "Sam Ortiz", backupEmail: "sam@example.org", approve: true })).data;
+    assert.ok(d.approved, JSON.stringify(d));
+    const rcpt = d.recipients.map((r) => r.email); assert.ok(rcpt.includes("dana@harborview.org") && !rcpt.includes("lee@coldwater.org"), "only Engaged/Diagnostic clients: " + rcpt);
+    assert.ok(d.missing.includes("No Email Org"));
+    // Editing the wording withdraws approval.
+    d = (await req("owner1", "POST", "/api/settings/out-mode", { body: d.body + "\nEdited." })).data;
+    assert.ok(!d.approved);
+    d = (await req("owner1", "POST", "/api/settings/out-mode", { approve: true, newBackupLink: true })).data;
+    const link = d.backupLink; assert.ok(/\/out\/[\w-]{20,}$/.test(link), link);
+    const sends = MOCK.sends.length;
+    const r = (await req("owner1", "POST", "/api/settings/out-mode/on", { until: "2030-01-10" })).data;
+    assert.strictEqual(r.sent, rcpt.length, JSON.stringify(r));
+    assert.strictEqual(MOCK.sends.length, sends + rcpt.length);
+    const row = (await Q.query("SELECT * FROM proc_outbox WHERE purpose LIKE 'Out of office%' AND to_email = 'dana@harborview.org'")).rows[0];
+    assert.ok(row && row.status === "sent" && /Hi Dana,/.test(row.body) && /Sam Ortiz at sam@example\.org/.test(row.body) && /January 10/.test(row.body) && /Edited\./.test(row.body), row && row.body);
+    // Turning it on again sends nothing new; the morning data shows it.
+    assert.strictEqual((await req("owner1", "POST", "/api/settings/out-mode/on", {})).data.sent, 0);
+    assert.strictEqual(MOCK.sends.length, sends + rcpt.length);
+    const m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(m.outMode.on && m.outMode.until === "2030-01-10");
+    // The backup link: wrong key is a 404, the right one turns it off.
+    const path = new URL(link).pathname;
+    const bad = await fetch(BASE + "/out/not-the-key"); assert.strictEqual(bad.status, 404);
+    const page = await (await fetch(BASE + path)).text(); assert.match(page, /is marked out/);
+    const off = await fetch(BASE + path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "action=off" });
+    assert.match(await off.text(), /Out mode is off/);
+    assert.strictEqual((await req("owner1", "GET", "/api/settings/out-mode")).data.on, false);
+    assert.strictEqual(MOCK.sends.length, sends + rcpt.length, "turning it off sends nothing");
+  });
   await t("ai 5: a reply is read, summarized, and answered in the same thread after approval", async () => {
     const out = (await req("owner1", "GET", "/api/proc/outbox")).data.items;
     const first = out.find((m) => m.replySummary);

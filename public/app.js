@@ -410,7 +410,44 @@
       }).join("") : '<tr><td colspan="6" class="empty-note">No accounts yet. Add yourself first as Owner.</td></tr>';
     }).catch(function(err){ msg("person-msg", err.message, true); });
     apiFetch("/api/settings").then(function(d){ document.getElementById("shared-off").checked = !!d.sharedPasswordOff; }).catch(function(){});
+    loadOutMode();
   }
+  function showOutMode(d){
+    document.getElementById("out-backup-name").value = d.backupName || "";
+    document.getElementById("out-backup-email").value = d.backupEmail || "";
+    document.getElementById("out-subject").value = d.subject || "";
+    document.getElementById("out-body").value = d.body || "";
+    document.getElementById("out-until").value = d.until || "";
+    document.getElementById("out-status").innerHTML = d.on
+      ? "<strong>You're marked out</strong> since " + esc(fmtDate(d.since.slice(0, 10))) + (d.until ? ", back " + esc(fmtDate(d.until)) : "") + "."
+      : (d.approved ? "Off. Wording approved " + esc(fmtDate(d.approvedAt.slice(0, 10))) + "." : "Off. <strong>Approve the wording</strong> before this can be turned on.");
+    document.getElementById("out-on").hidden = !!d.on;
+    document.getElementById("out-off").hidden = !d.on;
+    document.getElementById("out-on").disabled = !d.approved;
+    var rc = d.recipients || [];
+    document.getElementById("out-recipients").textContent = (rc.length ? "Would go to " + rc.length + ": " + rc.map(function(r){ return r.name + " (" + r.org + ")"; }).join(", ") + "." : "No active clients with an email right now.") +
+      ((d.missing || []).length ? " No contact email for: " + d.missing.join(", ") + ". Add one on the deal so they hear too." : "");
+    document.getElementById("out-link").textContent = d.hasBackupLink ? "Make a new link" : "Make the link";
+  }
+  function loadOutMode(){ apiFetch("/api/settings/out-mode").then(showOutMode).catch(function(err){ msg("out-msg", err.message, true); }); }
+  function outFields(){ return { backupName: document.getElementById("out-backup-name").value, backupEmail: document.getElementById("out-backup-email").value, subject: document.getElementById("out-subject").value, body: document.getElementById("out-body").value }; }
+  document.addEventListener("click", function(e){
+    var id = e.target && e.target.id;
+    if(id === "out-save" || id === "out-approve"){
+      var b = outFields(); if(id === "out-approve") b.approve = true;
+      apiFetch("/api/settings/out-mode", { method: "POST", body: b }).then(function(d){ showOutMode(d); msg("out-msg", id === "out-approve" ? "Approved. This exact wording is what clients will get." : (d.approved ? "Saved." : "Saved. Approve it before it can be used.")); }).catch(function(err){ msg("out-msg", err.message, true); });
+    }
+    if(id === "out-on"){
+      if(!window.confirm("Send your out-of-office note to every active client now?")) return;
+      apiFetch("/api/settings/out-mode/on", { method: "POST", body: { until: document.getElementById("out-until").value } }).then(function(r){ msg("out-msg", "Out mode is on. Sent to " + r.sent + (r.failed && r.failed.length ? "; couldn't send to " + r.failed.join(", ") : "") + "."); loadOutMode(); }).catch(function(err){ msg("out-msg", err.message, true); });
+    }
+    if(id === "out-off"){
+      apiFetch("/api/settings/out-mode/off", { method: "POST", body: {} }).then(function(){ msg("out-msg", "Welcome back. Out mode is off; nothing was sent."); loadOutMode(); }).catch(function(err){ msg("out-msg", err.message, true); });
+    }
+    if(id === "out-link"){
+      apiFetch("/api/settings/out-mode", { method: "POST", body: { newBackupLink: true } }).then(function(d){ showOutMode(d); document.getElementById("out-link-text").textContent = d.backupLink || ""; msg("out-msg", "Send this link to your backup contact privately. It's shown only once."); }).catch(function(err){ msg("out-msg", err.message, true); });
+    }
+  });
   document.addEventListener("change", function(e){
     var sel = e.target.closest("[data-user-role]");
     if(sel){

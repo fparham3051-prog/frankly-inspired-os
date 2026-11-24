@@ -59,6 +59,7 @@ async function t(name, fn) {
         if (/Draft one new field note/.test(text)) return out({ title: "When the waitlist grows faster than staff", signal: "A growing waitlist.", assumption: "We need more funding.", constraint: "Intake process capacity.", evidence: "Time from inquiry to service.", action: "Map intake steps and time them.", trigger: "strain" });
         if (/pre-call brief/.test(text)) return out({ headline: "Northside Arts, discovery call", numbers: ["Revenue $1.2M"], heard: "Board is worried.", likelyConstraint: "Founder dependence", questions: ["Q1", "Q2", "Q3"], goal: "Agree on a Diagnostic", watchFor: "Budget timing" });
         if (/call notes into records/.test(text)) return out({ summary: "Talked about board strain.", stage: "assessment", nextStep: "Send Diagnostic proposal", nextStepDate: "2030-01-15", trigger: "founder", problem: { presentingProblem: "Board disengaged", verifiedConstraint: "Founder holds all relationships", differs: true, atStake: "Succession", whoPays: "Board", orgType: "Arts", orgSize: "$1M" }, followUp: { subject: "Good talking today", body: "Thanks for the time today." } });
+        if (/free organizational check-up/.test(text)) return out({ subject: /three/.test(text) ? "A resource for the Fund path" : "Closing the loop", body: /three/.test(text) ? "Hi Jordan,\n\nHere is one resource: [link]." : "Hi Jordan,\n\nA last note from me." });
         if (/Someone replied/.test(text)) return out({ kind: "scheduling", summary: "Wants to meet next Tuesday", answer: { subject: "Re: time", body: "Tuesday works." } });
         if (/Read the attached documents/.test(text)) return out({ areas: [{ key: "revenue", score: 42, confidence: "medium", evidence: ["990 p.1: revenue fell 20%"], missing: "Audit" }], constraint: { area: "revenue", name: "Revenue concentration", why: "One funder is 60%.", evidenceFor: ["990"], evidenceAgainst: [], confidence: "medium" }, memo: "Draft memo.", plan: [{ action: "Diversify", owner: "ED", week: 4, evidence: "Two new funders" }], questions: ["Q?"] });
         if (/First read of a grant application/.test(text)) return out({ summary: "Solid youth program.", criteria: [{ criterion: "Impact", assessment: "Clear outcomes", rating: "strong" }], strengths: ["Track record"], concerns: [], questions: ["Budget?"], lean: "advance", leanReason: "Fits the program." });
@@ -67,6 +68,7 @@ async function t(name, fn) {
         if (/^Question:/m.test(text)) return out("You have 1 deal in Lead.");
         return out({});
       }
+      if (u.pathname === "/api/admin/checkup-counts") return json({ ok: true, hours: Number(u.searchParams.get("hours")), completed: 7, checkups: 5, byTool: { "self-assessment": 5, leadership: 2 }, leftEmail: 2 });
       if (u.pathname === "/api/admin/field-notes") { MOCK.siteNotes = JSON.parse(body).notes; return json({ ok: true, count: MOCK.siteNotes.length }); }
       if (q.headers.authorization === "Bearer at1" || q.headers.authorization === "Bearer at2") {
         const SH = MOCK.sheet;
@@ -715,6 +717,47 @@ async function t(name, fn) {
     await req("owner1", "POST", "/api/ai/lead/" + pid, {});
     const drafts = (await req("owner1", "GET", "/api/proc/outbox")).data.items.filter((m) => m.subjectId === pid && m.status === "draft");
     assert.strictEqual(drafts.length, 1, "a new draft replaces the old one");
+  });
+  await t("check-up loop: a website check-up lead gets an AI first note, follow-up steps, day 3 and 10 drafts, and closes when they reply", async () => {
+    const sends = MOCK.sends.length;
+    const r = await req("anon", "POST", "/api/admin/prospects", { items: [{ name: "Jordan Lee", org: "Riverbend Youth", source: "assessment tool", sourceRef: "web-tool-loop-1", interest: "institutionalos-diagnostic", orgStage: "fund", trigger: "funder", notes: "Email: jordan@riverbend.org\nName: Jordan Lee\nTool: Sustainability Self-Assessment\nComposite score: 52%" }] }, { "X-Admin-Token": "test-token" });
+    assert.strictEqual(r.data.created, 1, JSON.stringify(r.data));
+    let run = null;
+    for (let i = 0; i < 40 && !run; i++) { await new Promise((ok) => setTimeout(ok, 100)); run = (await Q.query("SELECT r.* FROM proc_runs r JOIN prospects p ON p.id = r.subject_id WHERE r.process_name = 'Check-up follow-up' AND p.source_ref = 'web-tool-loop-1'")).rows[0]; }
+    assert.ok(run, "the follow-up loop starts when the lead arrives");
+    assert.strictEqual(run.contact_email, "jordan@riverbend.org");
+    let steps = JSON.parse(run.steps);
+    assert.deepStrictEqual(steps.map((s) => s.text.slice(0, 6)), ["Send a", "Day 3:", "Day 10"]);
+    const pid = run.subject_id;
+    let first = null;
+    for (let i = 0; i < 40 && !first; i++) { await new Promise((ok) => setTimeout(ok, 100)); first = (await req("owner1", "GET", "/api/proc/outbox")).data.items.find((m) => m.subjectId === pid && m.status === "draft"); }
+    assert.ok(first && first.ai && first.toEmail === "jordan@riverbend.org", "an AI first note waits for approval: " + JSON.stringify(first));
+    // The morning brief names the follow-up and shows yesterday's check-up counts from the website.
+    let m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(m.checkups.followupsDue.some((f) => /Jordan Lee/.test(f.who) && /first note/.test(f.step)), JSON.stringify(m.checkups));
+    assert.strictEqual(m.checkups.completed, 7); assert.strictEqual(m.checkups.leftEmail, 2);
+    // The first note goes out (approval recorded as sent); the step ticks itself.
+    await Q.query("UPDATE proc_outbox SET status = 'sent', sent_at = $2 WHERE id = $1", [first.id, new Date().toISOString()]);
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    steps = JSON.parse((await Q.query("SELECT steps FROM proc_runs WHERE id = $1", [run.id])).rows[0].steps);
+    assert.ok(steps[0].doneOn && !steps[1].doneOn, JSON.stringify(steps));
+    // Day 3 arrives: a resource note is drafted for approval, not sent.
+    const back = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+    steps[1].dueOn = back(1); steps[2].dueOn = back(0);
+    await Q.query("UPDATE proc_runs SET steps = $2 WHERE id = $1", [run.id, JSON.stringify(steps)]);
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    const d3 = (await Q.query("SELECT * FROM proc_outbox WHERE run_id = $1 AND step_index = 1", [run.id])).rows[0];
+    assert.ok(d3 && d3.status === "draft" && /resource/i.test(d3.subject), JSON.stringify(d3));
+    assert.ok(!(await Q.query("SELECT 1 FROM proc_outbox WHERE run_id = $1 AND step_index = 2", [run.id])).rows[0], "day 10 waits until the day 3 note has gone out");
+    // They reply: the loop closes and nothing else is drafted.
+    await Q.query("UPDATE proc_outbox SET replied_at = $2 WHERE id = $1", [first.id, new Date().toISOString()]);
+    await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
+    const done = (await Q.query("SELECT steps, completed_on FROM proc_runs WHERE id = $1", [run.id])).rows[0];
+    assert.ok(done.completed_on, "the loop closes when they reply");
+    assert.ok(JSON.parse(done.steps).every((s) => s.doneOn && (s.by === "Automatic" || /they replied/.test(s.by))), done.steps);
+    m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(!m.checkups.followupsDue.some((f) => /Jordan Lee/.test(f.who)));
+    assert.strictEqual(MOCK.sends.length, sends, "nothing sent on its own");
   });
   await t("ai 5: a reply is read, summarized, and answered in the same thread after approval", async () => {
     const out = (await req("owner1", "GET", "/api/proc/outbox")).data.items;

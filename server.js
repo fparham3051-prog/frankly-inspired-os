@@ -765,7 +765,12 @@ app.post("/api/admin/prospects", requireAdminScope("prospects"), async (req, res
        INTEREST_KEYS.has(item.interest) ? item.interest : "", DIAGNOSTIC_STAGES.has(item.orgStage) ? item.orgStage : "",
        TRIGGER_KEYS.has(item.trigger) ? item.trigger : "", cleanSelfScores(item.selfScores)]
     );
-    if (result.rowCount > 0) created++; else skipped++;
+    if (result.rowCount > 0) {
+      created++;
+      // A free check-up lead starts its follow-up loop: an AI first-note draft
+      // (never sent) and follow-up steps. Runs after the reply so the website isn't kept waiting.
+      if (require("./checkup-followup").isCheckupLead(item.source)) setImmediate(() => require("./checkup-followup").start(pool, id).catch((e) => console.error("checkup follow-up", e.message)));
+    } else skipped++;
   }
   res.json({ ok: true, created, skipped });
 });
@@ -1837,6 +1842,7 @@ async function automationTick() {
   const out = { at: new Date().toISOString() };
   try { out.contacts = await C.sync(pool); } catch (e) { out.contactsError = String(e.message || e); }
   try { await require("./processes").ensureStarter(pool); await A.upgradeStarter(pool); out.checklists = await A.evaluate(pool); } catch (e) { out.checklistsError = String(e.message || e); }
+  try { out.checkups = await require("./checkup-followup").tick(pool); } catch (e) { out.checkupsError = String(e.message || e); }
   try { out.ai = await require("./ai-features").tick(pool); } catch (e) { out.aiError = String(e.message || e); }
   try { out.meetings = await require("./meetings").ingest(pool); } catch (e) { out.meetingsError = String(e.message || e); }
   try { out.weekly = await require("./weekly").tick(pool); } catch (e) { out.weeklyError = String(e.message || e); }

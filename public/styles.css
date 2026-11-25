@@ -937,3 +937,9 @@ a.btn{text-decoration:none;display:inline-block}
 .start-day-cal .when{display:inline-block;min-width:72px;color:var(--ink-soft, #5b6579);}
 .start-day-sys{margin-top:10px;}
 .start-day-sys.warn{color:#9a5b00;}
+
+/* Out of office card: full-width subject and note */
+#out-card .out-full { display: block; margin: 0.9rem 0 0.4rem; font-size: 0.85rem; }
+#out-card .out-full input,
+#out-card .out-full textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 0.35rem; font: inherit; font-size: 0.95rem; line-height: 1.5; padding: 0.6rem 0.7rem; }
+#out-card .out-full textarea { min-height: 12rem; resize: vertical; }

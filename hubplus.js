@@ -222,7 +222,9 @@ async function buildMorning(pool, jobRegistry) {
       const r = await fetch(`${site}/api/admin/checkup-counts?hours=${hours}`, { headers: { "X-Reminder-Secret": secret }, signal: ctrl.signal });
       clearTimeout(t);
       const d = await r.json();
-      if (r.ok && d.ok) Object.assign(out.checkups, { hours, completed: d.completed, checkups: d.checkups, leftEmail: d.leftEmail, byTool: d.byTool });
+      if (r.ok && d.ok) Object.assign(out.checkups, { hours, completed: d.completed, checkups: d.checkups, leftEmail: d.leftEmail, byTool: d.byTool,
+        // What finished check-ups showed, and check-ups saved part-way (weekly reminders until finished).
+        byPath: d.byPath || null, topGaps: (d.gaps || []).slice(0, 3), legacyAvg: d.legacyAvg ?? null, progress: d.progress || null });
       else out.checkups.error = d.error || "status " + r.status;
     } catch (e) { out.checkups.error = "website not reachable"; }
   } else out.checkups.error = "website connection not set";

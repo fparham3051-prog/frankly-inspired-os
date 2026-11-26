@@ -68,7 +68,7 @@ async function t(name, fn) {
         if (/^Question:/m.test(text)) return out("You have 1 deal in Lead.");
         return out({});
       }
-      if (u.pathname === "/api/admin/checkup-counts") return json({ ok: true, hours: Number(u.searchParams.get("hours")), completed: 7, checkups: 5, byTool: { "self-assessment": 5, leadership: 2 }, leftEmail: 2 });
+      if (u.pathname === "/api/admin/checkup-counts") return json({ ok: true, hours: Number(u.searchParams.get("hours")), completed: 7, checkups: 5, byTool: { "self-assessment": 5, leadership: 2 }, leftEmail: 2, byPath: { build: 3, fund: 2 }, gaps: [{ gap: "Governance & Risk", n: 3 }, { gap: "Revenue Diversification", n: 1 }], legacyAvg: 2.4, progress: { inProgress: 2, saved: 1, finishedAfterSaving: 1, reminded: 1 } });
       if (u.pathname === "/api/admin/field-notes") { MOCK.siteNotes = JSON.parse(body).notes; return json({ ok: true, count: MOCK.siteNotes.length }); }
       if (q.headers.authorization === "Bearer at1" || q.headers.authorization === "Bearer at2") {
         const SH = MOCK.sheet;
@@ -736,6 +736,9 @@ async function t(name, fn) {
     let m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
     assert.ok(m.checkups.followupsDue.some((f) => /Jordan Lee/.test(f.who) && /first note/.test(f.step)), JSON.stringify(m.checkups));
     assert.strictEqual(m.checkups.completed, 7); assert.strictEqual(m.checkups.leftEmail, 2);
+    // What finished check-ups showed, and check-ups saved part-way.
+    assert.deepStrictEqual(m.checkups.byPath, { build: 3, fund: 2 }); assert.strictEqual(m.checkups.topGaps[0].gap, "Governance & Risk");
+    assert.strictEqual(m.checkups.legacyAvg, 2.4); assert.strictEqual(m.checkups.progress.inProgress, 2);
     // The first note goes out (approval recorded as sent); the step ticks itself.
     await Q.query("UPDATE proc_outbox SET status = 'sent', sent_at = $2 WHERE id = $1", [first.id, new Date().toISOString()]);
     await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });

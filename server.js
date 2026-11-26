@@ -1961,8 +1961,13 @@ async function demoAutoseed() {
       else {
         // Sample clients loaded before the Build and Sustain samples existed: add them, once.
         const bare = (await pool.query("SELECT count(*)::int AS n FROM pipeline WHERE source = 'Demo data' AND ios_org_id IS NULL AND org IN ('Harbor Food Collective', 'Eastside Youth Arts')")).rows[0].n;
-        if (!bare) return console.log("Demo autoseed: pipeline already has records; skipping.");
-        args.push("--upgrade");
+        if (bare) args.push("--upgrade");
+        else {
+          // Samples loaded before Legacy Readiness existed: add it, once.
+          const noLegacy = (await pool.query("SELECT count(*)::int AS n FROM pipeline WHERE source = 'Demo data' AND ios_org_id IS NOT NULL AND COALESCE(ios_legacy, '') = ''")).rows[0].n;
+          if (!noLegacy) return console.log("Demo autoseed: pipeline already has records; skipping.");
+          args.push("--legacy-only");
+        }
       }
     }
     const { spawn } = require("child_process");

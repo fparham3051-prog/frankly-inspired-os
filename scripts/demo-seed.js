@@ -38,6 +38,15 @@ async function call(method, url, body, headers) {
   return j;
 }
 
+// Legacy Readiness for each sample, at three points on the path (names match InstitutionalOS legacy.py).
+const ALL_MARKERS = ["A deputy who could step in", "Key decisions written down", "Board-approved succession plan", "Six months of reserves", "No funder above 30% of revenue", "Candid Platinum Seal"];
+const legacyOf = (met) => ({ met: met.length, total: 6, missing: ALL_MARKERS.filter((m) => !met.includes(m)) });
+const LEGACY = {
+  "Harbor Food Collective": legacyOf(["Key decisions written down"]),
+  "Maple Street Literacy Project": legacyOf(["A deputy who could step in", "Key decisions written down"]),
+  "Eastside Youth Arts": legacyOf(["Key decisions written down", "Six months of reserves", "No funder above 30% of revenue", "Candid Platinum Seal"])
+};
+
 const CLIENTS = [
   { org: "Maple Street Literacy Project", name: "Renee Alvarez", email: "renee@maplestreet.example", stage: "engaged", track: "institutionalos", dealValue: 2500, nextStep: "90-day review", nextStepDate: day(12),
     plan: { startDate: day(-60), target: "Three new foundation funders in active conversation", baseline: "One funder provides 62% of revenue", actionsTotal: 6, actionsDone: 4, actionsBlocked: 0, actionsOverdue: 0, review90On: day(30), nextAction: { text: "Send the board the list of 20 aligned funders" } },
@@ -109,7 +118,7 @@ async function fillStageClient(org, id) {
   for (const [m, when, st] of c.modules) await call("POST", "/api/engagement-modules", { pipelineId: id, moduleName: m, sessionDate: day(when), status: st });
   for (const [mins, ago, note] of [[150, c.modules[0][1] * -1, "Intake and document review"], [210, c.modules[1][1] * -1, "Scoring and memo"], [90, c.modules[2][1] * -1, "Readout"], [120, c.modules[3][1] * -1, "Working session"]])
     await call("POST", "/api/time-entries", { pipelineId: id, minutes: mins, entryDate: day(-ago), note });
-  await call("POST", "/api/admin/ios-sync", { orgId: c.orgId, externalRef: id, overall: c.overall, decision: c.decision, record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth }, { "X-Admin-Token": process.env.DEMO_TOKEN });
+  await call("POST", "/api/admin/ios-sync", { orgId: c.orgId, externalRef: id, overall: c.overall, decision: c.decision, record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth, legacy: LEGACY[org] }, { "X-Admin-Token": process.env.DEMO_TOKEN });
   const ops = [{ path: "projects", id: k + "-proj", data: { name: c.project.name, eng: id, status: "on_track", due: day(30), sections: c.project.sections.map((n, i) => ({ id: "s" + (i + 1), name: n })), fields: [], files: [], updates: [] } }]
     .concat(c.project.tasks.map(([title, sec, st, d], i) => ({ path: "tasks", id: k + "-t" + (i + 1), data: Object.assign({ title, project: k + "-proj", section: "s" + (sec + 1), status: st, owner: "u0" }, st === "done" ? { done: true, doneAt: day(d) } : { due: day(d) }) })))
     .concat([{ path: "msgs", id: k + "-m1", data: { on: "with:" + id, text: c.msgs[0], at: day(-9) + "T15:00:00.000Z", via: "client", guest: base.name, mentions: [] } },
@@ -131,6 +140,17 @@ async function fillStageClient(org, id) {
     return console.log("Growth Plan progress added (" + only + ").");
   }
   const state = await call("GET", "/api/state");
+  if (process.argv.includes("--legacy-only")) { // An existing demo copy: add Legacy Readiness, resending each sample's own data.
+    const done = [];
+    for (const org of Object.keys(LEGACY)) {
+      const row = (state.pipeline || []).find((r) => r.org === org && /Demo data/.test(r.source || ""));
+      if (!row || !row.ios) continue;
+      const c = STAGE_CLIENTS[org] || Object.assign({ orgId: 990001, decision: "Fund" }, CLIENTS[0]);
+      await call("POST", "/api/admin/ios-sync", { orgId: c.orgId, externalRef: row.id, overall: c.overall, decision: c.decision, record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth, legacy: LEGACY[org] }, { "X-Admin-Token": process.env.DEMO_TOKEN });
+      done.push(org + " " + LEGACY[org].met + " of 6");
+    }
+    return console.log("Legacy Readiness added: " + (done.join(", ") || "no filled samples found"));
+  }
   if (process.argv.includes("--upgrade")) { // An existing demo copy: add the Build and Sustain samples if they aren't filled yet.
     const out = [];
     for (const org of Object.keys(STAGE_CLIENTS)) {
@@ -159,7 +179,7 @@ async function fillStageClient(org, id) {
     await call("POST", "/api/time-entries", { pipelineId: maple, minutes: mins, entryDate: day(-ago), note });
   // Plan progress and before-and-after scores, as InstitutionalOS would send them.
   const c = CLIENTS[0];
-  await call("POST", "/api/admin/ios-sync", { orgId: 990001, externalRef: maple, overall: c.overall, decision: "Fund", record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth }, { "X-Admin-Token": process.env.DEMO_TOKEN });
+  await call("POST", "/api/admin/ios-sync", { orgId: 990001, externalRef: maple, overall: c.overall, decision: "Fund", record: { verifiedConstraint: c.constraint }, plan: c.plan, comparison: c.comparison, growth: c.growth, legacy: LEGACY[c.org] }, { "X-Admin-Token": process.env.DEMO_TOKEN });
   // Projects & Team: a delivery project the client sees, with a conversation and a decision.
   const now = new Date().toISOString();
   const ops = [

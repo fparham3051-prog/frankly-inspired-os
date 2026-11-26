@@ -1508,6 +1508,12 @@ async function t(name, fn) {
     assert.ok((await req("anon", "GET", "/api/client/" + token)).data.projects.some((p) => /^Growth Plan: /.test(p.name)), "the client sees the Growth Plan project");
     await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 62 }, { "X-Admin-Token": "test-token" });
     assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).data.growth.score, 14, "a sync without growth keeps the last one");
+    // Legacy Readiness: arrives from InstitutionalOS and shows to the client; a sync without it keeps it.
+    await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 62, legacy: { met: 3, total: 6, missing: ["Board-approved succession plan", "Six months of reserves", "Candid Platinum Seal"] } }, { "X-Admin-Token": "test-token" });
+    let wl = (await req("anon", "GET", "/api/client/" + token)).data;
+    assert.strictEqual(wl.legacy.met, 3); assert.strictEqual(wl.legacy.missing.length, 3);
+    await req("x", "POST", "/api/admin/ios-sync", { orgId: 777, externalRef: deal, overall: 62 }, { "X-Admin-Token": "test-token" });
+    assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).data.legacy.met, 3, "a sync without legacy keeps the last one");
     // Revoked links stop at once; made-up links never work.
     assert.strictEqual((await req("owner1", "DELETE", `/api/clients/access/${made.data.id}`)).status, 200);
     assert.strictEqual((await req("anon", "GET", "/api/client/" + token)).status, 404);

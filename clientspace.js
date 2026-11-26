@@ -76,12 +76,17 @@ function growthFor(g) {
   };
 }
 
+function legacyFor(l) {
+  if (!l || !Number.isFinite(Number(l.met))) return null;
+  return { met: Number(l.met), total: Number(l.total) || 6, missing: (Array.isArray(l.missing) ? l.missing : []).slice(0, 6).map((x) => clip(x, 80)) };
+}
+
 // Everything the client may see, built in one place so the preview and the client get the same thing.
 async function workspace(pool, dealId) {
   const d = (await pool.query("SELECT * FROM pipeline WHERE id = $1 AND archived_at IS NULL", [dealId])).rows[0];
   if (!d) return null;
   const nameOf = await names(pool);
-  const plan = json(d.ios_plan, null), rec = json(d.ios_record, {}) || {}, cmp = json(d.ios_comparison, null), gr = json(d.ios_growth, null);
+  const plan = json(d.ios_plan, null), rec = json(d.ios_record, {}) || {}, cmp = json(d.ios_comparison, null), gr = json(d.ios_growth, null), lg = json(d.ios_legacy, null);
   const allProjects = (await docs(pool, "projects")).filter((p) => p.eng === dealId && !p.archived);
   const projects = allProjects.filter((p) => !p.clientHidden);
   const pids = new Set(projects.map((p) => p.id));
@@ -119,6 +124,7 @@ async function workspace(pool, dealId) {
       };
     }),
     growth: growthFor(gr),
+    legacy: legacyFor(lg),
     path: pathFor(d.diagnostic_stage, gr),
     hiddenProjects: allProjects.length - projects.length,
     messages: msgOut,

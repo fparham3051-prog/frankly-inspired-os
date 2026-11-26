@@ -37,6 +37,14 @@
       <p class="small muted">Planning guidance, not legal or accounting advice.</p></div>`;
   }
 
+  function legacyCard() {
+    const l = W.legacy;
+    if (!l) return "";
+    return `<div class="card"><h2>Legacy Readiness: ${esc(l.met)} of ${esc(l.total)}</h2>
+      <p>The finish line on every path: an organization that can run, raise money and make decisions without its founder.</p>${bar(l.met, l.total)}
+      ${l.missing.length ? `<p><b>Still to put in place:</b> ${l.missing.map(esc).join("; ")}</p>` : "<p><b>All six markers are in place.</b></p>"}</div>`;
+  }
+
   function overview() {
     const p = W.plan;
     return `${p ? `<div class="card"><h2>Your 90-Day Improvement Plan</h2>
@@ -46,6 +54,7 @@
       <p class="small muted">Started ${day(p.startDate)}${p.review90On ? ` · 90-day review ${p.review90Done ? "held" : day(p.review90On)}` : ""}${p.reassessOn ? ` · six-month reassessment ${p.reassessDone ? "held" : day(p.reassessOn)}` : ""}</p></div>`
       : `<div class="card"><h2>Your plan</h2><p class="muted">Your 90-Day Improvement Plan will show here once it's set.</p>${W.constraint ? `<p><b>What we're working on:</b> ${esc(W.constraint)}</p>` : ""}</div>`}
     ${growth()}
+    ${legacyCard()}
     <div class="stats">
       <div class="stat"><b>${W.projects.reduce((a, x) => a + x.done, 0)}/${W.projects.reduce((a, x) => a + x.total, 0)}</b><span class="small muted">tasks done</span></div>
       <div class="stat"><b>${W.outcomes.sessions.done}</b><span class="small muted">sessions delivered</span></div>

@@ -1008,6 +1008,9 @@ async function buildReconcile(hours) {
   } else {
     out.checks.iosClients = { status: "skipped", error: "GRANTPASS_INTEGRATION_KEY not set" };
   }
+  // 6. The free check-up and the paid Diagnostic use the same weights, minimums and Legacy markers.
+  out.checks.scoringModel = await require("./scoring-sync").check({ siteUrl: process.env.PUBLIC_SITE_URL || "https://franklyinspired.associates", iosUrl: GRANTPASS_API });
+  if (out.checks.scoringModel.status === "mismatch") out.issues += out.checks.scoringModel.differences.length;
   // 5. The second half of the loop: each linked Diagnostic has a 90-Day
   // Improvement Plan, check-ins are happening, nothing is stuck, and the
   // 90-day review is held on time. These are follow-ups, not faults.

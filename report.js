@@ -41,19 +41,47 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 // one before it; the share is only shown when it is a real narrowing.
 const pct = (a, b) => (a != null && b && a <= b ? Math.round((100 * a) / b) + "%" : "—");
 
+// The website's cookie-free counts (page, event, day), cached for ten minutes.
+let pcCache = { at: 0, rows: null };
+async function fetchPageCounts(url, secret) {
+  if (!url || !secret) return null;
+  if (pcCache.rows && Date.now() - pcCache.at < 10 * 60 * 1000) return pcCache.rows;
+  try {
+    const r = await fetch(url + "/api/admin/page-counts?days=400", { headers: { "X-Reminder-Secret": secret }, signal: AbortSignal.timeout(45000) });
+    const d = await r.json();
+    if (!r.ok || !d.rows) return null;
+    pcCache = { at: Date.now(), rows: d.rows };
+    return d.rows;
+  } catch (e) { return null; }
+}
+
+// Last week's funnel for the Monday brief: the seven full days before today
+// (America/New_York). Website steps are null when the website can't be read.
+async function weekFunnel(pool, { url, secret, today } = {}) {
+  const t = today || new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const from = new Date(Date.parse(t + "T12:00:00Z") - 7 * 864e5).toISOString().slice(0, 10);
+  const b = { from, to: t };
+  const inWeek = (iso) => !!iso && String(iso).slice(0, 10) >= b.from && String(iso).slice(0, 10) < b.to;
+  const pc = await fetchPageCounts(url, secret);
+  const sum = (ev) => (pc ? pc.filter((r) => r.day >= b.from && r.day < b.to && r.event === ev).reduce((n, r) => n + r.n, 0) : null);
+  const q = async (sql) => (await pool.query(sql).catch(() => ({ rows: [] }))).rows;
+  const prospects = await q("SELECT created_at FROM prospects");
+  const encounters = await q("SELECT occurred_at, created_at FROM encounters WHERE archived_at IS NULL");
+  const invoices = await q("SELECT offering, issued_date, created_at, paid_date, status, amount FROM invoices WHERE archived_at IS NULL");
+  const diag = invoices.filter((i) => i.offering === "institutionalos-diagnostic" && inWeek(i.issued_date || i.created_at));
+  return {
+    from: b.from, to: b.to, websiteCounting: !!pc,
+    visits: sum("view"), checkupsStarted: sum("tool_start"), checkupsDone: sum("tool_complete"),
+    schedulingClicks: pc ? sum("schedule_click") + sum("schedule_inline_open") : null,
+    leads: prospects.filter((p) => inWeek(p.created_at)).length,
+    conversations: encounters.filter((e) => inWeek(e.occurred_at || e.created_at)).length,
+    diagnosticsSold: diag.length, diagnosticRevenue: diag.reduce((n, i) => n + Number(i.amount || 0), 0),
+    paid: invoices.filter((i) => i.status === "paid" && inWeek(i.paid_date)).reduce((n, i) => n + Number(i.amount || 0), 0)
+  };
+}
+
 function mount(app, { pool, requireAuth, WEBSITE_API_URL, WEBSITE_ADMIN_SECRET }) {
-  let pcCache = { at: 0, rows: null };
-  async function pageCounts() {
-    if (!WEBSITE_API_URL || !WEBSITE_ADMIN_SECRET) return null;
-    if (pcCache.rows && Date.now() - pcCache.at < 10 * 60 * 1000) return pcCache.rows;
-    try {
-      const r = await fetch(WEBSITE_API_URL + "/api/admin/page-counts?days=400", { headers: { "X-Reminder-Secret": WEBSITE_ADMIN_SECRET }, signal: AbortSignal.timeout(20000) });
-      const d = await r.json();
-      if (!r.ok || !d.rows) return null;
-      pcCache = { at: Date.now(), rows: d.rows };
-      return d.rows;
-    } catch (e) { return null; }
-  }
+  const pageCounts = () => fetchPageCounts(WEBSITE_API_URL, WEBSITE_ADMIN_SECRET);
 
   async function load() {
     const [pipeline, prospects, invoices, encounters, scorecard, rocks, issues, settings] = await Promise.all([
@@ -258,4 +286,4 @@ ul{padding-left:20px}li{margin:4px 0}.price{font-size:18px;font-weight:600;color
   });
 }
 
-module.exports = { mount, mountLetter, monthBounds };
+module.exports = { weekFunnel, mount, mountLetter, monthBounds };

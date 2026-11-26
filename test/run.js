@@ -1209,6 +1209,31 @@ async function t(name, fn) {
     await req("anon", "POST", "/api/admin/tick", null, { "X-Admin-Token": "test-token" });
     assert.strictEqual((await hubS("staff")).docs.filter((x) => x.path === "msgs" && /Saturday works/.test((x.data || {}).text || "")).length, 1, "posted once");
   });
+  await t("scoring sync: identical models agree; a changed weight, minimum or Legacy marker is named", async () => {
+    const S = require("../scoring-sync");
+    const model = () => ({ version: 1, stages: { BUILD: { weights: { governance: 20, strategy: 20 }, minimums: { governance: 75 } }, FUND: { weights: { financial: 20 }, minimums: { financial: 70 } } }, legacyMarkers: ["deputy", "candid"] });
+    assert.deepStrictEqual(S.compare(model(), model()), []);
+    const b = model(); b.stages.FUND.weights.financial = 25; delete b.stages.BUILD.minimums.governance; b.legacyMarkers = ["deputy"];
+    const d = S.compare(model(), b);
+    assert.ok(d.includes("Fund weight for Revenue/financial: website 20, InstitutionalOS 25"), d.join("; "));
+    assert.ok(d.includes("Build minimum for Governance: website 75, InstitutionalOS none"));
+    assert.ok(d.includes('Legacy marker "candid" is only on the website'));
+    assert.strictEqual((await S.check({})).status, "skipped");
+  });
+
+  await t("report: last week's funnel counts leads, conversations and Diagnostics sold in the seven days before today", async () => {
+    const R = require("../report");
+    const deal = (await req("owner1", "POST", "/api/pipeline", { name: "Funnel Test", org: "Funnel Org", stage: "assessment", track: "institutionalos" })).data.id;
+    await req("owner1", "POST", "/api/invoices", { pipelineId: deal, offering: "institutionalos-diagnostic", amount: 2500, issuedDate: "2030-03-04", status: "sent" });
+    await req("owner1", "POST", "/api/invoices", { pipelineId: deal, offering: "institutionalos-diagnostic", amount: 2000, issuedDate: "2030-03-11", status: "sent" });
+    const w = await R.weekFunnel(Q, { today: "2030-03-11" });
+    assert.strictEqual(w.from, "2030-03-04"); assert.strictEqual(w.to, "2030-03-11");
+    assert.strictEqual(w.diagnosticsSold, 1, "today's sale counts next week, not this one");
+    assert.strictEqual(w.diagnosticRevenue, 2500);
+    assert.strictEqual(w.visits, null, "no website connection: visits unknown, not zero");
+    assert.strictEqual(w.websiteCounting, false);
+  });
+
   await t("hub: the morning digest goes to people who opted in, once a day", async () => {
     const s = await uid("staff@test.org");
     await hubW("staff", [{ path: "tasks", id: "ht3", data: { title: "Overdue thing", owner: s, due: "2020-01-01", status: "assigned" } }]);

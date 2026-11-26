@@ -226,6 +226,10 @@ async function buildMorning(pool, jobRegistry) {
       else out.checkups.error = d.error || "status " + r.status;
     } catch (e) { out.checkups.error = "website not reachable"; }
   } else out.checkups.error = "website connection not set";
+  // Mondays: last week's funnel, from website visit to Diagnostic sold.
+  if (out.weekday === "Monday") {
+    try { out.funnel = await require("./report").weekFunnel(pool, { url: site, secret, today }); } catch (e) { out.funnel = { error: String(e.message || e) }; }
+  }
   // Weekly Meeting: open issues and off-track priorities.
   const issues = await q(pool, "SELECT title, created_at FROM issues WHERE archived_at IS NULL AND status <> 'solved' ORDER BY created_at");
   out.issues = { open: issues.length, oldest: issues[0] ? issues[0].title : "" };

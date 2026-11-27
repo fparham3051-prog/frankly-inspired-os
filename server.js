@@ -1257,6 +1257,7 @@ const JOB_REGISTRY = [
   { key: "systems-reconcile", label: "Daily systems check", cadenceHours: 24 + 6 },
   { key: "recheck-reminders", label: "Daily 90-day re-check reminders", cadenceHours: 24 + 6 },
   { key: "checkin-reminders", label: "Client weekly check-in reminders", cadenceHours: 24 + 6 },
+  { key: "progress-reminders", label: "Finish-your-check-up reminders", cadenceHours: 24 + 6 },
   { key: "market-scan", label: "Weekly DMV market scan refresh", cadenceHours: 7 * 24 + 24 },
   { key: "morning-brief", label: "Morning brief", cadenceHours: 3 * 24 + 6 }
 ];
@@ -1700,10 +1701,11 @@ app.get("/api/admin/backup-all", requireAdminScope("backup"), async (req, res) =
 // Reminder emails, sent by the website server. Scheduled tasks call this
 // instead of the website server directly: the place they run can reach this
 // app but not frankly-inspired-api. kind = recheck (90-day Health Index
-// re-checks) or checkin (InstitutionalOS weekly check-ins).
+// re-checks), checkin (InstitutionalOS weekly check-ins) or progress
+// (weekly "finish your check-up" emails for check-ups saved part-way).
 app.post("/api/admin/reminders/:kind", requireAdminScope("status"), async (req, res) => {
-  const path = { recheck: "/api/admin/send-reminders", checkin: "/api/admin/send-checkin-reminders" }[req.params.kind];
-  if (!path) return res.status(404).json({ ok: false, error: "kind must be recheck or checkin" });
+  const path = { recheck: "/api/admin/send-reminders", checkin: "/api/admin/send-checkin-reminders", progress: "/api/admin/send-progress-reminders" }[req.params.kind];
+  if (!path) return res.status(404).json({ ok: false, error: "kind must be recheck, checkin or progress" });
   if (!WEBSITE_API_URL || !WEBSITE_ADMIN_SECRET) return res.status(500).json({ ok: false, error: "WEBSITE_API_URL / WEBSITE_ADMIN_SECRET not set" });
   let lastErr = "";
   for (let attempt = 1; attempt <= 2; attempt++) {

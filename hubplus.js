@@ -201,6 +201,9 @@ async function buildMorning(pool, jobRegistry) {
     let plan = null, rec = {}; try { plan = JSON.parse(d.ios_plan || "null"); } catch (e) { /* none */ } try { rec = JSON.parse(d.ios_record || "{}") || {}; } catch (e) { /* none */ }
     const who = d.org || d.name;
     if (!plan || !plan.startDate) { if (rec.verifiedConstraint) clients.push({ who, need: "Write the 90-Day Improvement Plan" }); continue; }
+    // The end of the path: closing the engagement, then a check-in a year later.
+    if (plan.closeDue) clients.push({ who, need: "Close the engagement (final summary, story permission, one-year check-in)" });
+    if (plan.yearCheckinDue) clients.push({ who, need: "One-year check-in due: rescore and log what happened" });
     if (plan.active === false) continue;
     if (plan.review90On && plan.review90On <= today && !plan.review90Done) clients.push({ who, need: "90-day review due" });
     if (plan.actionsBlocked) clients.push({ who, need: `${plan.actionsBlocked} action(s) blocked` });

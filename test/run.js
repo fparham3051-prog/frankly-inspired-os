@@ -725,6 +725,9 @@ async function t(name, fn) {
     let run = null;
     for (let i = 0; i < 40 && !run; i++) { await new Promise((ok) => setTimeout(ok, 100)); run = (await Q.query("SELECT r.* FROM proc_runs r JOIN prospects p ON p.id = r.subject_id WHERE r.process_name = 'Check-up follow-up' AND p.source_ref = 'web-tool-loop-1'")).rows[0]; }
     assert.ok(run, "the follow-up loop starts when the lead arrives");
+    // A debrief script built from their results sits in the prospect's notes.
+    const notes = (await Q.query("SELECT notes FROM prospects WHERE id = $1", [run.subject_id])).rows[0].notes;
+    assert.match(notes, /DEBRIEF SCRIPT/); assert.match(notes, /One recommendation/);
     assert.strictEqual(run.contact_email, "jordan@riverbend.org");
     let steps = JSON.parse(run.steps);
     assert.deepStrictEqual(steps.map((s) => s.text.slice(0, 6)), ["Send a", "Day 3:", "Day 10"]);
@@ -1359,6 +1362,14 @@ async function t(name, fn) {
     assert.ok(ci.data.cancelled, "check-in task should clear");
     const m = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
     assert.ok(m.clients.some((c) => c.who === "Harbor Arts Collective" && /90-day review/.test(c.need)), JSON.stringify(m.clients));
+    // After the six-month reassessment: close the engagement; once closed, the one-year check-in.
+    await Q.query("UPDATE pipeline SET ios_plan = $2 WHERE id = $1", [deal, JSON.stringify(Object.assign({}, plan, { closeDue: true }))]);
+    let m2 = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(m2.clients.some((c) => c.who === "Harbor Arts Collective" && /Close the engagement/.test(c.need)), JSON.stringify(m2.clients));
+    await Q.query("UPDATE pipeline SET ios_plan = $2 WHERE id = $1", [deal, JSON.stringify(Object.assign({}, plan, { active: false, closedOn: "2025-01-02", yearCheckinOn: "2026-01-02", yearCheckinDue: true }))]);
+    m2 = (await req("anon", "GET", "/api/admin/morning", null, { "X-Admin-Token": "test-token" })).data;
+    assert.ok(m2.clients.some((c) => c.who === "Harbor Arts Collective" && /One-year check-in/.test(c.need)), JSON.stringify(m2.clients));
+    assert.ok(!m2.clients.some((c) => c.who === "Harbor Arts Collective" && /Weekly check-in/.test(c.need)), "a closed plan asks for nothing else");
     await Q.query("UPDATE pipeline SET archived_at = $2 WHERE id = $1", [deal, new Date().toISOString()]);
   });
   await t("flow: the day's calendar lands on the Projects & Team calendar and in the morning summary", async () => {

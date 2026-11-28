@@ -37,6 +37,48 @@ const signature = () => { const o = ORG.org || {}, l = o.leader || {}; return `\
 
 const isCheckupLead = (source) => SOURCES.test(String(source || ""));
 
+// ---------- the debrief call ----------
+// A 30-minute script built from what this lead's results page told them
+// (the lines the website writes into the prospect's notes), added to the
+// notes once so it's there when the call is booked. The rule for the one
+// recommendation, after the call: the Diagnostic when the gap is confirmed
+// (they can't show the evidence), it's under their path's minimum, and the
+// decision is within six months; otherwise the free 90-day step and a
+// re-check in 90 days.
+const DEBRIEF_MARK = "DEBRIEF SCRIPT";
+const VERB = {
+  expansion: "the new site or program", funder: "the larger grant", founder: "handing work off",
+  strain: "your next hire", transition: "the leadership change",
+};
+const line = (notes, label) => { const m = new RegExp("^" + label + ":\\s*(.+)$", "mi").exec(notes || ""); return m ? m[1].trim() : ""; };
+function debriefScript(p) {
+  const n = p.notes || "";
+  const gap = line(n, "Gap that will break first \\(check-up rule\\)") || "the lowest-scoring area";
+  const situation = line(n, "Situation");
+  const answer = line(n, "Short answer shown");
+  const rec = line(n, "Recommendation shown");
+  const legacy = /Legacy Readiness:\s*(\d) of 6(?:\s*\(missing:\s*([^)]*)\))?/i.exec(n);
+  const met = legacy ? Number(legacy[1]) : null;
+  const about = VERB[p.trigger_key] || "the decision in front of you";
+  const out = [
+    `${DEBRIEF_MARK} (30 minutes; built from their check-up)`,
+    `1. Their question (2 min). ${situation ? `They picked: "${situation}." ` : ""}Is that still the decision in front of you, and by when? Who else decides?`,
+    `2. Confirm the gap (8 min). Their answers point to ${gap}. Ask: "What could you show me there?" If they can't name a document, the gap is real.`,
+    `3. What it's costing (8 min). "If ${gap} stays where it is for six more months, what happens to ${about}? Who notices first: staff, the board, or a funder?"`,
+  ];
+  if (met != null && met < 4) out.push(`4. Legacy (5 min). They have ${met} of 6 markers${legacy[2] ? ` (missing: ${legacy[2]})` : ""}. "Which missing one worries you most?"`);
+  const k = out.length; // the header line counts, so this is the next step's number
+  out.push(
+    `${k}. One recommendation (5 min). ${answer ? `Their results said: "${answer}" ` : ""}${rec ? `Recommended on the page: ${rec}. ` : ""}Rule: recommend the Diagnostic when the gap is confirmed, it's under their path's minimum, and the decision is within six months. Otherwise give them the free 90-day step and set a 90-day re-check.`,
+    `${k + 1}. Close (2 min). Diagnostic: "Would it help if I sent a one-page proposal by tomorrow?" Not yet: "I'll send the 90-day step in writing and check back in 90 days." Log the outcome on the deal.`
+  );
+  return out.join("\n");
+}
+async function addDebriefScript(pool, p) {
+  if ((p.notes || "").includes(DEBRIEF_MARK)) return;
+  await pool.query("UPDATE prospects SET notes = COALESCE(notes, '') || $2 WHERE id = $1 AND COALESCE(notes, '') NOT LIKE '%' || $3 || '%'", [p.id, "\n\n" + debriefScript(p), DEBRIEF_MARK]);
+}
+
 // Start the loop for a new prospect. Safe to call twice.
 async function start(pool, prospectId) {
   const p = (await pool.query("SELECT * FROM prospects WHERE id = $1", [prospectId])).rows[0];
@@ -52,6 +94,7 @@ async function start(pool, prospectId) {
     VALUES ($1, NULL, $2, 'prospect', $3, $4, $5, $6, '', $7, $8, $9)`,
   [id, NAME, p.id, label, today, JSON.stringify(steps), now, EMAIL_RE.test(p.name) ? "" : p.name, email]);
   await pool.query("INSERT INTO proc_activity (id, run_id, at, text) VALUES ($1, $2, $3, $4)", [crypto.randomUUID(), id, now, "Started when the check-up lead arrived from the website."]).catch(() => {});
+  await addDebriefScript(pool, p).catch(() => {});
   // The AI brief and first-note draft (never sent; waits in the Outbox).
   try {
     const AIF = require("./ai-features");
@@ -171,4 +214,4 @@ async function due(pool) {
   return list;
 }
 
-module.exports = { NAME, start, tick, due, isCheckupLead };
+module.exports = { NAME, start, tick, due, isCheckupLead, debriefScript };
